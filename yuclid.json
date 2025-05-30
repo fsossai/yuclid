@@ -1,0 +1,35 @@
+{
+  "space": {
+    "machine": [
+      "fix",
+      "allagash"
+    ],
+    "binary": [
+      "bfs_topdown",
+      "bfs_bottomup"
+    ],
+    "nthreads:py": "list(range(1, 15))",
+    "args": [
+      "-f twitter.bin -r 12 -n 1",
+      "-f kron.bin -r 1 -n 1"
+    ],
+    "pinning": [
+        "balanced",
+        "scatter"
+    ]
+  },
+  "order": [
+    "args",
+    "nthreads",
+    "binary"
+  ],
+  "trial": "./cmd.sh ./${yuclid.binary}.sh ${yuclid.args} > tmp/${yuclid.#} 2>&1",
+  "metric": {
+    "time": "cat tmp/${yuclid.#} | grep \"ms\" | grep -oE \"[0-9]+(\\.[0-9]+)?\""
+  },
+  "setup": [
+    "make clean",
+    "make -j ${yuclid.binary.*}",
+    "export LD_PRELOAD=libjemalloc.so"
+  ]
+}
