@@ -58,7 +58,7 @@ with open("yuclid.json") as f:
     data = json.load(f)
 
 now = "{:%Y%m%d-%H%M}".format(datetime.now())
-fold = False
+fold = True
 verbose_results = False
 
 space = dict()
@@ -100,7 +100,9 @@ def run_setup():
         result = subprocess.run(command, shell=True, env=env)
         if result.returncode != 0:
             errors = True
-            message(LogLevel.ERROR, f"'{command}': failed setup {result.returncode}")
+            message(LogLevel.ERROR,
+                    f"'{command}'"
+                    f"failed setup (code {result.returncode})")
     if errors:
         message(LogLevel.WARNING, "errors have occurred during setup")
     message(LogLevel.INFO, "setup completed")
@@ -130,9 +132,8 @@ def run_trials(f):
                                     stderr=subprocess.DEVNULL)
         if cmd_result.returncode != 0:
             message(LogLevel.ERROR,
-                    "{} failed experiment (returned {})".format(
-                        point_to_string(point),
-                        cmd_result.returncode))
+                    point_to_string(point),
+                    f"failed experiment (code {cmd_result.returncode})")
         max_n_metric_values = None
         mvalues = dict()
         for metric, command in data["metrics"].items():
@@ -141,11 +142,21 @@ def run_trials(f):
             cmd_result = subprocess.run(command, shell=True, text=True,
                                         capture_output=True, env=env)
             if cmd_result.returncode != 0:
-                message(LogLevel.ERROR, "{} failed metric '{}' (returned {})".format(
-                    point_to_string(point), metric, cmd_result.returncode))
+                message(LogLevel.ERROR, 
+                        point_to_string(point),
+                        "failed metric '{}' (code {})".format(
+                            metric, cmd_result.returncode))
             cmd_lines = cmd_result.stdout.strip().split("\n")
             mvalues[metric] = [float(line) for line in cmd_lines]
         mvalues_df = pd.DataFrame.from_dict(mvalues, orient="index").transpose()
+        if not fold:
+            # NaN check
+            NaNs = mvalues_df.columns[mvalues_df.isnull().any()]
+            if len(NaNs) > 0:
+                message(LogLevel.WARNING,
+                        "the following metrics generated some NaNs",
+                        " ".join(list(NaNs)))
+
         if verbose_results:
             result = point
         else:
@@ -165,6 +176,7 @@ def run_trials(f):
                 point_to_string(point),
                 "completed")
         f.flush()
+        break
 
 output_file = f"trials.{now}.json"
 run_setup()
