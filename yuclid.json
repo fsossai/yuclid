@@ -1,4 +1,17 @@
 {
+  "setup": [
+    "make clean",
+    "make -j ${yuclid.binary.values}"
+  ],
+  "env": {
+    "LD_PRELOAD": "libjemalloc.so",
+    "NRUNS": 10
+  },
+  "trial": "./cmd.sh ./${yuclid.binary}.sh ${yuclid.args} > tmp/${yuclid.#} 2>&1",
+  "metrics": {
+    "time1": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]+(\\.[0-9]+)?'",
+    "timeN": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]'"
+  },
   "space": {
     "machine": [
       "fix",
@@ -8,13 +21,16 @@
       "bfs_topdown",
       "bfs_bottomup"
     ],
-    "nthreads:py": "list(range(1, 15))",
+    "nthreads:py": "list(range(1, 3))",
     "args": [
       {
         "name": "twitter",
-        "value": "-f twitter.bin -r 12 -n 1"
+        "value": "-f twitter.bin -r 12 -n $NRUNS"
       },
-      "-f kron.bin -r 1 -n 1"
+      {
+        "name": "kron",
+        "value": "-f kron.bin -r 1 -n $NRUNS"
+      }
     ],
     "pinning": [
         "balanced",
@@ -25,15 +41,5 @@
     "args",
     "nthreads",
     "binary"
-  ],
-  "trial": "./cmd.sh ./${yuclid.binary}.sh ${yuclid.args} > tmp/${yuclid.#} 2>&1",
-  "metrics": {
-    "time1": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]+(\\.[0-9]+)?'",
-    "timeN": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]'"
-  },
-  "setup": [
-    "make clean",
-    "make -j ${yuclid.binary.values}",
-    "export LD_PRELOAD=libjemalloc.so"
   ]
 }
