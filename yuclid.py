@@ -12,15 +12,33 @@ class LogLevel:
     WARNING = 2
     ERROR = 3
 
+class TextColors(dict):
+    def __init__(self):
+        if sys.stdout.isatty():
+            self.all = {
+                "none": "\033[0m",
+                "yellow": "\033[93m",
+                "green": "\033[92m",
+                "red": "\033[91m",
+                "bold": "\033[1;97m" 
+            }
+        else:
+            self.all = dict()
+    def get_color(self, x):
+        return self.all.get(x, "")
+    __getattr__ = get_color
+
+tcolors = TextColors()
+
 def message(level, *args, **kwargs):
     timestamp = "{:%Y-%m-%d %H:%M:%S}".format(datetime.now())
     log_prefix = {
-        LogLevel.INFO:    "INFO",
-        LogLevel.WARNING: "WARNING",
-        LogLevel.ERROR:   "ERROR",
+        LogLevel.INFO:    f"{tcolors.green}INFO{tcolors.none}",
+        LogLevel.WARNING: f"{tcolors.yellow}WARNING{tcolors.none}",
+        LogLevel.ERROR:   f"{tcolors.red}ERROR{tcolors.none}",
     }.get(level, "UNKNOWN")
-    prefix = f"{timestamp} yuclid.{log_prefix}:"
-    print(prefix, *args, **kwargs)
+    kwargs["sep"] = kwargs.get("sep", ": ")
+    print(f"{tcolors.bold}yuclid{tcolors.none}", timestamp, log_prefix, *args, **kwargs)
 
 def substitute_point_vars(x, point, point_id):
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
@@ -40,7 +58,7 @@ with open("yuclid.json") as f:
     data = json.load(f)
 
 now = "{:%Y%m%d-%H%M}".format(datetime.now())
-fold = True
+fold = False
 verbose_results = False
 
 space = dict()
@@ -91,7 +109,12 @@ def point_to_string(point):
     return ".".join([str(x["name"]) for x in point.values()])
 
 def metrics_to_string(mvalues):
-    return " ".join([f"{m}={v}" for m, v in mvalues.items()])
+    return " ".join([f"{tcolors.bold}{m}{tcolors.none}={v}" for m, v in mvalues.items()])
+
+n_points = pd.Series([len(v) for k, v in space.items()]).prod()
+
+def get_progress(i):
+    return "[{}/{}]".format(i, n_points)
 
 def run_trials(f):
     global final_metrics, point, mvalues_df
@@ -99,6 +122,7 @@ def run_trials(f):
     for i, configuration in enumerate(itertools.product(*ordered_space)):
         point = {key: x for key, x in zip(order, configuration)}
         point_id = f"yuclid.{i:08x}.tmp"
+        message(LogLevel.INFO, get_progress(i), point_to_string(point), "started")
         command = substitute_global_vars(data["trial"])
         command = substitute_point_vars(data["trial"], point, point_id)
         cmd_result = subprocess.run(command, shell=True, env=env,
@@ -133,7 +157,13 @@ def run_trials(f):
             for record in mvalues_df.to_dict(orient="records"):
                 result.update(record)
                 f.write(json.dumps(result) + "\n")
-        message(LogLevel.INFO, point_to_string(point), metrics_to_string(mvalues))
+        message(LogLevel.INFO,
+                "obtained",
+                metrics_to_string(mvalues))
+        message(LogLevel.INFO,
+                get_progress(i+1),
+                point_to_string(point),
+                "completed")
         f.flush()
 
 output_file = f"trials.{now}.json"

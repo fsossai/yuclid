@@ -9,8 +9,8 @@
   },
   "trial": "./cmd.sh ./${yuclid.binary}.sh ${yuclid.args} > tmp/${yuclid.#} 2>&1",
   "metrics": {
-    "time1": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]+(\\.[0-9]+)?'",
-    "timeN": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]'"
+    "time": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]+(\\.[0-9]+)?'",
+    "rand": "cat tmp/${yuclid.#} | grep rand | grep -oE '[0-9]+'"
   },
   "space": {
     "machine": [
