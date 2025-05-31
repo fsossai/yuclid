@@ -10,7 +10,10 @@
     ],
     "nthreads:py": "list(range(1, 15))",
     "args": [
-      "-f twitter.bin -r 12 -n 1",
+      {
+        "name": "twitter",
+        "value": "-f twitter.bin -r 12 -n 1"
+      },
       "-f kron.bin -r 1 -n 1"
     ],
     "pinning": [
@@ -24,12 +27,13 @@
     "binary"
   ],
   "trial": "./cmd.sh ./${yuclid.binary}.sh ${yuclid.args} > tmp/${yuclid.#} 2>&1",
-  "metric": {
-    "time": "cat tmp/${yuclid.#} | grep \"ms\" | grep -oE \"[0-9]+(\\.[0-9]+)?\""
+  "metrics": {
+    "time1": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]+(\\.[0-9]+)?'",
+    "timeN": "cat tmp/${yuclid.#} | grep 'ms' | grep -oE '[0-9]'"
   },
   "setup": [
     "make clean",
-    "make -j ${yuclid.binary.*}",
+    "make -j ${yuclid.binary.values}",
     "export LD_PRELOAD=libjemalloc.so"
   ]
 }
