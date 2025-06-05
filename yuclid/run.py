@@ -474,6 +474,7 @@ def validate_args(ctx):
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
     os.makedirs(args.temp_directory, exist_ok=True)
+    report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
     report(LogLevel.INFO, "temp directory", f"'{args.temp_directory}'")
