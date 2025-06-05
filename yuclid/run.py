@@ -248,6 +248,7 @@ def point_to_string(point):
 
 def metrics_to_string(mvalues):
     from yuclid.log import _state
+
     color = _state["color"]
     return " ".join([f"{color.bold}{m}{color.none}={v}" for m, v in mvalues.items()])
 
@@ -263,8 +264,13 @@ def run_trial(ctx, f, i, configuration):
     order = ctx["order"]
     trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
-    point_id = f"yuclid.{i:08x}.tmp"
-    report(LogLevel.INFO, get_progress(i, ctx["subspace_size"]), point_to_string(point), "started")
+    point_id = "{}.tmp".format(point_to_string(point))
+    report(
+        LogLevel.INFO,
+        get_progress(i, ctx["subspace_size"]),
+        point_to_string(point),
+        "started",
+    )
     command = substitute_global_vars(ctx, trial)
     command = substitute_point_vars(ctx, command, point, point_id)
     cmd_result = subprocess.run(
