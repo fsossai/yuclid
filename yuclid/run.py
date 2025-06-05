@@ -1,13 +1,15 @@
+from yuclid.log import LogLevel, TextColors, report
 from datetime import datetime
 import pandas as pd
 import subprocess
 import itertools
 import argparse
+import random
+import string
 import json
 import sys
 import re
 import os
-from yuclid.log import LogLevel, TextColors, report
 
 
 def substitute_point_vars(ctx, x, point, point_id):
@@ -15,7 +17,7 @@ def substitute_point_vars(ctx, x, point, point_id):
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point[m.group(1)]["value"]), x)
     pattern = r"\$\{yuclid\.\@\}"
-    y = re.sub(pattern, lambda m: f"{args.cache_directory}/{point_id}", y)
+    y = re.sub(pattern, lambda m: f"{args.temp_directory}/{point_id}", y)
     return y
 
 
@@ -262,7 +264,8 @@ def run_trial(ctx, f, i, configuration):
     order = ctx["order"]
     trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
-    point_id = "{}.tmp".format(point_to_string(point))
+    rand_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    point_id = "{}.{}.tmp".format(rand_str, point_to_string(point))
     report(
         LogLevel.INFO,
         get_progress(i, ctx["subspace_size"]),
@@ -445,24 +448,35 @@ def validate_subspace(ctx):
     if len(undefined) > 0:
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
-    ctx["subspace_values"] = {key: [x["value"] for x in subspace[key]] for key in subspace}
-    ctx["subspace_names"] = {key: [x["name"] for x in subspace[key]] for key in subspace}
+    ctx["subspace_values"] = {
+        key: [x["value"] for x in subspace[key]] for key in subspace
+    }
+    ctx["subspace_names"] = {
+        key: [x["name"] for x in subspace[key]] for key in subspace
+    }
 
 
 def validate_args(ctx):
     args = ctx["args"]
-    if args.output is None:
-        now = "{:%Y%m%d-%H%M}".format(datetime.now())
-        args.output = f"trials.{now}.json"
-    elif not args.output.endswith(".json"):
-        args.output = f"{args.output}.json"
+    filename = f"trials.{now}.json"
+
+    now = "{:%Y%m%d-%H%M}".format(datetime.now())
+    if args.output is None and args.output_dir is None:
+        ctx["output"] = filename
+    elif args.output is not None and args.output_dir is not None:
+        report(LogLevel.FATAL, "either --output or --output-dir must be specified")
+    elif args.output_dir is not None:
+        os.makedirs(args.output_dir, exist_ok=True)
+        ctx["output"] = os.path.join(args.output_dir, filename)
+    else:
+        ctx["output"] = args.output
     for file in args.inputs:
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
-    os.makedirs(args.cache_directory, exist_ok=True)
+    os.makedirs(args.temp_directory, exist_ok=True)
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
-    report(LogLevel.INFO, "output data", f"'{args.output}'")
-    report(LogLevel.INFO, "cache directory", f"'{args.cache_directory}'")
+    report(LogLevel.INFO, "output data", ctx["output"])
+    report(LogLevel.INFO, "temp directory", f"'{args.temp_directory}'")
 
 
 def launch(args):

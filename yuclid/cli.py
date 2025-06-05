@@ -1,8 +1,8 @@
-import argparse
+from yuclid import __version__
 import yuclid.run
 import yuclid.plot
 import yuclid.log
-from yuclid import __version__
+import argparse
 
 
 def main():
@@ -34,6 +34,12 @@ def main():
         help="JSON output file path for the generated data",
     )
     run_parser.add_argument(
+        "-d",
+        "--output-dir",
+        default=None,
+        help="Directory path where the generated data will be saved",
+    )
+    run_parser.add_argument(
         "-p",
         "--presets",
         default=None,
@@ -59,7 +65,7 @@ def main():
         help="Fold metric values into an array per experiment",
     )
     run_parser.add_argument(
-        "--cache-directory",
+        "--temp-directory",
         default=".yuclid",
         help="Directory where temporary file will be saved",
     )
