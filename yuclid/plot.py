@@ -1,6 +1,7 @@
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
+import yuclid.spread as spread
 import seaborn as sns
 import pandas as pd
 import numpy as np
@@ -12,9 +13,9 @@ import argparse
 import datetime
 import pathlib
 import hashlib
-import yuclid.spread as spread
 import time
 import sys
+
 
 class TextColor:
     none = "\033[0m"
@@ -23,12 +24,14 @@ class TextColor:
     red = "\033[91m"
     bold = "\033[1;97m"
 
+
 def normalize(input_df, args, y_axis):
     b = input_df[args.z].dtype.type(args.normalize)
     estimator = scipy.stats.gmean if args.geomean else np.median
     ref = input_df.groupby([args.x, args.z])[y_axis]
     ref = ref.apply(lambda x: estimator(x))
     input_df[y_axis] /= input_df[args.x].map(lambda x: ref[(x, b)])
+
 
 def validate_files(args):
     valid_files = []
@@ -40,8 +43,10 @@ def validate_files(args):
             print(f"ERROR: unsupported file format {file}")
     return valid_files
 
+
 def get_local_mirror(rfile):
     return pathlib.Path(rfile.split(":")[1]).name
+
 
 def locate_files(valid_files):
     local_files = []
@@ -52,6 +57,7 @@ def locate_files(valid_files):
             local_files.append(file)
     return local_files
 
+
 def initialize_figure(ctx):
     fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [20, 1]})
     fig.set_size_inches(12, 10)
@@ -60,24 +66,27 @@ def initialize_figure(ctx):
     sns.set_theme(style="whitegrid")
     ax_plot.grid(axis="y")
     y = ax_table.get_position().y1 + 0.03
-    line = mlines.Line2D([0.05, 0.95], [y, y], linewidth=4,
-                         transform=fig.transFigure, color="lightgrey")
+    line = mlines.Line2D(
+        [0.05, 0.95], [y, y], linewidth=4, transform=fig.transFigure, color="lightgrey"
+    )
     fig.add_artist(line)
     fig.subplots_adjust(top=0.95, bottom=0.1, hspace=0.3)
     fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
     fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
-    ctx['fig'] = fig
-    ctx['ax_plot'] = ax_plot
-    ctx['ax_table'] = ax_table
+    ctx["fig"] = fig
+    ctx["ax_plot"] = ax_plot
+    ctx["ax_table"] = ax_table
+
 
 def get_time_prefix(tcolor):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{tcolor.bold}{now}:{tcolor.none} "
 
+
 def generate_dataframe(ctx):
-    args = ctx['args']
-    tcolor = ctx['tcolor']
-    local_files = ctx['local_files']
+    args = ctx["args"]
+    tcolor = ctx["tcolor"]
+    local_files = ctx["local_files"]
     dfs = dict()
     for file in local_files:
         file = pathlib.Path(file)
@@ -87,12 +96,17 @@ def generate_dataframe(ctx):
             elif file.suffix == ".csv":
                 dfs[file.stem] = pd.read_csv(file)
         except:
-            print("{}{}could not open {}{}".format(
-                get_time_prefix(tcolor), tcolor.red, file, tcolor.none))
+            print(
+                "{}{}could not open {}{}".format(
+                    get_time_prefix(tcolor), tcolor.red, file, tcolor.none
+                )
+            )
 
     if len(dfs) == 0:
-        print(f"{get_time_prefix(tcolor)}{tcolor.red}no valid source of data{tcolor.none}")
-        ctx['alive'] = False
+        print(
+            f"{get_time_prefix(tcolor)}{tcolor.red}no valid source of data{tcolor.none}"
+        )
+        ctx["alive"] = False
         sys.exit(1)
 
     df = pd.concat(dfs)
@@ -106,21 +120,24 @@ def generate_dataframe(ctx):
         user_filter[k] = df[k].dtype.type(v)
 
     if user_filter:
-        user_filter_mask = (df[list(user_filter.keys())] == user_filter.values()).all(axis=1)
+        user_filter_mask = (df[list(user_filter.keys())] == user_filter.values()).all(
+            axis=1
+        )
         df = df[user_filter_mask]
 
-    ctx['df'] = df
+    ctx["df"] = df
+
 
 def generate_space(ctx):
-    args = ctx['args']
-    df = ctx['df']
-    y_dims = ctx['y_dims']
+    args = ctx["args"]
+    df = ctx["df"]
+    y_dims = ctx["y_dims"]
     z_size = df[args.z].nunique()
     dims = list(df.columns.difference([args.x, args.z] + y_dims))
     if len(dims) > 9:
         print("ERROR: supporting up to 9 free dimensions")
         sys.exit(1)
-    dim_keys = "123456789"[:len(dims)]
+    dim_keys = "123456789"[: len(dims)]
     selected_index = 0 if len(dims) > 0 else None
     domain = dict()
     position = dict()
@@ -128,23 +145,26 @@ def generate_space(ctx):
         domain[d] = df[d].unique()
         position[d] = 0
     z_dom = df[args.z].unique()
-    ctx.update({
-        'z_size': z_size,
-        'dims': dims,
-        'dim_keys': dim_keys,
-        'selected_index': selected_index,
-        'domain': domain,
-        'position': position,
-        'z_dom': z_dom
-    })
+    ctx.update(
+        {
+            "z_size": z_size,
+            "dims": dims,
+            "dim_keys": dim_keys,
+            "selected_index": selected_index,
+            "domain": domain,
+            "position": position,
+            "z_dom": z_dom,
+        }
+    )
+
 
 def file_monitor(ctx):
     current_hash = None
     last_hash = None
-    while ctx['alive']:
+    while ctx["alive"]:
         try:
             current_hash = ""
-            for file in ctx['local_files']:
+            for file in ctx["local_files"]:
                 with open(file, "rb") as f:
                     current_hash += hashlib.md5(f.read()).hexdigest()
         except FileNotFoundError:
@@ -153,27 +173,35 @@ def file_monitor(ctx):
             generate_dataframe(ctx)
             generate_space(ctx)
             compute_ylimits(ctx)
-            space_columns = ctx['df'].columns.difference([ctx['y_axis']])
-            tcolor = ctx['tcolor']
-            sizes = ["{}={}{}{}".format(
-                d, tcolor.bold, ctx['df'][d].nunique(), tcolor.none) for d in space_columns]
+            space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
+            tcolor = ctx["tcolor"]
+            sizes = [
+                "{}={}{}{}".format(d, tcolor.bold, ctx["df"][d].nunique(), tcolor.none)
+                for d in space_columns
+            ]
             missing = compute_missing(ctx)
             print("{}new space: {}".format(get_time_prefix(tcolor), " | ".join(sizes)))
             if len(missing) > 0:
-                print("{}{}at least {} missing experiments{}".format(
-                    get_time_prefix(tcolor),
-                    tcolor.yellow, len(missing), tcolor.none))
+                print(
+                    "{}{}at least {} missing experiments{}".format(
+                        get_time_prefix(tcolor),
+                        tcolor.yellow,
+                        len(missing),
+                        tcolor.none,
+                    )
+                )
             update_table(ctx)
             update_plot(ctx)
         last_hash = current_hash
         time.sleep(1)
 
+
 def update_table(ctx):
-    ax_table = ctx['ax_table']
-    dims = ctx['dims']
-    domain = ctx['domain']
-    position = ctx['position']
-    selected_index = ctx['selected_index']
+    ax_table = ctx["ax_table"]
+    dims = ctx["dims"]
+    domain = ctx["domain"]
+    position = ctx["position"]
+    selected_index = ctx["selected_index"]
     ax_table.clear()
     ax_table.axis("off")
     if len(dims) == 0:
@@ -193,16 +221,19 @@ def update_table(ctx):
             fields.append(rf"$\mathbf{{{d}}}$")
             values.append(value)
             arrows.append("")
-    ax_table.table(cellText=[fields, values, arrows],
-                   cellLoc="center", edges="open", loc="center")
-    ctx['fig'].canvas.draw_idle()
+    ax_table.table(
+        cellText=[fields, values, arrows], cellLoc="center", edges="open", loc="center"
+    )
+    ctx["fig"].canvas.draw_idle()
+
 
 def is_remote(file):
     return "@" in file
 
+
 def sync_files(ctx):
-    args = ctx['args']
-    valid_files = ctx['valid_files']
+    args = ctx["args"]
+    valid_files = ctx["valid_files"]
     jobs = []
     for file in valid_files:
         if is_remote(file):
@@ -214,29 +245,30 @@ def sync_files(ctx):
             jobs.append((file, mirror))
 
     def rsync(src, dst):
-        while ctx['alive']:
+        while ctx["alive"]:
             subprocess.run(
                 ["rsync", "-z", "--checksum", src, dst],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
             )
             time.sleep(args.rsync_interval)
 
     for job in jobs:
         threading.Thread(target=rsync, daemon=True, args=job).start()
 
+
 def update_plot(ctx, padding_factor=1.05):
-    args = ctx['args']
-    df = ctx['df']
-    dims = ctx['dims']
-    domain = ctx['domain']
-    position = ctx['position']
-    y_axis = ctx['y_axis']
-    y_dims = ctx['y_dims']
-    z_dom = ctx['z_dom']
-    z_size = ctx['z_size']
-    ax_plot = ctx['ax_plot']
-    top = ctx.get('top', None)
+    args = ctx["args"]
+    df = ctx["df"]
+    dims = ctx["dims"]
+    domain = ctx["domain"]
+    position = ctx["position"]
+    y_axis = ctx["y_axis"]
+    y_dims = ctx["y_dims"]
+    z_dom = ctx["z_dom"]
+    z_size = ctx["z_size"]
+    ax_plot = ctx["ax_plot"]
+    top = ctx.get("top", None)
 
     sub_df = df.copy()
     for d in dims:
@@ -260,7 +292,7 @@ def update_plot(ctx, padding_factor=1.05):
     if args.speedup is not None:
         c1 = sub_df[args.z] == args.speedup
         c2 = sub_df[args.x] == sub_df[args.x].min()
-        baseline = sub_df[(c1 & c2)][y_axis].min() 
+        baseline = sub_df[(c1 & c2)][y_axis].min()
         sub_df[y_axis] = baseline / sub_df[y_axis]
 
     if args.normalize is not None or args.speedup is not None:
@@ -268,27 +300,54 @@ def update_plot(ctx, padding_factor=1.05):
 
     def custom_error(data):
         d = pd.DataFrame(data)
-        return (spread.lower(args.spread_measure)(d),
-                spread.upper(args.spread_measure)(d))
-    
+        return (
+            spread.lower(args.spread_measure)(d),
+            spread.upper(args.spread_measure)(d),
+        )
+
     if args.colorblind:
         palette = "colorblind"
     else:
-        preferred_colors = ["#5588dd", "#882255", "#33bb88", "#ddcc77",
-                            "#cc6677", "#999933", "#aa44ff", "#448811",
-                            "#3fa7d6", "#e94f37", "#6cc551", "#dabef9"]
+        preferred_colors = [
+            "#5588dd",
+            "#882255",
+            "#33bb88",
+            "#ddcc77",
+            "#cc6677",
+            "#999933",
+            "#aa44ff",
+            "#448811",
+            "#3fa7d6",
+            "#e94f37",
+            "#6cc551",
+            "#dabef9",
+        ]
         color_gen = iter(preferred_colors)
         palette = {z: next(color_gen) for z in z_dom}
 
     if args.lines:
-        sns.lineplot(data=sub_df, x=args.x, y=y_axis, hue=args.z,
-                     palette=palette,
-                     lw=2, linestyle="-", marker="o",
-                     errorbar=None, ax=ax_plot,
-                     estimator=np.median)
-        spread.draw(ax_plot, [args.spread_measure],
-                    sub_df, x=args.x, y=y_axis, z=args.z,
-                    palette=palette)
+        sns.lineplot(
+            data=sub_df,
+            x=args.x,
+            y=y_axis,
+            hue=args.z,
+            palette=palette,
+            lw=2,
+            linestyle="-",
+            marker="o",
+            errorbar=None,
+            ax=ax_plot,
+            estimator=np.median,
+        )
+        spread.draw(
+            ax_plot,
+            [args.spread_measure],
+            sub_df,
+            x=args.x,
+            y=y_axis,
+            z=args.z,
+            palette=palette,
+        )
     else:
         sns.barplot(
             data=sub_df,
@@ -296,14 +355,21 @@ def update_plot(ctx, padding_factor=1.05):
             estimator=np.median,
             palette=palette,
             legend=True,
-            x=args.x, y=y_axis, hue=args.z,
-            errorbar=custom_error, alpha=.6)
+            x=args.x,
+            y=y_axis,
+            hue=args.z,
+            errorbar=custom_error,
+            alpha=0.6,
+        )
 
     if top is not None:
-        ax_plot.set_ylim(top=top*padding_factor, bottom=0.0)
+        ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
     if args.normalize is not None:
-        ax_plot.set_ylabel("{} (normalized to {})\n{}".format(
-            ax_plot.get_ylabel(), args.normalize, y_range))
+        ax_plot.set_ylabel(
+            "{} (normalized to {})\n{}".format(
+                ax_plot.get_ylabel(), args.normalize, y_range
+            )
+        )
     elif args.speedup is not None:
         ax_plot.set_ylabel("speedup vs {}\n{}".format(args.speedup, y_range))
         handles, labels = ax_plot.get_legend_handles_labels()
@@ -325,35 +391,39 @@ def update_plot(ctx, padding_factor=1.05):
 
     if args.geomean:
         pp = sorted(ax_plot.patches, key=lambda x: x.get_x())
-        x = pp[-z_size].get_x() + pp[-z_size-1].get_x() + pp[-z_size-1].get_width()
-        plt.axvline(x=x/2, color="grey", linewidth=1, linestyle="-")
+        x = pp[-z_size].get_x() + pp[-z_size - 1].get_x() + pp[-z_size - 1].get_width()
+        plt.axvline(x=x / 2, color="grey", linewidth=1, linestyle="-")
 
-    ctx['fig'].canvas.draw_idle()
+    ctx["fig"].canvas.draw_idle()
+
 
 def get_config_name(ctx):
-    y_axis = ctx['y_axis']
-    dims = ctx['dims']
-    domain = ctx['domain']
-    position = ctx['position']
-    status = ["speedup" if ctx['args'].speedup else y_axis]
+    y_axis = ctx["y_axis"]
+    dims = ctx["dims"]
+    domain = ctx["domain"]
+    position = ctx["position"]
+    status = ["speedup" if ctx["args"].speedup else y_axis]
     status += [domain[d][position[d]] for d in dims]
     name = "_".join(status)
     return name
 
+
 def save_to_file(ctx, outfile=None):
     outfile = outfile or get_config_name(ctx) + ".pdf"
-    ctx['fig'].savefig(outfile)
-    tcolor = ctx['tcolor']
-    print(f"{get_time_prefix(tcolor)}saved to "
-          f"{tcolor.green}'{outfile}'{tcolor.none}")
+    ctx["fig"].savefig(outfile)
+    tcolor = ctx["tcolor"]
+    print(
+        f"{get_time_prefix(tcolor)}saved to " f"{tcolor.green}'{outfile}'{tcolor.none}"
+    )
+
 
 def on_key(event, ctx):
-    selected_index = ctx['selected_index']
-    dims = ctx['dims']
-    domain = ctx['domain']
-    position = ctx['position']
-    y_dims = ctx['y_dims']
-    y_axis = ctx['y_axis']
+    selected_index = ctx["selected_index"]
+    dims = ctx["dims"]
+    domain = ctx["domain"]
+    position = ctx["position"]
+    y_dims = ctx["y_dims"]
+    y_axis = ctx["y_axis"]
     if event.key in ["enter", " ", "up", "down"]:
         x = 1 if event.key in [" ", "enter", "up"] else -1
         if selected_index is None:
@@ -368,34 +438,37 @@ def on_key(event, ctx):
         if selected_index is None:
             return
         if event.key == "left":
-            ctx['selected_index'] = (selected_index - 1) % len(dims)
+            ctx["selected_index"] = (selected_index - 1) % len(dims)
         else:
-            ctx['selected_index'] = (selected_index + 1) % len(dims)
+            ctx["selected_index"] = (selected_index + 1) % len(dims)
         update_table(ctx)
     elif event.key in "123456789":
         new_idx = int(event.key) - 1
         if new_idx < len(y_dims):
-            ctx['y_axis'] = y_dims[new_idx]
+            ctx["y_axis"] = y_dims[new_idx]
             compute_ylimits(ctx)
             update_plot(ctx)
     elif event.key in ".":
         save_to_file(ctx)
 
+
 def on_close(event, ctx):
-    ctx['alive'] = False
+    ctx["alive"] = False
+
 
 def compute_missing(ctx):
-    df = ctx['df']
-    y_dims = ctx['y_dims']
+    df = ctx["df"]
+    y_dims = ctx["y_dims"]
     space_columns = df.columns.difference(y_dims)
     expected = set(itertools.product(*[df[col].unique() for col in space_columns]))
     observed = set(map(tuple, df[space_columns].drop_duplicates().values))
     missing = expected - observed
     return pd.DataFrame(list(missing), columns=space_columns)
 
+
 def validate_options(ctx):
-    args = ctx['args']
-    df = ctx['df']
+    args = ctx["args"]
+    df = ctx["df"]
     c = 0
     c += 1 if args.normalize is not None else 0
     c += 1 if args.speedup is not None else 0
@@ -410,8 +483,11 @@ def validate_options(ctx):
         available = df[args.z].unique()
         val = df[args.z].dtype.type(args.normalize or args.speedup)
         if val not in available:
-            print("ERROR: `--normalize` and `--speedup`"
-                  " must be one of the following values:", available)
+            print(
+                "ERROR: `--normalize` and `--speedup`"
+                " must be one of the following values:",
+                available,
+            )
             sys.exit(2)
     if args.speedup is not None:
         if not pd.api.types.is_numeric_dtype(df[args.x]):
@@ -428,14 +504,16 @@ def validate_options(ctx):
             sys.exit(2)
     for y in y_dims:
         if not pd.api.types.is_numeric_dtype(df[y]):
-            t = df[y].dtype 
+            t = df[y].dtype
             print(f"ERROR: Y-axis must have a numeric type. '{y_axis}' has type '{t}'")
             sys.exit(1)
 
     zdom = df[args.z].unique()
     if len(zdom) == 1 and args.geomean:
-        print(f"WARNING: `--geomean` is superfluous because "
-              f"'{zdom[0]}' is the only value in the '{args.z}' group")
+        print(
+            f"WARNING: `--geomean` is superfluous because "
+            f"'{zdom[0]}' is the only value in the '{args.z}' group"
+        )
     if args.geomean and args.lines:
         print("ERROR: `--geomean` and `--lines` cannot be used together")
         sys.exit(2)
@@ -443,15 +521,19 @@ def validate_options(ctx):
         print(f"ERROR: X-axis and Y-axis must be different dimensions. Given {args.x}")
         sys.exit(2)
     if args.x == args.z or args.z in y_dims:
-        print(f"ERROR: the `-z` dimension must be different from the dimension used on"
-              " the X or Y axis")
+        print(
+            f"ERROR: the `-z` dimension must be different from the dimension used on"
+            " the X or Y axis"
+        )
         sys.exit(2)
     space_columns = df.columns.difference(y_dims)
     for d in space_columns:
         n = df[d].nunique()
         if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
-            print(f"WARNING: '{d}' seems to have many ({n}) numeric values."
-                  " Are you sure this is not supposed to be the Y-axis?")
+            print(
+                f"WARNING: '{d}' seems to have many ({n}) numeric values."
+                " Are you sure this is not supposed to be the Y-axis?"
+            )
 
     if args.show_missing:
         missing = compute_missing(ctx)
@@ -460,27 +542,29 @@ def validate_options(ctx):
             print(missing.to_string(index=False))
             print()
 
-    ctx['y_dims'] = y_dims
-    ctx['y_axis'] = y_dims[0]
+    ctx["y_dims"] = y_dims
+    ctx["y_axis"] = y_dims[0]
+
 
 def start_gui(ctx):
-    ctx['alive'] = True
+    ctx["alive"] = True
     update_plot(ctx)
     update_table(ctx)
     threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
-    print("{}application running".format(get_time_prefix(ctx['tcolor'])))
+    print("{}application running".format(get_time_prefix(ctx["tcolor"])))
     time.sleep(0.5)
     plt.show()
 
+
 def compute_ylimits(ctx):
-    args = ctx['args']
-    dims = ctx['dims']
-    df = ctx['df']
-    y_axis = ctx['y_axis']
-    domain = ctx['domain']
+    args = ctx["args"]
+    dims = ctx["dims"]
+    df = ctx["df"]
+    y_axis = ctx["y_axis"]
+    domain = ctx["domain"]
     top = None
     if len(dims) == 0:
-        ctx['top'] = None
+        ctx["top"] = None
         return
     if args.normalize:
         top = 0
@@ -499,16 +583,13 @@ def compute_ylimits(ctx):
         top = baseline / df[y_axis].min()
     else:
         top = df[y_axis].max()
-    ctx['top'] = top
+    ctx["top"] = top
+
 
 def launch(args):
-    ctx = {
-        'args': args,
-        'tcolor': TextColor(),
-        'alive': True
-    }
-    ctx['valid_files'] = validate_files(args)
-    ctx['local_files'] = locate_files(ctx['valid_files'])
+    ctx = {"args": args, "tcolor": TextColor(), "alive": True}
+    ctx["valid_files"] = validate_files(args)
+    ctx["local_files"] = locate_files(ctx["valid_files"])
     sync_files(ctx)
     generate_dataframe(ctx)
     validate_options(ctx)

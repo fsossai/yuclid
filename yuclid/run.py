@@ -8,11 +8,13 @@ import sys
 import re
 import os
 
+
 class LogLevel:
     INFO = 1
     WARNING = 2
     ERROR = 3
     FATAL = 4
+
 
 class TextColors(dict):
     def __init__(self):
@@ -22,23 +24,26 @@ class TextColors(dict):
                 "yellow": "\033[93m",
                 "green": "\033[92m",
                 "red": "\033[91m",
-                "bold": "\033[1;97m" 
+                "bold": "\033[1;97m",
             }
         else:
             self.all = dict()
+
     def get_color(self, x):
         return self.all.get(x, "")
+
     __getattr__ = get_color
 
+
 def report(ctx, level, *pargs, **kwargs):
-    color = ctx['color']
-    args = ctx['args']
+    color = ctx["color"]
+    args = ctx["args"]
     timestamp = "{:%Y-%m-%d %H:%M:%S}".format(datetime.now())
     log_prefix = {
-        LogLevel.INFO:    f"{color.green}INFO{color.none}",
+        LogLevel.INFO: f"{color.green}INFO{color.none}",
         LogLevel.WARNING: f"{color.yellow}WARNING{color.none}",
-        LogLevel.ERROR:   f"{color.red}ERROR{color.none}",
-        LogLevel.FATAL:   f"{color.red}FATAL{color.none}"
+        LogLevel.ERROR: f"{color.red}ERROR{color.none}",
+        LogLevel.FATAL: f"{color.red}FATAL{color.none}",
     }.get(level, "UNKNOWN")
     kwargs["sep"] = kwargs.get("sep", ": ")
     print(f"{color.bold}yuclid{color.none}", timestamp, log_prefix, *pargs, **kwargs)
@@ -47,27 +52,37 @@ def report(ctx, level, *pargs, **kwargs):
     if not args.ignore_errors and level == LogLevel.ERROR:
         sys.exit(1)
 
+
 def substitute_point_vars(ctx, x, point, point_id):
-    args = ctx['args']
+    args = ctx["args"]
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point[m.group(1)]["value"]), x)
     pattern = r"\$\{yuclid\.\@\}"
     y = re.sub(pattern, lambda m: f"{args.cache_directory}/{point_id}", y)
     return y
 
+
 def substitute_global_vars(ctx, x):
-    space_values = ctx['space_values']
-    space_names = ctx['space_names']
+    space_values = ctx["space_values"]
+    space_names = ctx["space_names"]
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.values\}"
     y = re.sub(pattern, lambda m: " ".join(space_values[m.group(1)]), x)
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.names\}"
     y = re.sub(pattern, lambda m: " ".join(space_names[m.group(1)]), y)
     return y
 
+
 def read_configurations(ctx):
-    args = ctx['args']
-    data = {"env": dict(), "setup": [], "space": dict(), "trial": [],
-            "metrics": dict(), "presets": dict(), "order": []}
+    args = ctx["args"]
+    data = {
+        "env": dict(),
+        "setup": [],
+        "space": dict(),
+        "trial": [],
+        "metrics": dict(),
+        "presets": dict(),
+        "order": [],
+    }
 
     for file in args.inputs:
         with open(file, "r") as f:
@@ -86,19 +101,22 @@ def read_configurations(ctx):
                         data[key].update(val)
 
     order_seen = set(data.get("order", []))
-    data["order"] = [x for x in data["order"]
-                     if not (x in order_seen or order_seen.add(x))]
-    ctx['data'] = data
+    data["order"] = [
+        x for x in data["order"] if not (x in order_seen or order_seen.add(x))
+    ]
+    ctx["data"] = data
+
 
 def build_environment(ctx):
-    data = ctx['data']
+    data = ctx["data"]
     env = os.environ.copy()
     env.update({k: str(v) for k, v in data["env"].items()})
-    ctx['env'] = env
+    ctx["env"] = env
+
 
 def overwrite_configuration(ctx):
-    args = ctx['args']
-    subspace = ctx['subspace']
+    args = ctx["args"]
+    subspace = ctx["subspace"]
     if args.select is not None:
         new_values = dict(pair.split("=") for pair in args.select)
         for k, values in new_values.items():
@@ -113,7 +131,8 @@ def overwrite_configuration(ctx):
             if len(selection) == 0:
                 report(ctx, LogLevel.FATAL, "invalid value", values)
             subspace[k] = selection
-    ctx['subspace'] = subspace
+    ctx["subspace"] = subspace
+
 
 def normalize_command(cmd):
     if isinstance(cmd, str):
@@ -123,6 +142,7 @@ def normalize_command(cmd):
     else:
         raise ValueError(f"invalid command type {type(cmd)}")
 
+
 def normalize_command_list(cl):
     normalized = []
     if isinstance(cl, str):
@@ -131,6 +151,7 @@ def normalize_command_list(cl):
         for cmd in cl:
             normalized.append(normalize_command(cmd))
     return normalized
+
 
 def normalize_data(ctx, json_data):
     normalized = json_data.copy()
@@ -147,8 +168,9 @@ def normalize_data(ctx, json_data):
                     space[key].append({"name": str(x), "value": x})
                 elif isinstance(x, dict):
                     if "value" in x:
-                        space[key].append({"name": x.get("name", x["value"]),
-                                           "value": x["value"]})
+                        space[key].append(
+                            {"name": x.get("name", x["value"]), "value": x["value"]}
+                        )
         else:
             space[key] = None
 
@@ -163,24 +185,30 @@ def normalize_data(ctx, json_data):
 
     return normalized
 
+
 def build_space(ctx):
-    data = ctx['data']
+    data = ctx["data"]
     space = data["space"]
     defined_space = {k: v for k, v in space.items() if v is not None}
-    defined_space_values = {key: [x["value"] for x in space[key]] for key in defined_space}
-    defined_space_names = {key: [x["name"] for x in space[key]] for key in defined_space}
+    defined_space_values = {
+        key: [x["value"] for x in space[key]] for key in defined_space
+    }
+    defined_space_names = {
+        key: [x["name"] for x in space[key]] for key in defined_space
+    }
     undefined_space_values = {key: [] for key in space if space[key] is None}
     undefined_space_names = {key: [] for key in space if space[key] is None}
     space_values = {**defined_space_values, **undefined_space_values}
     space_names = {**defined_space_names, **undefined_space_names}
-    ctx['space'] = space
-    ctx['space_values'] = space_values
-    ctx['space_names'] = space_names
+    ctx["space"] = space
+    ctx["space_values"] = space_values
+    ctx["space_names"] = space_names
+
 
 def define_order(ctx):
-    args = ctx['args']
-    data = ctx['data']
-    space = ctx['space']
+    args = ctx["args"]
+    data = ctx["data"]
+    space = ctx["space"]
     if args.order is None:
         desired = data.get("order", [])
     else:
@@ -190,20 +218,26 @@ def define_order(ctx):
         order.append(order.pop(order.index(k)))
     wrong = [k for k in order if k not in space.keys()]
     if len(wrong) > 0:
-        report(ctx, LogLevel.FATAL, "specified order contains invalid dimensions",
-                ",".join(wrong))
-    ctx['order'] = order
+        report(
+            ctx,
+            LogLevel.FATAL,
+            "specified order contains invalid dimensions",
+            ",".join(wrong),
+        )
+    ctx["order"] = order
+
 
 def build_subspace(ctx):
-    space = ctx['space']
-    space_names = ctx['space_names']
-    space_values = ctx['space_values']
-    selected_presets = ctx['selected_presets']
+    space = ctx["space"]
+    space_names = ctx["space_names"]
+    space_values = ctx["space_values"]
+    selected_presets = ctx["selected_presets"]
     subspace = dict()
     for key, values in space.items():
         subvalues = []
-        relevant_presets = {pname: pdims for pname, pdims in selected_presets.items()
-                            if key in pdims}
+        relevant_presets = {
+            pname: pdims for pname, pdims in selected_presets.items() if key in pdims
+        }
         if len(relevant_presets) == 0:
             subvalues = values
         elif len(relevant_presets) == 1:
@@ -214,16 +248,21 @@ def build_subspace(ctx):
                 vmap = {x["name"]: x for x in values}
                 subvalues = [vmap[n] for n in pdims[key] if n in vmap]
         else:
-            report(ctx, LogLevel.FATAL, f"dimension '{key}' conflicts in presets",
-                   ", ".join([pname for pname in relevant_presets]))
+            report(
+                ctx,
+                LogLevel.FATAL,
+                f"dimension '{key}' conflicts in presets",
+                ", ".join([pname for pname in relevant_presets]),
+            )
         subspace[key] = subvalues
-    ctx['subspace'] = subspace
+    ctx["subspace"] = subspace
+
 
 def run_setup(ctx):
-    args = ctx['args']
-    data = ctx['data']
-    env = ctx['env']
-    color = ctx['color']
+    args = ctx["args"]
+    data = ctx["data"]
+    env = ctx["env"]
+    color = ctx["color"]
     if args.dry_run:
         return
     setup = []
@@ -236,62 +275,83 @@ def run_setup(ctx):
         result = subprocess.run(command, shell=True, env=env)
         if result.returncode != 0:
             errors = True
-            report(ctx, LogLevel.ERROR, "setup",
-                    f"'{command}'",
-                    f"failed (code {result.returncode})")
+            report(
+                ctx,
+                LogLevel.ERROR,
+                "setup",
+                f"'{command}'",
+                f"failed (code {result.returncode})",
+            )
     if errors:
         report(ctx, LogLevel.WARNING, "errors have occurred during setup")
     report(ctx, LogLevel.INFO, "setup completed")
 
+
 def point_to_string(point):
     return ".".join([str(x["name"]) for x in point.values()])
 
+
 def metrics_to_string(ctx, mvalues):
-    color = ctx['color']
+    color = ctx["color"]
     return " ".join([f"{color.bold}{m}{color.none}={v}" for m, v in mvalues.items()])
 
+
 def get_progress(ctx, i):
-    return "[{}/{}]".format(i, ctx['subspace_size'])
+    return "[{}/{}]".format(i, ctx["subspace_size"])
+
 
 def run_trial(ctx, f, i, configuration):
-    args = ctx['args']
-    env = ctx['env']
-    data = ctx['data']
-    order = ctx['order']
-    color = ctx['color']
-    trial = ctx['trial']
+    args = ctx["args"]
+    env = ctx["env"]
+    data = ctx["data"]
+    order = ctx["order"]
+    color = ctx["color"]
+    trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
     point_id = f"yuclid.{i:08x}.tmp"
     report(ctx, LogLevel.INFO, get_progress(ctx, i), point_to_string(point), "started")
     command = substitute_global_vars(ctx, trial)
     command = substitute_point_vars(ctx, command, point, point_id)
-    cmd_result = subprocess.run(command, shell=True, env=env,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
+    cmd_result = subprocess.run(
+        command,
+        shell=True,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     if cmd_result.returncode != 0:
-        report(ctx, LogLevel.ERROR,
-                point_to_string(point),
-                f"failed experiment (code {cmd_result.returncode})")
+        report(
+            ctx,
+            LogLevel.ERROR,
+            point_to_string(point),
+            f"failed experiment (code {cmd_result.returncode})",
+        )
     mvalues = dict()
     for metric, command in data["metrics"].items():
         command = substitute_global_vars(ctx, command)
         command = substitute_point_vars(ctx, command, point, point_id)
-        cmd_result = subprocess.run(command, shell=True, universal_newlines=True,
-                                    capture_output=True, env=env)
+        cmd_result = subprocess.run(
+            command, shell=True, universal_newlines=True, capture_output=True, env=env
+        )
         if cmd_result.returncode != 0:
-            report(ctx, LogLevel.ERROR, 
-                    point_to_string(point),
-                    "failed metric '{}' (code {})".format(
-                        metric, cmd_result.returncode))
+            report(
+                ctx,
+                LogLevel.ERROR,
+                point_to_string(point),
+                "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
+            )
         cmd_lines = cmd_result.stdout.strip().split("\n")
         mvalues[metric] = [float(line) for line in cmd_lines]
     mvalues_df = pd.DataFrame.from_dict(mvalues, orient="index").transpose()
     if not args.fold:
         NaNs = mvalues_df.columns[mvalues_df.isnull().any()]
         if len(NaNs) > 0:
-            report(ctx, LogLevel.WARNING,
-                    "the following metrics generated some NaNs",
-                    " ".join(list(NaNs)))
+            report(
+                ctx,
+                LogLevel.WARNING,
+                "the following metrics generated some NaNs",
+                " ".join(list(NaNs)),
+            )
 
     if args.verbose_data:
         result = point
@@ -304,20 +364,22 @@ def run_trial(ctx, f, i, configuration):
         for record in mvalues_df.to_dict(orient="records"):
             result.update(record)
             f.write(json.dumps(result) + "\n")
-    report(ctx, LogLevel.INFO,
-            "obtained",
-            metrics_to_string(ctx, mvalues))
-    report(ctx, LogLevel.INFO,
-            get_progress(ctx, i+1),
-            point_to_string(point),
-            "completed")
+    report(ctx, LogLevel.INFO, "obtained", metrics_to_string(ctx, mvalues))
+    report(
+        ctx,
+        LogLevel.INFO,
+        get_progress(ctx, i + 1),
+        point_to_string(point),
+        "completed",
+    )
     f.flush()
 
+
 def run_trials(ctx):
-    args = ctx['args']
-    data = ctx['data']
-    order = ctx['order']
-    subspace = ctx['subspace']
+    args = ctx["args"]
+    data = ctx["data"]
+    order = ctx["order"]
+    subspace = ctx["subspace"]
     ordered_space = [subspace[x] for x in order]
 
     if "trial" not in data:
@@ -326,27 +388,31 @@ def run_trials(ctx):
         trial = data["trial"]
     elif isinstance(data["trial"], list):
         trial = " ".join(data["trial"])
-    ctx['trial'] = trial
+    ctx["trial"] = trial
 
     if args.dry_run:
         for i, configuration in enumerate(itertools.product(*ordered_space)):
             point = {key: x for key, x in zip(order, configuration)}
-            report(ctx, LogLevel.INFO,
-                   get_progress(ctx, i+1), 
-                   "dry run",
-                   point_to_string(point))
+            report(
+                ctx,
+                LogLevel.INFO,
+                get_progress(ctx, i + 1),
+                "dry run",
+                point_to_string(point),
+            )
     else:
         report(ctx, LogLevel.INFO, f"writing to '{args.output}'")
         with open(args.output, "a") as f:
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
 
+
 def validate_presets(ctx):
-    args = ctx['args']
-    data = ctx['data']
-    space = ctx['space']
-    space_names = ctx['space_names']
-    space_values = ctx['space_values']
+    args = ctx["args"]
+    data = ctx["data"]
+    space = ctx["space"]
+    space_names = ctx["space_names"]
+    space_values = ctx["space_values"]
     # normalization
     presets_old = data.get("presets", dict())
     presets = dict()
@@ -358,8 +424,12 @@ def validate_presets(ctx):
                 if isinstance(values, str):
                     presets[pname][k] = eval(values)
                 else:
-                    report(ctx, LogLevel.FATAL, "pythonic dimensions must be strings",
-                           f"in '{k}' in '{pname}'")
+                    report(
+                        ctx,
+                        LogLevel.FATAL,
+                        "pythonic dimensions must be strings",
+                        f"in '{k}' in '{pname}'",
+                    )
             elif not isinstance(values, list):
                 presets[pname][k] = [values]
             else:
@@ -374,9 +444,12 @@ def validate_presets(ctx):
             for v in values:
                 if isinstance(v, str) and "*" in v:
                     if space[k] is None:
-                        report(ctx, LogLevel.FATAL,
-                               "regex cannot be used on undefined dimensions",
-                               k)
+                        report(
+                            ctx,
+                            LogLevel.FATAL,
+                            "regex cannot be used on undefined dimensions",
+                            k,
+                        )
                     else:
                         pattern = "^" + re.escape(v).replace("\\*", ".*") + "$"
                         regex = re.compile(pattern)
@@ -386,15 +459,18 @@ def validate_presets(ctx):
                 else:
                     new_values.append(v)
             if len(wrong) > 0:
-                report(ctx, LogLevel.FATAL, f"unknown values in preset '{pname}'",
-                       ", ".join(wrong))
+                report(
+                    ctx,
+                    LogLevel.FATAL,
+                    f"unknown values in preset '{pname}'",
+                    ", ".join(wrong),
+                )
             presets[pname][k] = new_values
 
     for pname, pspace in presets.items():
         for k, v in pspace.items():
             if len(v) == 0:
-                report(ctx, LogLevel.ERROR, 
-                       f"empty dimension in preset '{pname}'", k)
+                report(ctx, LogLevel.ERROR, f"empty dimension in preset '{pname}'", k)
 
     if args.presets is None:
         selected_presets = dict()
@@ -405,18 +481,20 @@ def validate_presets(ctx):
                 report(ctx, LogLevel.FATAL, "unknown preset", p)
             else:
                 selected_presets[p] = presets[p]
-    ctx['presets'] = presets
-    ctx['selected_presets'] = selected_presets
+    ctx["presets"] = presets
+    ctx["selected_presets"] = selected_presets
+
 
 def validate_subspace(ctx):
-    subspace = ctx['subspace']
+    subspace = ctx["subspace"]
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
         report(ctx, LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
-    ctx['subspace_size'] = pd.Series([len(v) for k, v in subspace.items()]).prod()
+    ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
+
 
 def validate_args(ctx):
-    args = ctx['args']
+    args = ctx["args"]
     if args.output is None:
         now = "{:%Y%m%d-%H%M}".format(datetime.now())
         args.output = f"trials.{now}.json"
@@ -426,15 +504,12 @@ def validate_args(ctx):
         if not os.path.isfile(file):
             report(ctx, LogLevel.FATAL, f"'{file}' does not exist")
     os.makedirs(args.cache_directory, exist_ok=True)
-    report(ctx, LogLevel.INFO, "input configurations",
-           ", ".join(args.inputs))
+    report(ctx, LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(ctx, LogLevel.INFO, "output data", f"'{args.output}'")
 
+
 def launch(args):
-    ctx = {
-        'args': args,
-        'color': TextColors()
-    }
+    ctx = {"args": args, "color": TextColors()}
     validate_args(ctx)
     read_configurations(ctx)
     build_environment(ctx)
