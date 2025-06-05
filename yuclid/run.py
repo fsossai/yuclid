@@ -20,12 +20,12 @@ def substitute_point_vars(ctx, x, point, point_id):
 
 
 def substitute_global_vars(ctx, x):
-    space_values = ctx["space_values"]
-    space_names = ctx["space_names"]
+    subspace_values = ctx["subspace_values"]
+    subspace_names = ctx["subspace_names"]
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.values\}"
-    y = re.sub(pattern, lambda m: " ".join(space_values[m.group(1)]), x)
+    y = re.sub(pattern, lambda m: " ".join(subspace_values[m.group(1)]), x)
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.names\}"
-    y = re.sub(pattern, lambda m: " ".join(space_names[m.group(1)]), y)
+    y = re.sub(pattern, lambda m: " ".join(subspace_names[m.group(1)]), y)
     return y
 
 
@@ -186,8 +186,6 @@ def define_order(ctx):
 
 def build_subspace(ctx):
     space = ctx["space"]
-    space_names = ctx["space_names"]
-    space_values = ctx["space_values"]
     selected_presets = ctx["selected_presets"]
     subspace = dict()
     for key, values in space.items():
@@ -447,6 +445,8 @@ def validate_subspace(ctx):
     if len(undefined) > 0:
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
+    ctx["subspace_values"] = {key: [x["value"] for x in subspace[key]] for key in subspace}
+    ctx["subspace_names"] = {key: [x["name"] for x in subspace[key]] for key in subspace}
 
 
 def validate_args(ctx):
