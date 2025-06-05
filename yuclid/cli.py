@@ -1,6 +1,7 @@
 import argparse
 import yuclid.run
 import yuclid.plot
+import yuclid.log
 from yuclid import __version__
 
 
@@ -8,6 +9,12 @@ def main():
     parser = argparse.ArgumentParser(prog="yuclid", description="Yuclid CLI tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    parser.add_argument(
+        "--ignore-errors",
+        default=False,
+        action="store_true",
+        help="Yuclid will not abort on any errors unless fatal",
+    )
     # Run subcommand
     run_parser = subparsers.add_parser("run", help="Run experiments and collect data")
     run_parser.add_argument(
@@ -50,12 +57,6 @@ def main():
         default=False,
         action="store_true",
         help="Fold metric values into an array per experiment",
-    )
-    run_parser.add_argument(
-        "--ignore-errors",
-        default=False,
-        action="store_true",
-        help="Yuclid will not abort on any errors unless fatal",
     )
     run_parser.add_argument(
         "--cache-directory",
@@ -137,6 +138,7 @@ def main():
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
     args = parser.parse_args()
+    yuclid.log.init(ignore_errors=args.ignore_errors)
 
     if args.command == "run":
         yuclid.run.launch(args)

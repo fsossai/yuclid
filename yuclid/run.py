@@ -7,50 +7,7 @@ import json
 import sys
 import re
 import os
-
-
-class LogLevel:
-    INFO = 1
-    WARNING = 2
-    ERROR = 3
-    FATAL = 4
-
-
-class TextColors(dict):
-    def __init__(self):
-        if sys.stdout.isatty():
-            self.all = {
-                "none": "\033[0m",
-                "yellow": "\033[93m",
-                "green": "\033[92m",
-                "red": "\033[91m",
-                "bold": "\033[1;97m",
-            }
-        else:
-            self.all = dict()
-
-    def get_color(self, x):
-        return self.all.get(x, "")
-
-    __getattr__ = get_color
-
-
-def report(ctx, level, *pargs, **kwargs):
-    color = ctx["color"]
-    args = ctx["args"]
-    timestamp = "{:%Y-%m-%d %H:%M:%S}".format(datetime.now())
-    log_prefix = {
-        LogLevel.INFO: f"{color.green}INFO{color.none}",
-        LogLevel.WARNING: f"{color.yellow}WARNING{color.none}",
-        LogLevel.ERROR: f"{color.red}ERROR{color.none}",
-        LogLevel.FATAL: f"{color.red}FATAL{color.none}",
-    }.get(level, "UNKNOWN")
-    kwargs["sep"] = kwargs.get("sep", ": ")
-    print(f"{color.bold}yuclid{color.none}", timestamp, log_prefix, *pargs, **kwargs)
-    if level == LogLevel.FATAL:
-        sys.exit(2)
-    if not args.ignore_errors and level == LogLevel.ERROR:
-        sys.exit(1)
+from yuclid.log import LogLevel, TextColors, report
 
 
 def substitute_point_vars(ctx, x, point, point_id):
@@ -129,7 +86,7 @@ def overwrite_configuration(ctx):
                     if current in valid.keys():
                         selection.append(valid[current])
             if len(selection) == 0:
-                report(ctx, LogLevel.FATAL, "invalid value", values)
+                report(LogLevel.FATAL, "invalid value", values)
             subspace[k] = selection
     ctx["subspace"] = subspace
 
@@ -262,42 +219,41 @@ def run_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
     env = ctx["env"]
-    color = ctx["color"]
     if args.dry_run:
         return
     setup = []
     for command in data["setup"]:
         command = substitute_global_vars(ctx, command)
         setup.append(command)
-    report(ctx, LogLevel.INFO, "starting setup")
+    report(LogLevel.INFO, "starting setup")
     errors = False
     for command in setup:
         result = subprocess.run(command, shell=True, env=env)
         if result.returncode != 0:
             errors = True
             report(
-                ctx,
                 LogLevel.ERROR,
                 "setup",
                 f"'{command}'",
                 f"failed (code {result.returncode})",
             )
     if errors:
-        report(ctx, LogLevel.WARNING, "errors have occurred during setup")
-    report(ctx, LogLevel.INFO, "setup completed")
+        report(LogLevel.WARNING, "errors have occurred during setup")
+    report(LogLevel.INFO, "setup completed")
 
 
 def point_to_string(point):
     return ".".join([str(x["name"]) for x in point.values()])
 
 
-def metrics_to_string(ctx, mvalues):
-    color = ctx["color"]
+def metrics_to_string(mvalues):
+    from yuclid.log import _state
+    color = _state["color"]
     return " ".join([f"{color.bold}{m}{color.none}={v}" for m, v in mvalues.items()])
 
 
-def get_progress(ctx, i):
-    return "[{}/{}]".format(i, ctx["subspace_size"])
+def get_progress(i, subspace_size):
+    return "[{}/{}]".format(i, subspace_size)
 
 
 def run_trial(ctx, f, i, configuration):
@@ -305,11 +261,10 @@ def run_trial(ctx, f, i, configuration):
     env = ctx["env"]
     data = ctx["data"]
     order = ctx["order"]
-    color = ctx["color"]
     trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
     point_id = f"yuclid.{i:08x}.tmp"
-    report(ctx, LogLevel.INFO, get_progress(ctx, i), point_to_string(point), "started")
+    report(LogLevel.INFO, get_progress(i, ctx["subspace_size"]), point_to_string(point), "started")
     command = substitute_global_vars(ctx, trial)
     command = substitute_point_vars(ctx, command, point, point_id)
     cmd_result = subprocess.run(
@@ -321,7 +276,6 @@ def run_trial(ctx, f, i, configuration):
     )
     if cmd_result.returncode != 0:
         report(
-            ctx,
             LogLevel.ERROR,
             point_to_string(point),
             f"failed experiment (code {cmd_result.returncode})",
@@ -335,7 +289,6 @@ def run_trial(ctx, f, i, configuration):
         )
         if cmd_result.returncode != 0:
             report(
-                ctx,
                 LogLevel.ERROR,
                 point_to_string(point),
                 "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
@@ -347,7 +300,6 @@ def run_trial(ctx, f, i, configuration):
         NaNs = mvalues_df.columns[mvalues_df.isnull().any()]
         if len(NaNs) > 0:
             report(
-                ctx,
                 LogLevel.WARNING,
                 "the following metrics generated some NaNs",
                 " ".join(list(NaNs)),
@@ -364,11 +316,10 @@ def run_trial(ctx, f, i, configuration):
         for record in mvalues_df.to_dict(orient="records"):
             result.update(record)
             f.write(json.dumps(result) + "\n")
-    report(ctx, LogLevel.INFO, "obtained", metrics_to_string(ctx, mvalues))
+    report(LogLevel.INFO, "obtained", metrics_to_string(mvalues))
     report(
-        ctx,
         LogLevel.INFO,
-        get_progress(ctx, i + 1),
+        get_progress(i + 1, ctx["subspace_size"]),
         point_to_string(point),
         "completed",
     )
@@ -383,7 +334,7 @@ def run_trials(ctx):
     ordered_space = [subspace[x] for x in order]
 
     if "trial" not in data:
-        report(ctx, LogLevel.FATAL, "missing 'trial' command")
+        report(LogLevel.FATAL, "missing 'trial' command")
     if isinstance(data["trial"], str):
         trial = data["trial"]
     elif isinstance(data["trial"], list):
@@ -394,14 +345,13 @@ def run_trials(ctx):
         for i, configuration in enumerate(itertools.product(*ordered_space)):
             point = {key: x for key, x in zip(order, configuration)}
             report(
-                ctx,
                 LogLevel.INFO,
-                get_progress(ctx, i + 1),
+                get_progress(i + 1, ctx["subspace_size"]),
                 "dry run",
                 point_to_string(point),
             )
     else:
-        report(ctx, LogLevel.INFO, f"writing to '{args.output}'")
+        report(LogLevel.INFO, f"writing to '{args.output}'")
         with open(args.output, "a") as f:
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
@@ -438,7 +388,7 @@ def validate_presets(ctx):
     for pname, pspace in presets.items():
         for k, values in pspace.items():
             if k not in space:
-                report(ctx, LogLevel.FATAL, "preset dimension not in space", k)
+                report(LogLevel.FATAL, "preset dimension not in space", k)
             new_values = []
             wrong = []
             for v in values:
@@ -470,7 +420,7 @@ def validate_presets(ctx):
     for pname, pspace in presets.items():
         for k, v in pspace.items():
             if len(v) == 0:
-                report(ctx, LogLevel.ERROR, f"empty dimension in preset '{pname}'", k)
+                report(LogLevel.ERROR, f"empty dimension in preset '{pname}'", k)
 
     if args.presets is None:
         selected_presets = dict()
@@ -478,7 +428,7 @@ def validate_presets(ctx):
         selected_presets = dict()
         for p in args.presets.split(","):
             if p not in presets:
-                report(ctx, LogLevel.FATAL, "unknown preset", p)
+                report(LogLevel.FATAL, "unknown preset", p)
             else:
                 selected_presets[p] = presets[p]
     ctx["presets"] = presets
@@ -489,7 +439,7 @@ def validate_subspace(ctx):
     subspace = ctx["subspace"]
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
-        report(ctx, LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
+        report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
 
 
@@ -502,10 +452,10 @@ def validate_args(ctx):
         args.output = f"{args.output}.json"
     for file in args.inputs:
         if not os.path.isfile(file):
-            report(ctx, LogLevel.FATAL, f"'{file}' does not exist")
+            report(LogLevel.FATAL, f"'{file}' does not exist")
     os.makedirs(args.cache_directory, exist_ok=True)
-    report(ctx, LogLevel.INFO, "input configurations", ", ".join(args.inputs))
-    report(ctx, LogLevel.INFO, "output data", f"'{args.output}'")
+    report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
+    report(LogLevel.INFO, "output data", f"'{args.output}'")
 
 
 def launch(args):

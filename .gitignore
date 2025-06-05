@@ -1,3 +1,7 @@
+.yuclid
+.DS_Store
+trials.*.json
+
 # Python
 *.pyc
 *.pyo
