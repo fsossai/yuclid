@@ -1,3 +1,4 @@
+from yuclid.log import report, LogLevel
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
@@ -40,7 +41,7 @@ def validate_files(args):
         if pathlib.Path(file).suffix in valid_formats:
             valid_files.append(file)
         else:
-            print(f"ERROR: unsupported file format {file}")
+            report(LogLevel.ERROR, f"unsupported file format {file}")
     return valid_files
 
 
@@ -96,16 +97,10 @@ def generate_dataframe(ctx):
             elif file.suffix == ".csv":
                 dfs[file.stem] = pd.read_csv(file)
         except:
-            print(
-                "{}{}could not open {}{}".format(
-                    get_time_prefix(tcolor), tcolor.red, file, tcolor.none
-                )
-            )
+            report(LogLevel.ERROR, f"could not open {file}")
 
     if len(dfs) == 0:
-        print(
-            f"{get_time_prefix(tcolor)}{tcolor.red}no valid source of data{tcolor.none}"
-        )
+        report(LogLevel.ERROR, "no valid source of data")
         ctx["alive"] = False
         sys.exit(1)
 
@@ -135,7 +130,7 @@ def generate_space(ctx):
     z_size = df[args.z].nunique()
     dims = list(df.columns.difference([args.x, args.z] + y_dims))
     if len(dims) > 9:
-        print("ERROR: supporting up to 9 free dimensions")
+        report(LogLevel.ERROR, "supporting up to 9 free dimensions")
         sys.exit(1)
     dim_keys = "123456789"[: len(dims)]
     selected_index = 0 if len(dims) > 0 else None
@@ -176,19 +171,14 @@ def file_monitor(ctx):
             space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
             tcolor = ctx["tcolor"]
             sizes = [
-                "{}={}{}{}".format(d, tcolor.bold, ctx["df"][d].nunique(), tcolor.none)
-                for d in space_columns
+                f"{d}={ctx['df'][d].nunique()}" for d in space_columns
             ]
             missing = compute_missing(ctx)
-            print("{}new space: {}".format(get_time_prefix(tcolor), " | ".join(sizes)))
+            report(LogLevel.INFO, f"new space: {' | '.join(sizes)}")
             if len(missing) > 0:
-                print(
-                    "{}{}at least {} missing experiments{}".format(
-                        get_time_prefix(tcolor),
-                        tcolor.yellow,
-                        len(missing),
-                        tcolor.none,
-                    )
+                report(
+                    LogLevel.WARNING,
+                    f"at least {len(missing)} missing experiments"
                 )
             update_table(ctx)
             update_plot(ctx)
@@ -240,7 +230,7 @@ def sync_files(ctx):
             mirror = get_local_mirror(file)
             proc = subprocess.run(["scp", file, mirror])
             if proc.returncode != 0:
-                print(f"scp transfer failed for {file}")
+                report(LogLevel.ERROR, f"scp transfer failed for {file}")
                 sys.exit(1)
             jobs.append((file, mirror))
 
@@ -276,7 +266,12 @@ def update_plot(ctx, padding_factor=1.05):
         sub_df = sub_df[sub_df[d] == k]
     ax_plot.clear()
 
-    max_digits = int(np.floor(np.log10(sub_df[y_axis].max()) + 1))
+    max_val = sub_df[y_axis].abs().max()
+    if max_val == 0:
+        max_digits = 1
+    else:
+        max_digits = int(np.floor(np.log10(max_val) + 1))
+        
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
     y_range = f"[{y_left:.{max_digits}g} - {y_right:.{max_digits}g}]"
 
@@ -412,9 +407,7 @@ def save_to_file(ctx, outfile=None):
     outfile = outfile or get_config_name(ctx) + ".pdf"
     ctx["fig"].savefig(outfile)
     tcolor = ctx["tcolor"]
-    print(
-        f"{get_time_prefix(tcolor)}saved to " f"{tcolor.green}'{outfile}'{tcolor.none}"
-    )
+    report(LogLevel.INFO, f"saved to '{outfile}'")
 
 
 def on_key(event, ctx):
@@ -473,25 +466,25 @@ def validate_options(ctx):
     c += 1 if args.normalize is not None else 0
     c += 1 if args.speedup is not None else 0
     if c > 1:
-        print("ERROR: specifiy only one among `--normalize`, `--speedup`")
+        report(LogLevel.ERROR, "specifiy only one among `--normalize`, `--speedup`")
         sys.exit(2)
     if c == 0:
         if args.geomean:
-            print("ERROR: `--geomean` can only be used together with `--normalize`")
+            report(LogLevel.ERROR, "`--geomean` can only be used together with `--normalize`")
             sys.exit(2)
     if args.normalize is not None or args.speedup is not None:
         available = df[args.z].unique()
         val = df[args.z].dtype.type(args.normalize or args.speedup)
         if val not in available:
-            print(
-                "ERROR: `--normalize` and `--speedup`"
-                " must be one of the following values:",
+            report(
+                LogLevel.ERROR,
+                "`--normalize` and `--speedup` must be one of the following values:",
                 available,
             )
             sys.exit(2)
     if args.speedup is not None:
         if not pd.api.types.is_numeric_dtype(df[args.x]):
-            print("ERROR: `--speedup` only works when the X-axis has a numeric type.")
+            report(LogLevel.ERROR, "`--speedup` only works when the X-axis has a numeric type.")
             sys.exit(2)
 
     # Y-axis
@@ -500,47 +493,41 @@ def validate_options(ctx):
     for col in [args.x, args.z] + y_dims:
         if col not in df.columns:
             available = list(df.columns)
-            print(f"ERROR: '{col}' is not valid. Available: {available}")
+            report(LogLevel.ERROR, f"'{col}' is not valid. Available: {available}")
             sys.exit(2)
     for y in y_dims:
         if not pd.api.types.is_numeric_dtype(df[y]):
             t = df[y].dtype
-            print(f"ERROR: Y-axis must have a numeric type. '{y_axis}' has type '{t}'")
+            report(LogLevel.ERROR, f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'")
             sys.exit(1)
 
     zdom = df[args.z].unique()
     if len(zdom) == 1 and args.geomean:
-        print(
-            f"WARNING: `--geomean` is superfluous because "
-            f"'{zdom[0]}' is the only value in the '{args.z}' group"
+        report(
+            LogLevel.WARNING,
+            f"`--geomean` is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group"
         )
     if args.geomean and args.lines:
-        print("ERROR: `--geomean` and `--lines` cannot be used together")
+        report(LogLevel.ERROR, "`--geomean` and `--lines` cannot be used together")
         sys.exit(2)
     if args.x in y_dims:
-        print(f"ERROR: X-axis and Y-axis must be different dimensions. Given {args.x}")
+        report(LogLevel.ERROR, f"X-axis and Y-axis must be different dimensions. Given {args.x}")
         sys.exit(2)
     if args.x == args.z or args.z in y_dims:
-        print(
-            f"ERROR: the `-z` dimension must be different from the dimension used on"
-            " the X or Y axis"
-        )
+        report(LogLevel.ERROR, "the `-z` dimension must be different from the dimension used on the X or Y axis")
         sys.exit(2)
     space_columns = df.columns.difference(y_dims)
     for d in space_columns:
         n = df[d].nunique()
         if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
-            print(
-                f"WARNING: '{d}' seems to have many ({n}) numeric values."
-                " Are you sure this is not supposed to be the Y-axis?"
-            )
+            report(LogLevel.WARNING, f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?")
 
     if args.show_missing:
         missing = compute_missing(ctx)
         if len(missing) > 0:
-            print("WARNING: missing experiments:")
-            print(missing.to_string(index=False))
-            print()
+            report(LogLevel.WARNING, "missing experiments:")
+            report(LogLevel.WARNING, "\n" + missing.to_string(index=False))
+            report(LogLevel.WARNING, "")
 
     ctx["y_dims"] = y_dims
     ctx["y_axis"] = y_dims[0]
@@ -551,7 +538,7 @@ def start_gui(ctx):
     update_plot(ctx)
     update_table(ctx)
     threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
-    print("{}application running".format(get_time_prefix(ctx["tcolor"])))
+    report(LogLevel.INFO, "application running")
     time.sleep(0.5)
     plt.show()
 
