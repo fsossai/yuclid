@@ -170,16 +170,11 @@ def file_monitor(ctx):
             compute_ylimits(ctx)
             space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
             tcolor = ctx["tcolor"]
-            sizes = [
-                f"{d}={ctx['df'][d].nunique()}" for d in space_columns
-            ]
+            sizes = [f"{d}={ctx['df'][d].nunique()}" for d in space_columns]
             missing = compute_missing(ctx)
             report(LogLevel.INFO, f"new space: {' | '.join(sizes)}")
             if len(missing) > 0:
-                report(
-                    LogLevel.WARNING,
-                    f"at least {len(missing)} missing experiments"
-                )
+                report(LogLevel.WARNING, f"at least {len(missing)} missing experiments")
             update_table(ctx)
             update_plot(ctx)
         last_hash = current_hash
@@ -271,7 +266,7 @@ def update_plot(ctx, padding_factor=1.05):
         max_digits = 1
     else:
         max_digits = int(np.floor(np.log10(max_val) + 1))
-        
+
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
     y_range = f"[{y_left:.{max_digits}g} - {y_right:.{max_digits}g}]"
 
@@ -470,7 +465,10 @@ def validate_options(ctx):
         sys.exit(2)
     if c == 0:
         if args.geomean:
-            report(LogLevel.ERROR, "`--geomean` can only be used together with `--normalize`")
+            report(
+                LogLevel.ERROR,
+                "`--geomean` can only be used together with `--normalize`",
+            )
             sys.exit(2)
     if args.normalize is not None or args.speedup is not None:
         available = df[args.z].unique()
@@ -484,7 +482,10 @@ def validate_options(ctx):
             sys.exit(2)
     if args.speedup is not None:
         if not pd.api.types.is_numeric_dtype(df[args.x]):
-            report(LogLevel.ERROR, "`--speedup` only works when the X-axis has a numeric type.")
+            report(
+                LogLevel.ERROR,
+                "`--speedup` only works when the X-axis has a numeric type.",
+            )
             sys.exit(2)
 
     # Y-axis
@@ -498,29 +499,41 @@ def validate_options(ctx):
     for y in y_dims:
         if not pd.api.types.is_numeric_dtype(df[y]):
             t = df[y].dtype
-            report(LogLevel.ERROR, f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'")
+            report(
+                LogLevel.ERROR,
+                f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'",
+            )
             sys.exit(1)
 
     zdom = df[args.z].unique()
     if len(zdom) == 1 and args.geomean:
         report(
             LogLevel.WARNING,
-            f"`--geomean` is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group"
+            f"`--geomean` is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group",
         )
     if args.geomean and args.lines:
         report(LogLevel.ERROR, "`--geomean` and `--lines` cannot be used together")
         sys.exit(2)
     if args.x in y_dims:
-        report(LogLevel.ERROR, f"X-axis and Y-axis must be different dimensions. Given {args.x}")
+        report(
+            LogLevel.ERROR,
+            f"X-axis and Y-axis must be different dimensions. Given {args.x}",
+        )
         sys.exit(2)
     if args.x == args.z or args.z in y_dims:
-        report(LogLevel.ERROR, "the `-z` dimension must be different from the dimension used on the X or Y axis")
+        report(
+            LogLevel.ERROR,
+            "the `-z` dimension must be different from the dimension used on the X or Y axis",
+        )
         sys.exit(2)
     space_columns = df.columns.difference(y_dims)
     for d in space_columns:
         n = df[d].nunique()
         if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
-            report(LogLevel.WARNING, f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?")
+            report(
+                LogLevel.WARNING,
+                f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
+            )
 
     if args.show_missing:
         missing = compute_missing(ctx)

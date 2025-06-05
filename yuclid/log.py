@@ -1,11 +1,13 @@
 from datetime import datetime
 import sys
 
+
 class LogLevel:
     INFO = 1
     WARNING = 2
     ERROR = 3
     FATAL = 4
+
 
 class TextColors(dict):
     def __init__(self):
@@ -25,14 +27,14 @@ class TextColors(dict):
 
     __getattr__ = get_color
 
-_state = {
-    "color": None,
-    "ignore_errors": None
-}
+
+_state = {"color": None, "ignore_errors": None}
+
 
 def init(ignore_errors):
     _state["color"] = TextColors()
     _state["ignore_errors"] = ignore_errors
+
 
 def report(level, *pargs, **kwargs):
     color = _state["color"]
