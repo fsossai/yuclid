@@ -458,9 +458,9 @@ def validate_subspace(ctx):
 
 def validate_args(ctx):
     args = ctx["args"]
+    now = "{:%Y%m%d-%H%M}".format(datetime.now())
     filename = f"trials.{now}.json"
 
-    now = "{:%Y%m%d-%H%M}".format(datetime.now())
     if args.output is None and args.output_dir is None:
         ctx["output"] = filename
     elif args.output is not None and args.output_dir is not None:
