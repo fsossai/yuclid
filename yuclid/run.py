@@ -462,6 +462,7 @@ def validate_args(ctx):
     os.makedirs(args.cache_directory, exist_ok=True)
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", f"'{args.output}'")
+    report(LogLevel.INFO, "cache directory", f"'{args.cache_directory}'")
 
 
 def launch(args):
