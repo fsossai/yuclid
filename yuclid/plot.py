@@ -12,7 +12,7 @@ import argparse
 import datetime
 import pathlib
 import hashlib
-import spread
+import yuclid.spread as spread
 import time
 import sys
 
@@ -23,15 +23,14 @@ class TextColor:
     red = "\033[91m"
     bold = "\033[1;97m"
 
-def normalize(input_df):
+def normalize(input_df, args, y_axis):
     b = input_df[args.z].dtype.type(args.normalize)
     estimator = scipy.stats.gmean if args.geomean else np.median
     ref = input_df.groupby([args.x, args.z])[y_axis]
     ref = ref.apply(lambda x: estimator(x))
     input_df[y_axis] /= input_df[args.x].map(lambda x: ref[(x, b)])
 
-def validate_files():
-    global valid_files
+def validate_files(args):
     valid_files = []
     valid_formats = [".json", ".csv"]
     for file in args.files:
@@ -39,21 +38,21 @@ def validate_files():
             valid_files.append(file)
         else:
             print(f"ERROR: unsupported file format {file}")
+    return valid_files
 
 def get_local_mirror(rfile):
     return pathlib.Path(rfile.split(":")[1]).name
 
-def locate_files():
-    global local_files
+def locate_files(valid_files):
     local_files = []
     for file in valid_files:
         if is_remote(file):
             local_files.append(get_local_mirror(file))
         else:
             local_files.append(file)
+    return local_files
 
-def initialize_figure():
-    global fig, ax_table, ax_plot
+def initialize_figure(ctx):
     fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [20, 1]})
     fig.set_size_inches(12, 10)
     ax_plot = axs[0]
@@ -65,15 +64,20 @@ def initialize_figure():
                          transform=fig.transFigure, color="lightgrey")
     fig.add_artist(line)
     fig.subplots_adjust(top=0.95, bottom=0.1, hspace=0.3)
-    fig.canvas.mpl_connect("key_press_event", on_key)
-    fig.canvas.mpl_connect("close_event", on_close)
+    fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
+    fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
+    ctx['fig'] = fig
+    ctx['ax_plot'] = ax_plot
+    ctx['ax_table'] = ax_table
 
-def get_time_prefix():
+def get_time_prefix(tcolor):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"{tcolor.bold}{now}:{tcolor.none} "
 
-def generate_dataframe():
-    global df, alive, dfs
+def generate_dataframe(ctx):
+    args = ctx['args']
+    tcolor = ctx['tcolor']
+    local_files = ctx['local_files']
     dfs = dict()
     for file in local_files:
         file = pathlib.Path(file)
@@ -84,11 +88,11 @@ def generate_dataframe():
                 dfs[file.stem] = pd.read_csv(file)
         except:
             print("{}{}could not open {}{}".format(
-                get_time_prefix(), tcolor.red, file, tcolor.none))
+                get_time_prefix(tcolor), tcolor.red, file, tcolor.none))
 
     if len(dfs) == 0:
-        print(f"{get_time_prefix()}{tcolor.red}no valid source of data{tcolor.none}")
-        alive = False
+        print(f"{get_time_prefix(tcolor)}{tcolor.red}no valid source of data{tcolor.none}")
+        ctx['alive'] = False
         sys.exit(1)
 
     df = pd.concat(dfs)
@@ -101,12 +105,16 @@ def generate_dataframe():
     for k, v in user_filter.items():
         user_filter[k] = df[k].dtype.type(v)
 
-    user_filter = (df[list(user_filter.keys())] == user_filter.values()).all(axis=1)
-    df = df[user_filter]
+    if user_filter:
+        user_filter_mask = (df[list(user_filter.keys())] == user_filter.values()).all(axis=1)
+        df = df[user_filter_mask]
 
-def generate_space():
-    global dims, dim_keys, selected_index, domain, position
-    global z_size, z_dom
+    ctx['df'] = df
+
+def generate_space(ctx):
+    args = ctx['args']
+    df = ctx['df']
+    y_dims = ctx['y_dims']
     z_size = df[args.z].nunique()
     dims = list(df.columns.difference([args.x, args.z] + y_dims))
     if len(dims) > 9:
@@ -120,43 +128,56 @@ def generate_space():
         domain[d] = df[d].unique()
         position[d] = 0
     z_dom = df[args.z].unique()
+    ctx.update({
+        'z_size': z_size,
+        'dims': dims,
+        'dim_keys': dim_keys,
+        'selected_index': selected_index,
+        'domain': domain,
+        'position': position,
+        'z_dom': z_dom
+    })
 
-def file_monitor():
+def file_monitor(ctx):
     current_hash = None
     last_hash = None
-    while alive:
+    while ctx['alive']:
         try:
             current_hash = ""
-            for file in local_files:
+            for file in ctx['local_files']:
                 with open(file, "rb") as f:
                     current_hash += hashlib.md5(f.read()).hexdigest()
         except FileNotFoundError:
             current_hash = None
         if current_hash != last_hash:
-            generate_dataframe()
-            generate_space()
-            compute_ylimits()
-            space_columns = df.columns.difference([y_axis])
+            generate_dataframe(ctx)
+            generate_space(ctx)
+            compute_ylimits(ctx)
+            space_columns = ctx['df'].columns.difference([ctx['y_axis']])
+            tcolor = ctx['tcolor']
             sizes = ["{}={}{}{}".format(
-                d, tcolor.bold, df[d].nunique(), tcolor.none) for d in space_columns]
-            missing = compute_missing()
-            print("{}new space: {}".format(get_time_prefix(), " | ".join(sizes)))
+                d, tcolor.bold, ctx['df'][d].nunique(), tcolor.none) for d in space_columns]
+            missing = compute_missing(ctx)
+            print("{}new space: {}".format(get_time_prefix(tcolor), " | ".join(sizes)))
             if len(missing) > 0:
                 print("{}{}at least {} missing experiments{}".format(
-                    get_time_prefix(),
+                    get_time_prefix(tcolor),
                     tcolor.yellow, len(missing), tcolor.none))
-            update_table()
-            update_plot()
+            update_table(ctx)
+            update_plot(ctx)
         last_hash = current_hash
         time.sleep(1)
 
-def update_table():
+def update_table(ctx):
+    ax_table = ctx['ax_table']
+    dims = ctx['dims']
+    domain = ctx['domain']
+    position = ctx['position']
+    selected_index = ctx['selected_index']
     ax_table.clear()
     ax_table.axis("off")
     if len(dims) == 0:
         return
-    arrow_left = "\u2190"
-    arrow_right = "\u2192"
     arrow_up = "\u2191"
     arrow_down = "\u2193"
     fields = []
@@ -174,12 +195,14 @@ def update_table():
             arrows.append("")
     ax_table.table(cellText=[fields, values, arrows],
                    cellLoc="center", edges="open", loc="center")
-    fig.canvas.draw_idle()
+    ctx['fig'].canvas.draw_idle()
 
 def is_remote(file):
     return "@" in file
 
-def sync_files():
+def sync_files(ctx):
+    args = ctx['args']
+    valid_files = ctx['valid_files']
     jobs = []
     for file in valid_files:
         if is_remote(file):
@@ -191,7 +214,7 @@ def sync_files():
             jobs.append((file, mirror))
 
     def rsync(src, dst):
-        while alive:
+        while ctx['alive']:
             subprocess.run(
                 ["rsync", "-z", "--checksum", src, dst],
                 stdout=subprocess.DEVNULL,
@@ -202,7 +225,19 @@ def sync_files():
     for job in jobs:
         threading.Thread(target=rsync, daemon=True, args=job).start()
 
-def update_plot(padding_factor=1.05):
+def update_plot(ctx, padding_factor=1.05):
+    args = ctx['args']
+    df = ctx['df']
+    dims = ctx['dims']
+    domain = ctx['domain']
+    position = ctx['position']
+    y_axis = ctx['y_axis']
+    y_dims = ctx['y_dims']
+    z_dom = ctx['z_dom']
+    z_size = ctx['z_size']
+    ax_plot = ctx['ax_plot']
+    top = ctx.get('top', None)
+
     sub_df = df.copy()
     for d in dims:
         k = domain[d][position[d]]
@@ -220,7 +255,7 @@ def update_plot(padding_factor=1.05):
             cols = gm_df.columns.difference([y_axis]).to_list()
             gm_df = gm_df.groupby(cols)[y_axis].apply(scipy.stats.gmean).reset_index()
             sub_df = pd.concat([sub_df, gm_df])
-        normalize(sub_df)
+        normalize(sub_df, args, y_axis)
 
     if args.speedup is not None:
         c1 = sub_df[args.z] == args.speedup
@@ -289,70 +324,78 @@ def update_plot(padding_factor=1.05):
     ax_plot.set_title("  |  ".join(title))
 
     if args.geomean:
-        # hacky way to compute the middle point in between two bar groups
         pp = sorted(ax_plot.patches, key=lambda x: x.get_x())
         x = pp[-z_size].get_x() + pp[-z_size-1].get_x() + pp[-z_size-1].get_width()
         plt.axvline(x=x/2, color="grey", linewidth=1, linestyle="-")
 
-    fig.canvas.draw_idle()
+    ctx['fig'].canvas.draw_idle()
 
-def get_config_name():
-    status = ["speedup" if args.speedup else y_axis]
+def get_config_name(ctx):
+    y_axis = ctx['y_axis']
+    dims = ctx['dims']
+    domain = ctx['domain']
+    position = ctx['position']
+    status = ["speedup" if ctx['args'].speedup else y_axis]
     status += [domain[d][position[d]] for d in dims]
     name = "_".join(status)
     return name
 
-def save_to_file(outfile=None):
-    outfile = outfile or get_config_name() + ".pdf"
-    fig.savefig(outfile)
-    print(f"{get_time_prefix()}saved to "
+def save_to_file(ctx, outfile=None):
+    outfile = outfile or get_config_name(ctx) + ".pdf"
+    ctx['fig'].savefig(outfile)
+    tcolor = ctx['tcolor']
+    print(f"{get_time_prefix(tcolor)}saved to "
           f"{tcolor.green}'{outfile}'{tcolor.none}")
 
-def on_key(event):
-    global selected_index, y_axis
+def on_key(event, ctx):
+    selected_index = ctx['selected_index']
+    dims = ctx['dims']
+    domain = ctx['domain']
+    position = ctx['position']
+    y_dims = ctx['y_dims']
+    y_axis = ctx['y_axis']
     if event.key in ["enter", " ", "up", "down"]:
-        if event.key in [" ", "enter", "up"]:
-            x = 1
-        elif event.key in ["down"]:
-            x = -1
+        x = 1 if event.key in [" ", "enter", "up"] else -1
         if selected_index is None:
             return
         selected_dim = dims[selected_index]
         cur_pos = position[selected_dim]
         new_pos = (cur_pos + x) % domain[selected_dim].size
         position[selected_dim] = new_pos
-        update_plot()
-        update_table()
+        update_plot(ctx)
+        update_table(ctx)
     elif event.key in ["left", "right"]:
         if selected_index is None:
             return
         if event.key == "left":
-            selected_index = (selected_index - 1) % len(dims)
+            ctx['selected_index'] = (selected_index - 1) % len(dims)
         else:
-            selected_index = (selected_index + 1) % len(dims)
-        update_table()
+            ctx['selected_index'] = (selected_index + 1) % len(dims)
+        update_table(ctx)
     elif event.key in "123456789":
         new_idx = int(event.key) - 1
         if new_idx < len(y_dims):
-            y_axis = y_dims[new_idx]
-            compute_ylimits()
-            update_plot()
+            ctx['y_axis'] = y_dims[new_idx]
+            compute_ylimits(ctx)
+            update_plot(ctx)
     elif event.key in ".":
-        save_to_file()
+        save_to_file(ctx)
 
-def on_close(event):
-    global alive
-    alive = False
+def on_close(event, ctx):
+    ctx['alive'] = False
 
-def compute_missing():
+def compute_missing(ctx):
+    df = ctx['df']
+    y_dims = ctx['y_dims']
     space_columns = df.columns.difference(y_dims)
     expected = set(itertools.product(*[df[col].unique() for col in space_columns]))
     observed = set(map(tuple, df[space_columns].drop_duplicates().values))
     missing = expected - observed
     return pd.DataFrame(list(missing), columns=space_columns)
 
-def validate_options():
-    global y_dims, y_axis
+def validate_options(ctx):
+    args = ctx['args']
+    df = ctx['df']
     c = 0
     c += 1 if args.normalize is not None else 0
     c += 1 if args.speedup is not None else 0
@@ -411,63 +454,40 @@ def validate_options():
                   " Are you sure this is not supposed to be the Y-axis?")
 
     if args.show_missing:
-        missing = compute_missing()
+        missing = compute_missing(ctx)
         if len(missing) > 0:
             print("WARNING: missing experiments:")
             print(missing.to_string(index=False))
             print()
 
-def start_gui():
-    global alive
-    alive = True
-    update_plot()
-    update_table()
-    threading.Thread(target=file_monitor, daemon=True).start()
-    print("{}application running".format(get_time_prefix()))
+    ctx['y_dims'] = y_dims
+    ctx['y_axis'] = y_dims[0]
+
+def start_gui(ctx):
+    ctx['alive'] = True
+    update_plot(ctx)
+    update_table(ctx)
+    threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
+    print("{}application running".format(get_time_prefix(ctx['tcolor'])))
     time.sleep(0.5)
     plt.show()
 
-def parse_args():
-    global args
-    parser = argparse.ArgumentParser()
-    parser.add_argument("files", metavar="FILES", type=str, nargs="+",
-        help="JSON Lines or CSV files")
-    parser.add_argument("-x", required=True,
-        help="X-axis column name")
-    parser.add_argument("-y", required=True,
-        help="Comma-separated Y-axis column names")
-    parser.add_argument("-z", required=False, default="file",
-        help="Grouping column name")
-    parser.add_argument("-n", "--normalize", default=None,
-        help="Normalize w.r.t. a value in -z")
-    parser.add_argument("-s", "--speedup", default=None,
-        help="Reverse-normalize w.r.t. a value in -z")
-    parser.add_argument("-m", "--spread-measure", default="pi95",
-        help="Measure of dispersion. Available: " + ", ".join(spread.available))
-    parser.add_argument("-r", "--rsync-interval", metavar="S", type=float, default=5,
-        help="[seconds] Remote synchronization interval")
-    parser.add_argument("-l", "--lines", action="store_true", default=False,
-        help="Plot with lines instead of bars")
-    parser.add_argument("-g", "--geomean", action="store_true", default=False,
-        help="Include a geomean summary")
-    parser.add_argument("-f", "--filter", nargs="*",
-        help="Filter dimension with explicit values. E.g. -f a=1 b=value")
-    parser.add_argument("--colorblind", action="store_true", default=False,
-        help="Enable colorblind palette")
-    parser.add_argument("--show-missing", action="store_true", default=False,
-        help="Show missing experiments if any")
-    args = parser.parse_args()
-
-def compute_ylimits():
-    global top
+def compute_ylimits(ctx):
+    args = ctx['args']
+    dims = ctx['dims']
+    df = ctx['df']
+    y_axis = ctx['y_axis']
+    domain = ctx['domain']
+    top = None
     if len(dims) == 0:
+        ctx['top'] = None
         return
     if args.normalize:
         top = 0
         for config in itertools.product(*domain.values()):
             filt = (df[domain.keys()] == config).all(axis=1)
             df_filtered = df[filt].copy()
-            normalize(df_filtered)
+            normalize(df_filtered, args, y_axis)
             zx = df_filtered.groupby([args.z, args.x])[y_axis]
             t = zx.apply(spread.upper(args.spread_measure))
             top = max(top, t.max())
@@ -479,22 +499,20 @@ def compute_ylimits():
         top = baseline / df[y_axis].min()
     else:
         top = df[y_axis].max()
+    ctx['top'] = top
 
-def main():
-    global tcolor, top, alive
-    tcolor = TextColor()
-    top = None
-    alive = True
-    parse_args()
-    validate_files()
-    locate_files()
-    sync_files()
-    generate_dataframe()
-    validate_options()
-    generate_space()
-    compute_ylimits()
-    initialize_figure()
-    start_gui()
-
-if __name__ == "__main__":
-    main()
+def launch(args):
+    ctx = {
+        'args': args,
+        'tcolor': TextColor(),
+        'alive': True
+    }
+    ctx['valid_files'] = validate_files(args)
+    ctx['local_files'] = locate_files(ctx['valid_files'])
+    sync_files(ctx)
+    generate_dataframe(ctx)
+    validate_options(ctx)
+    generate_space(ctx)
+    compute_ylimits(ctx)
+    initialize_figure(ctx)
+    start_gui(ctx)

@@ -1,0 +1,73 @@
+import argparse
+import yuclid.run
+import yuclid.plot
+from yuclid import __version__
+
+def main():
+    parser = argparse.ArgumentParser(prog="yuclid", description='Yuclid CLI tool')
+    subparsers = parser.add_subparsers(dest='command', required=True)
+
+    # Run subcommand
+    run_parser = subparsers.add_parser('run', help='Run experiments and collect data')
+    run_parser.add_argument("-i", "--inputs", default=["yuclid.json"], nargs="*",
+        help="Specify one or more configuration files. Default is 'yuclid.json'")
+    run_parser.add_argument("-r", "--order", default=None,
+        help="Overwrite space order. E.g. dim1,dim2")
+    run_parser.add_argument("-o", "--output", default=None,
+        help="JSON output file path for the generated data")
+    run_parser.add_argument("-p", "--presets", default=None,
+        help="Specify a combination of presets to run. E.g. large,machine1")
+    run_parser.add_argument("-s", "--select", nargs="*", default=None,
+        help="Select a subset of names/values for each dimension. E.g. dim=val1,val2")
+    run_parser.add_argument("--verbose-data", default=False, action="store_true",
+        help="Dump both name and values of dimension")
+    run_parser.add_argument("--fold", default=False, action="store_true",
+        help="Fold metric values into an array per experiment")
+    run_parser.add_argument("--ignore-errors", default=False, action="store_true",
+        help="Yuclid will not abort on any errors unless fatal")
+    run_parser.add_argument("--cache-directory", default=".yuclid",
+        help="Directory where temporary file will be saved")
+    run_parser.add_argument("--dry-run", default=False, action="store_true",
+        help="Show experiment that would run")
+
+    # Plot subcommand
+    plot_parser = subparsers.add_parser('plot', help='Plot data in a GUI')
+    plot_parser.add_argument("files", metavar="FILES", type=str, nargs="+",
+        help="JSON Lines or CSV files")
+    plot_parser.add_argument("-x", required=True,
+        help="X-axis column name")
+    plot_parser.add_argument("-y", required=True,
+        help="Comma-separated Y-axis column names")
+    plot_parser.add_argument("-z", required=False, default="file",
+        help="Grouping column name")
+    plot_parser.add_argument("-n", "--normalize", default=None,
+        help="Normalize w.r.t. a value in -z")
+    plot_parser.add_argument("-s", "--speedup", default=None,
+        help="Reverse-normalize w.r.t. a value in -z")
+    plot_parser.add_argument("-m", "--spread-measure", default="pi95",
+        help="Measure of dispersion. Available: pi95, ...")
+    plot_parser.add_argument("-r", "--rsync-interval", metavar="S", type=float, default=5,
+        help="[seconds] Remote synchronization interval")
+    plot_parser.add_argument("-l", "--lines", action="store_true", default=False,
+        help="Plot with lines instead of bars")
+    plot_parser.add_argument("-g", "--geomean", action="store_true", default=False,
+        help="Include a geomean summary")
+    plot_parser.add_argument("-f", "--filter", nargs="*",
+        help="Filter dimension with explicit values. E.g. -f a=1 b=value")
+    plot_parser.add_argument("--colorblind", action="store_true", default=False,
+        help="Enable colorblind palette")
+    plot_parser.add_argument("--show-missing", action="store_true", default=False,
+        help="Show missing experiments if any")
+
+    parser.add_argument('--version', action='version', version='yuclid ' + __version__)
+
+    args = parser.parse_args()
+
+    if args.command == 'run':
+        yuclid.run.launch(args)
+    elif args.command == 'plot':
+        yuclid.plot.launch(args)
+
+if __name__ == "__main__":
+    main()
+
