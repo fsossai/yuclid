@@ -97,7 +97,7 @@ def overwrite_configuration(ctx):
         for k, values in new_values.items():
             selection = []
             if subspace[k] is None:
-                selection = [{"name": str(x), "value": x} for x in values.split(",")]
+                selection = [normalize_point(x) for x in values.split(",")]
             else:
                 valid = {str(x["name"]): x for x in subspace[k]}
                 for current in values.split(","):
@@ -383,12 +383,20 @@ def run_trial(ctx, f, i, configuration):
     f.flush()
 
 
+def trim_groups(subspace):
+    return subspace
+
+
+def compatible_groups(configuration):
+    non_neutral_groups = [x["group"] for x in configuration if x["group"] != 0]
+    return len(set(non_neutral_groups)) == 1
+
+
 def run_trials(ctx):
     args = ctx["args"]
     data = ctx["data"]
     order = ctx["order"]
     subspace = ctx["subspace"]
-    ordered_space = [subspace[x] for x in order]
 
     if len(data.get("trial", [])) == 0:
         report(LogLevel.FATAL, "missing 'trial' command")
@@ -402,19 +410,21 @@ def run_trials(ctx):
     ctx["trial"] = trial
 
     if args.dry_run:
-        for i, configuration in enumerate(itertools.product(*ordered_space)):
+        for i, configuration in enumerate(ctx["subspace_points"]):
             point = {key: x for key, x in zip(order, configuration)}
-            report(
-                LogLevel.INFO,
-                get_progress(i + 1, ctx["subspace_size"]),
-                "dry run",
-                point_to_string(point),
-            )
+            if compatible_groups(configuration):
+                report(
+                    LogLevel.INFO,
+                    get_progress(i + 1, ctx["subspace_size"]),
+                    "dry run",
+                    point_to_string(point),
+                )
     else:
         with open(ctx["output"], "a") as f:
-            for i, configuration in enumerate(itertools.product(*ordered_space)):
-                run_trial(ctx, f, i, configuration)
-                f.flush()
+            for i, configuration in enumerate(ctx["subspace_points"]):
+                if compatible_groups(configuration):
+                    run_trial(ctx, f, i, configuration)
+                    f.flush()
 
 
 def validate_presets(ctx):
@@ -499,18 +509,33 @@ def validate_presets(ctx):
 
 def validate_subspace(ctx):
     subspace = ctx["subspace"]
+    order = ctx["order"]
+    ordered_subspace = [subspace[x] for x in order]
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
         hint = "define dimensions with presets or select them with --select. "
         hint += "E.g. --select {}=value1,value2".format(undefined[0])
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
-    ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
+
+    ctx["subspace_points"] = []
+    for point in itertools.product(*ordered_subspace):
+        if compatible_groups(point):
+            ctx["subspace_points"].append(point)
+    ctx["subspace_size"] = len(ctx["subspace_points"])
+
     ctx["subspace_values"] = {
         key: [x["value"] for x in subspace[key]] for key in subspace
     }
     ctx["subspace_names"] = {
         key: [x["name"] for x in subspace[key]] for key in subspace
     }
+
+    # checking group compatibility
+    for key, values in subspace.items():
+        groups = {x["group"] for x in values}
+        if len(groups) > 1 and 0 in groups:
+            hint = "items with neutral group (i.e. 0) should be all or none"
+            report(LogLevel.WARNING, "unusual group configuration", key, hint=hint)
 
 
 def validate_args(ctx):
@@ -547,6 +572,7 @@ def launch(args):
     read_configurations(ctx)
     build_environment(ctx)
     build_space(ctx)
+    define_order(ctx)
     validate_presets(ctx)
 
     if len(ctx["selected_presets"]) > 0:
@@ -556,7 +582,6 @@ def launch(args):
             build_subspace(ctx)
             overwrite_configuration(ctx)
             validate_subspace(ctx)
-            define_order(ctx)
             run_setup(ctx)
             run_trials(ctx)
             report(LogLevel.INFO, "completed preset", preset_name)
@@ -564,7 +589,6 @@ def launch(args):
         ctx["subspace"] = ctx["space"].copy()
         overwrite_configuration(ctx)
         validate_subspace(ctx)
-        define_order(ctx)
         run_setup(ctx)
         run_trials(ctx)
 
