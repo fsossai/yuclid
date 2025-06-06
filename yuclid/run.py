@@ -254,20 +254,16 @@ def run_setup(ctx):
                 command,
                 shell=True,
                 universal_newlines=True,
-                capture_output=True,
+                capture_output=False,
                 env=ctx["env"],
             )
             if result.returncode != 0:
                 errors = True
-                help = "executed command: {}".format(
-                    command,
-                )
                 report(
                     LogLevel.ERROR,
                     "setup",
                     f"'{command}'",
-                    f"failed (code {result.returncode})",
-                    help=help,
+                    f"failed (code {result.returncode})"
                 )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
