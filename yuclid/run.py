@@ -258,6 +258,7 @@ def run_setup(ctx):
             if len(value["setup"]) > 0:
                 for cmd in value["setup"]:
                     cmd = substitute_global_vars(ctx, cmd)
+                    setup.append(cmd)
 
     if args.dry_run:
         report(LogLevel.INFO, "starting dry setup")
