@@ -217,27 +217,38 @@ def run_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
     env = ctx["env"]
-    if args.dry_run:
-        return
     setup = []
     for command in data["setup"]:
         command = substitute_global_vars(ctx, command)
         setup.append(command)
-    report(LogLevel.INFO, "starting setup")
+        
+    if args.dry_run:
+        report(LogLevel.INFO, "starting dry setup")
+    else:
+        report(LogLevel.INFO, "starting setup")
+        
     errors = False
     for command in setup:
-        result = subprocess.run(command, shell=True, env=env)
-        if result.returncode != 0:
-            errors = True
-            report(
-                LogLevel.ERROR,
-                "setup",
-                f"'{command}'",
-                f"failed (code {result.returncode})",
-            )
+        if args.dry_run:
+            report(LogLevel.INFO, "dry run", command)
+        else:
+            result = subprocess.run(command, shell=True, env=env)
+            if result.returncode != 0:
+                errors = True
+                report(
+                    LogLevel.ERROR,
+                    "setup",
+                    f"'{command}'",
+                    f"failed (code {result.returncode})",
+                )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
-    report(LogLevel.INFO, "setup completed")
+        report(LogLevel.INFO, "setup failed")
+    if args.dry_run:
+        report(LogLevel.INFO, "dry setup completed")
+    else:
+        report(LogLevel.INFO, "setup completed")
+        
 
 
 def point_to_string(point):
