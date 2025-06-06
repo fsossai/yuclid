@@ -271,9 +271,7 @@ def update_plot(ctx, padding_factor=1.05):
         return f"{coeff:.{precision}f}{prefix}"
 
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(
-        to_engineering_si(y_left), to_engineering_si(y_right)
-    )
+    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
 
     if args.normalize is not None:
         if args.geomean:
@@ -398,14 +396,45 @@ def get_config_name(ctx):
     domain = ctx["domain"]
     position = ctx["position"]
     status = ["speedup" if ctx["args"].speedup else y_axis]
-    status += [domain[d][position[d]] for d in dims]
+    status += [str(domain[d][position[d]]) for d in dims]
     name = "_".join(status)
     return name
 
 
+def get_status_description(ctx):
+    args = ctx["args"]
+    description_parts = []
+    if args.speedup:
+        description_main = "speedup"
+    else:
+        description_main = str(ctx["y_axis"])
+    description_parts.append(rf"$\mathbf{{{description_main}}}$")
+
+    for d in ctx["dims"]:
+        position = ctx["position"]
+        value = ctx["domain"][d][position[d]]
+        description_parts.append(f"{d}={value}")
+
+    description = " | ".join(description_parts)
+    if ctx["z_size"] == 1:
+        z_values = ctx["df"][args.z].unique()
+        description += f" | {args.z}={z_values[0]}"
+
+    return description
+
+
 def save_to_file(ctx, outfile=None):
+    ax_plot = ctx["ax_plot"]
     outfile = outfile or get_config_name(ctx) + ".pdf"
-    ctx["fig"].savefig(outfile)
+    if ctx["z_size"] == 1:
+        legend = ax_plot.get_legend()
+        if legend:
+            legend.set_visible(False)
+    ax_plot.set_title(get_status_description(ctx))
+    extent = ax_plot.get_window_extent().transformed(
+        ctx["fig"].dpi_scale_trans.inverted()
+    )
+    ctx["fig"].savefig(outfile, bbox_inches=extent.expanded(1.2, 1.1))
     report(LogLevel.INFO, f"saved to '{outfile}'")
 
 
