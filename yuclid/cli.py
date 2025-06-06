@@ -15,7 +15,8 @@ def main():
         action="store_true",
         help="Yuclid will not abort on any errors unless fatal",
     )
-    # Run subcommand
+    
+    # run subcommand
     run_parser = subparsers.add_parser("run", help="Run experiments and collect data")
     run_parser.add_argument(
         "-i",
@@ -75,7 +76,7 @@ def main():
         help="Show experiment that would run",
     )
 
-    # Plot subcommand
+    # plot subcommand
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
     plot_parser.add_argument(
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
@@ -126,6 +127,12 @@ def main():
         "--filter",
         nargs="*",
         help="Filter dimension with explicit values. E.g. -f a=1 b=value",
+    )
+    plot_parser.add_argument(
+        "-u",
+        "--unit",
+        default=None,
+        help="Unit of measurement for the Y-axis",
     )
     plot_parser.add_argument(
         "--colorblind",

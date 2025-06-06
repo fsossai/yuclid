@@ -62,7 +62,7 @@ def initialize_figure(ctx):
         [0.05, 0.95], [y, y], linewidth=4, transform=fig.transFigure, color="lightgrey"
     )
     fig.add_artist(line)
-    fig.subplots_adjust(top=0.95, bottom=0.1, hspace=0.3)
+    fig.subplots_adjust(top=0.92, bottom=0.1, hspace=0.3)
     fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
     fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
     ctx["fig"] = fig
@@ -268,10 +268,8 @@ def update_plot(ctx, padding_factor=1.05):
         exp = max(min(exp, 24), -24)  # clamp to available prefixes
         coeff = x / (10**exp)
         prefix = si_prefixes.get(exp, f"e{exp:+03d}")
-        return f"{coeff:.{precision}f}{prefix}"
-
-    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
+        unit = args.unit or ""
+        return f"{coeff:.{precision}f}{prefix}{unit}"
 
     if args.normalize is not None:
         if args.geomean:
@@ -355,16 +353,20 @@ def update_plot(ctx, padding_factor=1.05):
             alpha=0.6,
         )
 
+    def format_ylabel(label):
+        if args.unit is None:
+            return label
+        else:
+            return f"{label} [{args.unit}]"
+
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
     if args.normalize is not None:
-        ax_plot.set_ylabel(
-            "{} (normalized to {})\n{}".format(
-                ax_plot.get_ylabel(), args.normalize, y_range
-            )
-        )
+        normalized_label = f"{y_axis} (normalized to {args.normalize})"
+        ax_plot.set_ylabel(format_ylabel(normalized_label))
     elif args.speedup is not None:
-        ax_plot.set_ylabel("speedup vs {}\n{}".format(args.speedup, y_range))
+        speedup_label = f"speedup vs {args.speedup}"
+        ax_plot.set_ylabel(format_ylabel(speedup_label))
         handles, labels = ax_plot.get_legend_handles_labels()
         new_labels = [
             f"{args.speedup} (baseline)" if label == args.speedup else label
@@ -372,15 +374,19 @@ def update_plot(ctx, padding_factor=1.05):
         ]
         ax_plot.legend(handles, new_labels, loc="upper left")
     else:
-        ax_plot.set_ylabel("{}\n{}".format(y_axis, y_range))
+        ax_plot.set_ylabel(format_ylabel(y_axis))
 
-    title = []
+    # set figure title
+    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
+    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
+    title_parts = []
     for i, y in enumerate(y_dims, start=1):
         if y == y_axis:
-            title.append(rf"{i}: $\mathbf{{{y}}}$")
+            title_parts.append(rf"{i}: $\mathbf{{{y}}}$")
         else:
-            title.append(f"{i}: {y}")
-    ax_plot.set_title("  |  ".join(title))
+            title_parts.append(f"{i}: {y}")
+    title = " | ".join(title_parts) + "\n" + y_range
+    ctx["fig"].suptitle(title)
 
     if args.geomean:
         pp = sorted(ax_plot.patches, key=lambda x: x.get_x())
@@ -404,11 +410,6 @@ def get_config_name(ctx):
 def get_status_description(ctx):
     args = ctx["args"]
     description_parts = []
-    if args.speedup:
-        description_main = "speedup"
-    else:
-        description_main = str(ctx["y_axis"])
-    description_parts.append(rf"$\mathbf{{{description_main}}}$")
 
     for d in ctx["dims"]:
         position = ctx["position"]
@@ -430,11 +431,17 @@ def save_to_file(ctx, outfile=None):
         legend = ax_plot.get_legend()
         if legend:
             legend.set_visible(False)
-    ax_plot.set_title(get_status_description(ctx))
+    if ctx["args"].speedup:
+        title_bold = "speedup"
+    else:
+        title_bold = str(ctx["y_axis"])
+
+    title = rf"$\mathbf{{{title_bold}}}$" +"\n" + get_status_description(ctx)
+    ctx["fig"].suptitle(title)
     extent = ax_plot.get_window_extent().transformed(
         ctx["fig"].dpi_scale_trans.inverted()
     )
-    ctx["fig"].savefig(outfile, bbox_inches=extent.expanded(1.2, 1.1))
+    ctx["fig"].savefig(outfile, bbox_inches=extent.expanded(1.2, 1.2))
     report(LogLevel.INFO, f"saved to '{outfile}'")
 
 
