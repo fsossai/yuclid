@@ -321,7 +321,7 @@ def run_trial(ctx, f, i, configuration):
         if os.path.exists(point_id):
             hint = "try `cat {}` for more information".format(point_id)
         else:
-            hint = point_id
+            hint = None
         report(
             LogLevel.ERROR,
             point_to_string(point),
@@ -386,12 +386,16 @@ def run_trials(ctx):
     subspace = ctx["subspace"]
     ordered_space = [subspace[x] for x in order]
 
-    if "trial" not in data:
+    print(data["trial"])
+    if len(data.get("trial", [])) == 0:
         report(LogLevel.FATAL, "missing 'trial' command")
-    if isinstance(data["trial"], str):
+    if isinstance(data.get("trial"), str):
         trial = data["trial"]
-    elif isinstance(data["trial"], list):
+    elif isinstance(data.get("trial"), list):
         trial = " ".join(data["trial"])
+    else:
+        hint = "try string or list of strings"
+        report(LogLevel.FATAL, "wrong format for 'trial'", hint=hint)
     ctx["trial"] = trial
 
     if args.dry_run:
@@ -503,7 +507,7 @@ def validate_subspace(ctx):
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
         hint = "define dimensions with presets or select them with --select. "
-        help += "E.g. --select {}=value1,value2".format(undefined[0])
+        hint += "E.g. --select {}=value1,value2".format(undefined[0])
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
     ctx["subspace_values"] = {
