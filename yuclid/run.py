@@ -373,6 +373,9 @@ def run_trials(ctx):
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
 
+    report(LogLevel.INFO, "all trials completed")
+    report(LogLevel.INFO, "output data written to", ctx["output"])
+
 
 def validate_presets(ctx):
     args = ctx["args"]
