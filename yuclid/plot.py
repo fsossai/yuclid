@@ -13,6 +13,7 @@ import itertools
 import pathlib
 import hashlib
 import time
+import math
 import sys
 
 
@@ -241,14 +242,38 @@ def update_plot(ctx, padding_factor=1.05):
         sub_df = sub_df[sub_df[d] == k]
     ax_plot.clear()
 
-    max_val = sub_df[y_axis].abs().max()
-    if max_val == 0:
-        max_digits = 1
-    else:
-        max_digits = int(np.floor(np.log10(max_val) + 1))
+    def to_engineering_si(x, precision=0):
+        if x == 0:
+            return f"{0:.{precision}f}"
+        si_prefixes = {
+            -24: "y",
+            -21: "z",
+            -18: "a",
+            -15: "f",
+            -12: "p",
+            -9: "n",
+            -6: "µ",
+            -3: "m",
+            0: "",
+            3: "k",
+            6: "M",
+            9: "G",
+            12: "T",
+            15: "P",
+            18: "E",
+            21: "Z",
+            24: "Y",
+        }
+        exp = int(math.floor(math.log10(abs(x)) // 3 * 3))
+        exp = max(min(exp, 24), -24)  # clamp to available prefixes
+        coeff = x / (10**exp)
+        prefix = si_prefixes.get(exp, f"e{exp:+03d}")
+        return f"{coeff:.{precision}f}{prefix}"
 
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = f"[{y_left:.{max_digits}g} - {y_right:.{max_digits}g}]"
+    y_range = "[{} - {}]".format(
+        to_engineering_si(y_left), to_engineering_si(y_right)
+    )
 
     if args.normalize is not None:
         if args.geomean:
