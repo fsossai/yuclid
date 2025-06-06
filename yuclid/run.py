@@ -217,23 +217,19 @@ def define_order(ctx):
 
 def build_subspace(ctx):
     space = ctx["space"]
-    selected_presets = ctx["selected_presets"]
     subspace = dict()
+    preset = ctx["presets"][ctx["current_preset"]]
     for key, values in space.items():
-        relevant_presets = {
-            pname: pdims for pname, pdims in selected_presets.items() if key in pdims
-        }
-        if len(relevant_presets) == 0:
-            subspace[key] = values
-        elif len(relevant_presets) >= 1:
+        if key in preset:
             subvalues = []
-            for pname, pdims in relevant_presets.items():
-                if values is None:
-                    subvalues += [{"name": str(x), "value": x} for x in pdims[key]]
-                else:
-                    vmap = {x["name"]: x for x in values}
-                    subvalues += [vmap[n] for n in pdims[key] if n in vmap]
-            subspace[key] = remove_duplicates(subvalues)
+            if values is None:
+                subvalues = [{"name": str(x), "value": x} for x in preset[key]]
+            else:
+                vmap = {x["name"]: x for x in values}
+                subvalues = [vmap[n] for n in preset[key] if n in vmap]
+            subspace[key] = subvalues
+        else:
+            subspace[key] = values
     ctx["subspace"] = subspace
 
 
@@ -386,7 +382,6 @@ def run_trials(ctx):
     subspace = ctx["subspace"]
     ordered_space = [subspace[x] for x in order]
 
-    print(data["trial"])
     if len(data.get("trial", [])) == 0:
         report(LogLevel.FATAL, "missing 'trial' command")
     if isinstance(data.get("trial"), str):
@@ -408,18 +403,10 @@ def run_trials(ctx):
                 point_to_string(point),
             )
     else:
-        report(LogLevel.INFO, "writing to '{}'".format(ctx["output"]))
         with open(ctx["output"], "a") as f:
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
-
-    report(LogLevel.INFO, "finished")
-    if not args.dry_run:
-        y_axis = ctx["data"]["metrics"].keys()
-        hint = "use `yuclid plot {} -y {}` to analyze the results".format(
-            ctx["output"], ",".join(y_axis)
-        )
-        report(LogLevel.INFO, "output data written to", ctx["output"], hint=hint)
+                f.flush()
 
 
 def validate_presets(ctx):
@@ -553,9 +540,30 @@ def launch(args):
     build_environment(ctx)
     build_space(ctx)
     validate_presets(ctx)
-    build_subspace(ctx)
-    overwrite_configuration(ctx)
-    validate_subspace(ctx)
-    define_order(ctx)
-    run_setup(ctx)
-    run_trials(ctx)
+
+    if len(ctx["selected_presets"]) > 0:
+        for preset_name in ctx["selected_presets"]:
+            ctx["current_preset"] = preset_name
+            report(LogLevel.INFO, "loading preset", preset_name)
+            build_subspace(ctx)
+            overwrite_configuration(ctx)
+            validate_subspace(ctx)
+            define_order(ctx)
+            run_setup(ctx)
+            run_trials(ctx)
+            report(LogLevel.INFO, "completed preset", preset_name)
+    else:
+        ctx["subspace"] = ctx["space"].copy()
+        overwrite_configuration(ctx)
+        validate_subspace(ctx)
+        define_order(ctx)
+        run_setup(ctx)
+        run_trials(ctx)
+
+    report(LogLevel.INFO, "finished")
+    if not args.dry_run:
+        y_axis = ctx["data"]["metrics"].keys()
+        hint = "use `yuclid plot {} -y {}` to analyze the results".format(
+            ctx["output"], ",".join(y_axis)
+        )
+        report(LogLevel.INFO, "output data written to", ctx["output"], hint=hint)
