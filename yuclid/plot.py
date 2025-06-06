@@ -18,13 +18,6 @@ import time
 import sys
 
 
-class TextColor:
-    none = "\033[0m"
-    yellow = "\033[93m"
-    green = "\033[92m"
-    red = "\033[91m"
-    bold = "\033[1;97m"
-
 
 def normalize(input_df, args, y_axis):
     b = input_df[args.z].dtype.type(args.normalize)
@@ -79,14 +72,8 @@ def initialize_figure(ctx):
     ctx["ax_table"] = ax_table
 
 
-def get_time_prefix(tcolor):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return f"{tcolor.bold}{now}:{tcolor.none} "
-
-
 def generate_dataframe(ctx):
     args = ctx["args"]
-    tcolor = ctx["tcolor"]
     local_files = ctx["local_files"]
     dfs = dict()
     for file in local_files:
@@ -169,7 +156,6 @@ def file_monitor(ctx):
             generate_space(ctx)
             compute_ylimits(ctx)
             space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
-            tcolor = ctx["tcolor"]
             sizes = [f"{d}={ctx['df'][d].nunique()}" for d in space_columns]
             missing = compute_missing(ctx)
             report(LogLevel.INFO, f"new space: {' | '.join(sizes)}")
@@ -401,7 +387,6 @@ def get_config_name(ctx):
 def save_to_file(ctx, outfile=None):
     outfile = outfile or get_config_name(ctx) + ".pdf"
     ctx["fig"].savefig(outfile)
-    tcolor = ctx["tcolor"]
     report(LogLevel.INFO, f"saved to '{outfile}'")
 
 
@@ -587,7 +572,7 @@ def compute_ylimits(ctx):
 
 
 def launch(args):
-    ctx = {"args": args, "tcolor": TextColor(), "alive": True}
+    ctx = {"args": args, "alive": True}
     ctx["valid_files"] = validate_files(args)
     ctx["local_files"] = locate_files(ctx["valid_files"])
     sync_files(ctx)
