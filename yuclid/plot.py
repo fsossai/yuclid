@@ -10,13 +10,10 @@ import scipy.stats
 import subprocess
 import threading
 import itertools
-import argparse
-import datetime
 import pathlib
 import hashlib
 import time
 import sys
-
 
 
 def normalize(input_df, args, y_axis):
@@ -116,9 +113,6 @@ def generate_space(ctx):
     y_dims = ctx["y_dims"]
     z_size = df[args.z].nunique()
     dims = list(df.columns.difference([args.x, args.z] + y_dims))
-    if len(dims) > 9:
-        report(LogLevel.ERROR, "supporting up to 9 free dimensions")
-        sys.exit(1)
     dim_keys = "123456789"[: len(dims)]
     selected_index = 0 if len(dims) > 0 else None
     domain = dict()
@@ -446,71 +440,62 @@ def validate_options(ctx):
     c += 1 if args.normalize is not None else 0
     c += 1 if args.speedup is not None else 0
     if c > 1:
-        report(LogLevel.ERROR, "specifiy only one among `--normalize`, `--speedup`")
-        sys.exit(2)
+        report(LogLevel.FATAL, "specifiy only one among --normalize, --speedup")
     if c == 0:
         if args.geomean:
             report(
-                LogLevel.ERROR,
-                "`--geomean` can only be used together with `--normalize`",
+                LogLevel.FATAL,
+                "--geomean can only be used together with --normalize",
             )
-            sys.exit(2)
     if args.normalize is not None or args.speedup is not None:
         available = df[args.z].unique()
         val = df[args.z].dtype.type(args.normalize or args.speedup)
         if val not in available:
             report(
-                LogLevel.ERROR,
-                "`--normalize` and `--speedup` must be one of the following values:",
+                LogLevel.FATAL,
+                "--normalize and --speedup must be one of the following values:",
                 available,
             )
-            sys.exit(2)
     if args.speedup is not None:
         if not pd.api.types.is_numeric_dtype(df[args.x]):
             report(
-                LogLevel.ERROR,
-                "`--speedup` only works when the X-axis has a numeric type.",
+                LogLevel.FATAL,
+                "--speedup only works when the X-axis has a numeric type.",
             )
-            sys.exit(2)
-
     # Y-axis
     y_dims = args.y.split(",")
     y_axis = y_dims[0]
     for col in [args.x, args.z] + y_dims:
         if col not in df.columns:
             available = list(df.columns)
-            report(LogLevel.ERROR, f"'{col}' is not valid. Available: {available}")
-            sys.exit(2)
+            help = "available columns: {}".format(", ".join(available))
+            report(LogLevel.FATAL, "invalid column", col, help=help)
     for y in y_dims:
         if not pd.api.types.is_numeric_dtype(df[y]):
             t = df[y].dtype
             report(
-                LogLevel.ERROR,
+                LogLevel.FATAL,
                 f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'",
             )
-            sys.exit(1)
 
     zdom = df[args.z].unique()
     if len(zdom) == 1 and args.geomean:
         report(
             LogLevel.WARNING,
-            f"`--geomean` is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group",
+            f"--geomean is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group",
         )
     if args.geomean and args.lines:
-        report(LogLevel.ERROR, "`--geomean` and `--lines` cannot be used together")
-        sys.exit(2)
+        report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
     if args.x in y_dims:
         report(
-            LogLevel.ERROR,
+            LogLevel.FATAL,
             f"X-axis and Y-axis must be different dimensions. Given {args.x}",
         )
-        sys.exit(2)
     if args.x == args.z or args.z in y_dims:
         report(
-            LogLevel.ERROR,
-            "the `-z` dimension must be different from the dimension used on the X or Y axis",
+            LogLevel.FATAL,
+            "the -z dimension must be different from the dimension used on the X or Y axis",
         )
-        sys.exit(2)
     space_columns = df.columns.difference(y_dims)
     for d in space_columns:
         n = df[d].nunique()
