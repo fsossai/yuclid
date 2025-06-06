@@ -178,7 +178,6 @@ def define_order(ctx):
     wrong = [k for k in order if k not in space.keys()]
     if len(wrong) > 0:
         report(
-            ctx,
             LogLevel.FATAL,
             "specified order contains invalid dimensions",
             ",".join(wrong),
@@ -206,7 +205,6 @@ def build_subspace(ctx):
                 subvalues = [vmap[n] for n in pdims[key] if n in vmap]
         else:
             report(
-                ctx,
                 LogLevel.FATAL,
                 f"dimension '{key}' conflicts in presets",
                 ", ".join([pname for pname in relevant_presets]),
@@ -401,7 +399,6 @@ def validate_presets(ctx):
                 if isinstance(v, str) and "*" in v:
                     if space[k] is None:
                         report(
-                            ctx,
                             LogLevel.FATAL,
                             "regex cannot be used on undefined dimensions",
                             k,
@@ -410,13 +407,14 @@ def validate_presets(ctx):
                         pattern = "^" + re.escape(v).replace("\\*", ".*") + "$"
                         regex = re.compile(pattern)
                         new_values += [n for n in space_names[k] if regex.match(n)]
-                elif v not in space_values[k] and space[k] is not None:
+                elif v not in space_names[k] and space[k] is not None:
+                    print(k, values)
                     wrong.append(str(v))
                 else:
                     new_values.append(v)
+
             if len(wrong) > 0:
                 report(
-                    ctx,
                     LogLevel.FATAL,
                     f"unknown values in preset '{pname}'",
                     ", ".join(wrong),
