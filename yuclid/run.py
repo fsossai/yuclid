@@ -141,10 +141,12 @@ def normalize_point(x):
     elif isinstance(x, dict):
         if "value" in x:
             normalized = {
-                "name": x.get("name", x["value"]),
+                "name": str(x.get("name", x["value"])),
                 "value": x["value"],
                 "group": x.get("group", 0),
             }
+    elif isinstance(x, list):
+        normalized = [normalize_point(item) for item in x]
     return normalized
 
 
@@ -155,7 +157,7 @@ def normalize_data(json_data):
     for key, values in json_data.get("space", dict()).items():
         if key.endswith(":py"):
             name = key.split(":")[-2]
-            space[name] = [{"name": x, "value": x, "group": 0} for x in eval(values)]
+            space[name] = normalize_point(eval(values))
         elif values is not None:
             space[key] = []
             for x in values:
@@ -472,7 +474,7 @@ def validate_presets(ctx):
                         pattern = "^" + re.escape(v).replace("\\*", ".*") + "$"
                         regex = re.compile(pattern)
                         new_values += [n for n in space_names[k] if regex.match(n)]
-                elif v not in space_names[k] and space[k] is not None:
+                elif str(v) not in space_names[k] and space[k] is not None:
                     wrong.append(str(v))
                 else:
                     new_values.append(v)
