@@ -343,7 +343,7 @@ def update_plot(ctx, padding_factor=1.05):
         sns.barplot(
             data=sub_df,
             ax=ax_plot,
-            estimator=np.median,
+            estimator=scipy.stats.gmean if args.geomean else np.median,
             palette=palette,
             legend=True,
             x=args.x,
@@ -436,7 +436,7 @@ def save_to_file(ctx, outfile=None):
     else:
         title_bold = str(ctx["y_axis"])
 
-    title = rf"$\mathbf{{{title_bold}}}$" +"\n" + get_status_description(ctx)
+    title = rf"$\mathbf{{{title_bold}}}$" + "\n" + get_status_description(ctx)
     ctx["fig"].suptitle(title)
     extent = ax_plot.get_window_extent().transformed(
         ctx["fig"].dpi_scale_trans.inverted()
