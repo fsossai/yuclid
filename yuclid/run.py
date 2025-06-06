@@ -137,13 +137,14 @@ def normalize_command_list(cl):
 def normalize_point(x):
     normalized = None
     if isinstance(x, (str, int, float)):
-        normalized = {"name": str(x), "value": x, "group": 0}
+        normalized = {"name": str(x), "value": x, "group": 0, "setup": []}
     elif isinstance(x, dict):
         if "value" in x:
             normalized = {
                 "name": str(x.get("name", x["value"])),
                 "value": x["value"],
                 "group": x.get("group", 0),
+                "setup": normalize_command_list(x.get("setup", [])),
             }
     elif isinstance(x, list):
         normalized = [normalize_point(item) for item in x]
@@ -251,10 +252,18 @@ def run_setup(ctx):
         command = substitute_global_vars(ctx, command)
         setup.append(command)
 
+    # gather setup commands from space
+    for key, values in ctx["subspace"].items():
+        for value in values:
+            if len(value["setup"]) > 0:
+                for cmd in value["setup"]:
+                    cmd = substitute_global_vars(ctx, cmd)
+
     if args.dry_run:
         report(LogLevel.INFO, "starting dry setup")
     else:
         report(LogLevel.INFO, "starting setup")
+
     errors = False
     for command in setup:
         if args.dry_run:
