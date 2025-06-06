@@ -58,10 +58,13 @@ def read_configurations(ctx):
                     else:
                         data[key].update(val)
 
-    order_seen = set(data.get("order", []))
-    data["order"] = [
-        x for x in data["order"] if not (x in order_seen or order_seen.add(x))
-    ]
+            order_seen = set(data.get("order", []))
+            data["order"] += [
+                x
+                for x in current.get("order", [])
+                if not (x in order_seen or order_seen.add(x))
+            ]
+
     ctx["data"] = data
 
 
@@ -186,22 +189,28 @@ def define_order(ctx):
     args = ctx["args"]
     data = ctx["data"]
     space = ctx["space"]
-    if args.order is None:
-        desired = data.get("order", [])
-    else:
-        desired = args.order.split(",")
-    order = list(space.keys())
-    wrong = [k for k in desired if k not in space.keys()]
+
+    available = space.keys()
+    user_specified = [] if args.order is None else args.order.split(",")
+    in_config = data.get("order", [])
+    wrong = [k for k in set(user_specified + in_config) if k not in available]
     if len(wrong) > 0:
-        hint = "available dimensions: {}".format(", ".join(space.keys()))
+        hint = "available values: {}".format(", ".join(available))
         report(
             LogLevel.FATAL,
-            "specified order contains invalid dimensions",
+            "invalid order values",
             ", ".join(wrong),
             hint=hint,
         )
-    for k in desired:
-        order.append(order.pop(order.index(k)))
+
+    def reorder(desired):
+        for k in desired:
+            order.append(order.pop(order.index(k)))
+
+    order = list(space.keys())
+    reorder(in_config)
+    reorder(user_specified)
+
     ctx["order"] = order
 
 
