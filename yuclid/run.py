@@ -1,4 +1,4 @@
-from yuclid.log import LogLevel, TextColors, report
+from yuclid.log import LogLevel, report
 from datetime import datetime
 import pandas as pd
 import subprocess
@@ -13,11 +13,10 @@ import os
 
 
 def substitute_point_vars(ctx, x, point, point_id):
-    args = ctx["args"]
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point[m.group(1)]["value"]), x)
     pattern = r"\$\{yuclid\.\@\}"
-    y = re.sub(pattern, lambda m: f"{args.temp_directory}/{point_id}", y)
+    y = re.sub(pattern, lambda m: f"{point_id}", y)
     return y
 
 
@@ -106,7 +105,8 @@ def overwrite_configuration(ctx):
                     if subspace[k] is not None
                     else []
                 )
-                report(LogLevel.FATAL, "invalid value", values, "available", available)
+                help = "pick from the following values: {}".format(available)
+                report(LogLevel.FATAL, "invalid value", values, help=help)
             subspace[k] = selection
     ctx["subspace"] = subspace
 
@@ -191,15 +191,17 @@ def define_order(ctx):
     else:
         desired = args.order.split(",")
     order = list(space.keys())
-    for k in desired:
-        order.append(order.pop(order.index(k)))
-    wrong = [k for k in order if k not in space.keys()]
+    wrong = [k for k in desired if k not in space.keys()]
     if len(wrong) > 0:
+        help = "available dimensions: {}".format(", ".join(space.keys()))
         report(
             LogLevel.FATAL,
             "specified order contains invalid dimensions",
-            ",".join(wrong),
+            ", ".join(wrong),
+            help=help,
         )
+    for k in desired:
+        order.append(order.pop(order.index(k)))
     ctx["order"] = order
 
 
@@ -248,14 +250,24 @@ def run_setup(ctx):
         if args.dry_run:
             report(LogLevel.INFO, "dry run", command)
         else:
-            result = subprocess.run(command, shell=True, env=ctx["env"])
+            result = subprocess.run(
+                command,
+                shell=True,
+                universal_newlines=True,
+                capture_output=True,
+                env=ctx["env"],
+            )
             if result.returncode != 0:
                 errors = True
+                help = "executed command: {}".format(
+                    command,
+                )
                 report(
                     LogLevel.ERROR,
                     "setup",
                     f"'{command}'",
                     f"failed (code {result.returncode})",
+                    help=help,
                 )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
@@ -271,10 +283,7 @@ def point_to_string(point):
 
 
 def metrics_to_string(mvalues):
-    from yuclid.log import _state
-
-    color = _state["color"]
-    return " ".join([f"{color.bold}{m}{color.none}={v}" for m, v in mvalues.items()])
+    return " ".join([f"{m}={v}" for m, v in mvalues.items()])
 
 
 def get_progress(i, subspace_size):
@@ -288,7 +297,11 @@ def run_trial(ctx, f, i, configuration):
     order = ctx["order"]
     trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
-    point_id = "{}.{}.tmp".format(ctx["random_key"], point_to_string(point))
+
+    point_id = os.path.join(
+        args.temp_directory,
+        "{}.{}.tmp".format(ctx["random_key"], point_to_string(point)),
+    )
     report(
         LogLevel.INFO,
         get_progress(i, ctx["subspace_size"]),
@@ -305,10 +318,15 @@ def run_trial(ctx, f, i, configuration):
         stderr=subprocess.DEVNULL,
     )
     if cmd_result.returncode != 0:
+        if os.path.exists(point_id):
+            help = "try `cat {}` for more information".format(point_id)
+        else:
+            help = point_id
         report(
             LogLevel.ERROR,
             point_to_string(point),
-            f"failed experiment (code {cmd_result.returncode})",
+            f"failed trials (code {cmd_result.returncode})",
+            help=help,
         )
     mvalues = dict()
     for metric, command in data["metrics"].items():
@@ -318,10 +336,15 @@ def run_trial(ctx, f, i, configuration):
             command, shell=True, universal_newlines=True, capture_output=True, env=env
         )
         if cmd_result.returncode != 0:
+            help = "the command '{}' produced the following output:\n{}".format(
+                command,
+                cmd_result.stdout.strip(),
+            )
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
                 "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
+                help=help,
             )
         cmd_lines = cmd_result.stdout.strip().split("\n")
         mvalues[metric] = [float(line) for line in cmd_lines]
@@ -409,7 +432,6 @@ def validate_presets(ctx):
                     presets[pname][k] = eval(values)
                 else:
                     report(
-                        ctx,
                         LogLevel.FATAL,
                         "pythonic dimensions must be strings",
                         f"in '{k}' in '{pname}'",
@@ -422,7 +444,8 @@ def validate_presets(ctx):
     for pname, pspace in presets.items():
         for k, values in pspace.items():
             if k not in space:
-                report(LogLevel.FATAL, "preset dimension not in space", k)
+                help = "available dimensions: {}".format(", ".join(space.keys()))
+                report(LogLevel.FATAL, "preset dimension not in space", k, help=help)
             new_values = []
             wrong = []
             for v in values:
@@ -443,10 +466,12 @@ def validate_presets(ctx):
                     new_values.append(v)
 
             if len(wrong) > 0:
+                help = "available names: {}".format(", ".join(space_names[k]))
                 report(
                     LogLevel.FATAL,
-                    f"unknown values in preset '{pname}'",
+                    f"unknown name in preset '{pname}'",
                     ", ".join(wrong),
+                    help=help,
                 )
             presets[pname][k] = new_values
 
@@ -461,7 +486,8 @@ def validate_presets(ctx):
         selected_presets = dict()
         for p in args.presets.split(","):
             if p not in presets:
-                report(LogLevel.FATAL, "unknown preset", p)
+                help = "available presets: {}".format(", ".join(presets.keys()))
+                report(LogLevel.FATAL, "unknown preset", p, help=help)
             else:
                 selected_presets[p] = presets[p]
     ctx["presets"] = presets
@@ -472,7 +498,9 @@ def validate_subspace(ctx):
     subspace = ctx["subspace"]
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
-        report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined))
+        help = "define dimensions with presets or select them with --select. "
+        help += "E.g. --select {}=value1,value2".format(undefined[0])
+        report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), help=help)
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
     ctx["subspace_values"] = {
         key: [x["value"] for x in subspace[key]] for key in subspace
@@ -507,11 +535,11 @@ def validate_args(ctx):
     report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
-    report(LogLevel.INFO, "temp directory", f"'{args.temp_directory}'")
+    report(LogLevel.INFO, "temp directory", args.temp_directory)
 
 
 def launch(args):
-    ctx = {"args": args, "color": TextColors()}
+    ctx = {"args": args}
     validate_args(ctx)
     read_configurations(ctx)
     build_environment(ctx)
