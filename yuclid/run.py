@@ -264,8 +264,7 @@ def run_trial(ctx, f, i, configuration):
     order = ctx["order"]
     trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
-    rand_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    point_id = "{}.{}.tmp".format(rand_str, point_to_string(point))
+    point_id = "{}.{}.tmp".format(ctx["random_key"], point_to_string(point))
     report(
         LogLevel.INFO,
         get_progress(i, ctx["subspace_size"]),
@@ -358,8 +357,8 @@ def run_trials(ctx):
                 point_to_string(point),
             )
     else:
-        report(LogLevel.INFO, f"writing to '{args.output}'")
-        with open(args.output, "a") as f:
+        report(LogLevel.INFO, "writing to '{}'".format(ctx["output"]))
+        with open(ctx["output"], "a") as f:
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
 
@@ -474,6 +473,10 @@ def validate_args(ctx):
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
     os.makedirs(args.temp_directory, exist_ok=True)
+    ctx["random_key"] = "".join(
+        random.choices(string.ascii_lowercase + string.digits, k=8)
+    )
+    report(LogLevel.INFO, "random key", ctx["random_key"])
     report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
