@@ -1,53 +1,60 @@
 from datetime import datetime
 import sys
 
+_state = {}
+
 
 class LogLevel:
     INFO = 1
     WARNING = 2
     ERROR = 3
     FATAL = 4
-
-
-class TextColors(dict):
-    def __init__(self):
-        if sys.stdout.isatty():
-            self.all = {
-                "none": "\033[0m",
-                "yellow": "\033[93m",
-                "green": "\033[92m",
-                "red": "\033[91m",
-                "bold": "\033[1;97m",
-            }
-        else:
-            self.all = dict()
-
-    def get_color(self, x):
-        return self.all.get(x, "")
-
-    __getattr__ = get_color
-
-
-_state = {"color": None, "ignore_errors": None}
+    HELP = 5
 
 
 def init(ignore_errors):
-    _state["color"] = TextColors()
+    _state["style"] = {
+        "none": "\033[0m",
+        "yellow": "\033[93m",
+        "green": "\033[92m",
+        "red": "\033[91m",
+        "bold": "\033[1;97m",
+        "purple": "\033[95m",
+    }
+    if not sys.stdout.isatty():
+        for k, v in _state["style"].items():
+            _state["style"][k] = ""
+
     _state["ignore_errors"] = ignore_errors
+    style = _state["style"]
+    _state["level_prefix"] = {
+        LogLevel.INFO: "{}INFO{}".format(style["green"], style["none"]),
+        LogLevel.WARNING: "{}WARNING{}".format(style["yellow"], style["none"]),
+        LogLevel.ERROR: "{}ERROR{}".format(style["red"], style["none"]),
+        LogLevel.FATAL: "{}FATAL{}".format(style["red"], style["none"]),
+        LogLevel.HELP: "{}HELP{}".format(style.get("purple", ""), style["none"]),
+    }
 
 
-def report(level, *pargs, **kwargs):
-    color = _state["color"]
+def yprint(level, *args, **kwargs):
+    style = _state["style"]
+    yuclid_prefix = "{}yuclid{}".format(style["bold"], style["none"])
     timestamp = "{:%Y-%m-%d %H:%M:%S}".format(datetime.now())
-    log_prefix = {
-        LogLevel.INFO: f"{color.green}INFO{color.none}",
-        LogLevel.WARNING: f"{color.yellow}WARNING{color.none}",
-        LogLevel.ERROR: f"{color.red}ERROR{color.none}",
-        LogLevel.FATAL: f"{color.red}FATAL{color.none}",
-    }.get(level, "UNKNOWN")
+    level_prefix = _state["level_prefix"].get(level, "UNKNOWN")
     kwargs["sep"] = kwargs.get("sep", ": ")
-    print(f"{color.bold}yuclid{color.none}", timestamp, log_prefix, *pargs, **kwargs)
+    print(yuclid_prefix, timestamp, level_prefix, *args, **kwargs)
+
+
+def terminate(code, help=None):
+    if help is not None:
+        yprint(LogLevel.HELP, help)
+    sys.exit(code)
+
+
+def report(level, *args, **kwargs):
+    help = kwargs.pop("help", None)
+    yprint(level, *args, **kwargs)
     if level == LogLevel.FATAL:
-        sys.exit(2)
+        terminate(2, help=help)
     if not _state["ignore_errors"] and level == LogLevel.ERROR:
-        sys.exit(1)
+        terminate(1, help=help)
