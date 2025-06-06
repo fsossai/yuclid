@@ -376,7 +376,7 @@ def run_trial(ctx, f, i, configuration):
     report(LogLevel.INFO, "obtained", metrics_to_string(mvalues))
     report(
         LogLevel.INFO,
-        get_progress(i + 1, ctx["subspace_size"]),
+        get_progress(i, ctx["subspace_size"]),
         point_to_string(point),
         "completed",
     )
@@ -410,21 +410,20 @@ def run_trials(ctx):
     ctx["trial"] = trial
 
     if args.dry_run:
-        for i, configuration in enumerate(ctx["subspace_points"]):
+        for i, configuration in enumerate(ctx["subspace_points"], start=1):
             point = {key: x for key, x in zip(order, configuration)}
             if compatible_groups(configuration):
                 report(
                     LogLevel.INFO,
-                    get_progress(i + 1, ctx["subspace_size"]),
+                    get_progress(i, ctx["subspace_size"]),
                     "dry run",
                     point_to_string(point),
                 )
     else:
         with open(ctx["output"], "a") as f:
-            for i, configuration in enumerate(ctx["subspace_points"]):
-                if compatible_groups(configuration):
-                    run_trial(ctx, f, i, configuration)
-                    f.flush()
+            for i, configuration in enumerate(ctx["subspace_points"], start=1):
+                run_trial(ctx, f, i, configuration)
+                f.flush()
 
 
 def validate_presets(ctx):
