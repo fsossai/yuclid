@@ -408,7 +408,6 @@ def validate_presets(ctx):
                         regex = re.compile(pattern)
                         new_values += [n for n in space_names[k] if regex.match(n)]
                 elif v not in space_names[k] and space[k] is not None:
-                    print(k, values)
                     wrong.append(str(v))
                 else:
                     new_values.append(v)
