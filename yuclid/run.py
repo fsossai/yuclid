@@ -58,14 +58,15 @@ def read_configurations(ctx):
                     else:
                         data[key].update(val)
 
-            order_seen = set(data.get("order", []))
-            data["order"] += [
-                x
-                for x in current.get("order", [])
-                if not (x in order_seen or order_seen.add(x))
-            ]
+            order = data.get("order", []) + current.get("order", [])
+            data["order"] = remove_duplicates(order)
 
     ctx["data"] = data
+
+
+def remove_duplicates(items):
+    seen = list()
+    return [x for x in items if not (x in seen or seen.append(x))]
 
 
 def build_environment(ctx):
@@ -219,26 +220,20 @@ def build_subspace(ctx):
     selected_presets = ctx["selected_presets"]
     subspace = dict()
     for key, values in space.items():
-        subvalues = []
         relevant_presets = {
             pname: pdims for pname, pdims in selected_presets.items() if key in pdims
         }
         if len(relevant_presets) == 0:
-            subvalues = values
-        elif len(relevant_presets) == 1:
-            pname, pdims = next(iter(relevant_presets.items()))
-            if values is None:
-                subvalues = [{"name": str(x), "value": x} for x in pdims[key]]
-            else:
-                vmap = {x["name"]: x for x in values}
-                subvalues = [vmap[n] for n in pdims[key] if n in vmap]
-        else:
-            report(
-                LogLevel.FATAL,
-                f"dimension '{key}' conflicts in presets",
-                ", ".join([pname for pname in relevant_presets]),
-            )
-        subspace[key] = subvalues
+            subspace[key] = values
+        elif len(relevant_presets) >= 1:
+            subvalues = []
+            for pname, pdims in relevant_presets.items():
+                if values is None:
+                    subvalues += [{"name": str(x), "value": x} for x in pdims[key]]
+                else:
+                    vmap = {x["name"]: x for x in values}
+                    subvalues += [vmap[n] for n in pdims[key] if n in vmap]
+            subspace[key] = remove_duplicates(subvalues)
     ctx["subspace"] = subspace
 
 
