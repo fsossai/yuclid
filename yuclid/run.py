@@ -69,13 +69,14 @@ def read_configurations(ctx):
 def build_environment(ctx):
     if ctx["args"].dry_run:
         for key, value in ctx["data"]["env"].items():
-            report(LogLevel.INFO, "dry env", f"{key}=\"{value}\"")
+            report(LogLevel.INFO, "dry env", f'{key}="{value}"')
         ctx["env"] = dict()
     else:
         data = ctx["data"]
         env = os.environ.copy()
         env.update({k: str(v) for k, v in data["env"].items()})
         ctx["env"] = env
+
 
 def overwrite_configuration(ctx):
     args = ctx["args"]
@@ -92,7 +93,12 @@ def overwrite_configuration(ctx):
                     if current in valid.keys():
                         selection.append(valid[current])
             if len(selection) == 0:
-                report(LogLevel.FATAL, "invalid value", values)
+                available = ", ".join(
+                    [str(x["name"]) for x in subspace[k]]
+                    if subspace[k] is not None
+                    else []
+                )
+                report(LogLevel.FATAL, "invalid value", values, "available", available)
             subspace[k] = selection
     ctx["subspace"] = subspace
 
@@ -224,7 +230,7 @@ def run_setup(ctx):
     for command in data["setup"]:
         command = substitute_global_vars(ctx, command)
         setup.append(command)
-        
+
     if args.dry_run:
         report(LogLevel.INFO, "starting dry setup")
     else:
@@ -250,7 +256,6 @@ def run_setup(ctx):
         report(LogLevel.INFO, "dry setup completed")
     else:
         report(LogLevel.INFO, "setup completed")
-        
 
 
 def point_to_string(point):
