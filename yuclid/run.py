@@ -487,7 +487,7 @@ def validate_args(ctx):
             report(LogLevel.FATAL, f"'{file}' does not exist")
     os.makedirs(args.temp_directory, exist_ok=True)
     ctx["random_key"] = "".join(
-        random.choices(string.ascii_lowercase + string.digits, k=8)
+        random.choices(string.ascii_letters + string.digits, k=8)
     )
     report(LogLevel.INFO, "random key", ctx["random_key"])
     report(LogLevel.INFO, "working directory", os.getcwd())
