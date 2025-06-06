@@ -263,7 +263,7 @@ def run_setup(ctx):
                     LogLevel.ERROR,
                     "setup",
                     f"'{command}'",
-                    f"failed (code {result.returncode})"
+                    f"failed (code {result.returncode})",
                 )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
@@ -407,7 +407,11 @@ def run_trials(ctx):
 
     report(LogLevel.INFO, "finished")
     if not args.dry_run:
-        report(LogLevel.INFO, "output data written to", ctx["output"])
+        y_axis = ctx["data"]["metrics"].keys()
+        help = "use `yuclid plot {} -y {}` to analyze the results".format(
+            ctx["output"], ",".join(y_axis)
+        )
+        report(LogLevel.INFO, "output data written to", ctx["output"], help=help)
 
 
 def validate_presets(ctx):

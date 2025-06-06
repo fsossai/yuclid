@@ -45,16 +45,12 @@ def yprint(level, *args, **kwargs):
     print(yuclid_prefix, timestamp, level_prefix, *args, **kwargs)
 
 
-def terminate(code, help=None):
-    if help is not None:
-        yprint(LogLevel.HELP, help)
-    sys.exit(code)
-
-
 def report(level, *args, **kwargs):
     help = kwargs.pop("help", None)
     yprint(level, *args, **kwargs)
+    if help is not None:
+        yprint(LogLevel.HELP, help)
     if level == LogLevel.FATAL:
-        terminate(2, help=help)
+        sys.exit(2)
     if not _state["ignore_errors"] and level == LogLevel.ERROR:
-        terminate(1, help=help)
+        sys.exit(1)
