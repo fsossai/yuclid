@@ -67,11 +67,14 @@ def read_configurations(ctx):
 
 
 def build_environment(ctx):
-    data = ctx["data"]
-    env = os.environ.copy()
-    env.update({k: str(v) for k, v in data["env"].items()})
-    ctx["env"] = env
-
+    if ctx["args"].dry_run:
+        for key, value in ctx["data"]["env"].items():
+            report(LogLevel.INFO, "dry env", f"{key}=\"{value}\"")
+    else:
+        data = ctx["data"]
+        env = os.environ.copy()
+        env.update({k: str(v) for k, v in data["env"].items()})
+        ctx["env"] = env
 
 def overwrite_configuration(ctx):
     args = ctx["args"]
@@ -216,7 +219,6 @@ def build_subspace(ctx):
 def run_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
-    env = ctx["env"]
     setup = []
     for command in data["setup"]:
         command = substitute_global_vars(ctx, command)
@@ -226,7 +228,6 @@ def run_setup(ctx):
         report(LogLevel.INFO, "starting dry setup")
     else:
         report(LogLevel.INFO, "starting setup")
-        
     errors = False
     for command in setup:
         if args.dry_run:
