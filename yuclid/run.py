@@ -73,9 +73,17 @@ def build_environment(ctx):
         ctx["env"] = dict()
     else:
         data = ctx["data"]
-        env = os.environ.copy()
-        env.update({k: str(v) for k, v in data["env"].items()})
-        ctx["env"] = env
+        resolved_env = os.environ.copy()
+        for k, v in data["env"].items():
+            expanded = subprocess.run(
+                f'echo "{v}"',
+                env=resolved_env,
+                capture_output=True,
+                text=True,
+                shell=True,
+            ).stdout.strip()
+            resolved_env[k] = expanded
+        ctx["env"] = resolved_env
 
 
 def overwrite_configuration(ctx):
@@ -378,10 +386,8 @@ def run_trials(ctx):
             for i, configuration in enumerate(itertools.product(*ordered_space)):
                 run_trial(ctx, f, i, configuration)
 
-    if args.dry_run:
-        report(LogLevel.INFO, "dry run completed")
-    else:
-        report(LogLevel.INFO, "trials completed")
+    report(LogLevel.INFO, "finished")
+    if not args.dry_run:
         report(LogLevel.INFO, "output data written to", ctx["output"])
 
 
