@@ -105,8 +105,8 @@ def overwrite_configuration(ctx):
                     if subspace[k] is not None
                     else []
                 )
-                help = "pick from the following values: {}".format(available)
-                report(LogLevel.FATAL, "invalid value", values, help=help)
+                hint = "pick from the following values: {}".format(available)
+                report(LogLevel.FATAL, "invalid value", values, hint=hint)
             subspace[k] = selection
     ctx["subspace"] = subspace
 
@@ -193,12 +193,12 @@ def define_order(ctx):
     order = list(space.keys())
     wrong = [k for k in desired if k not in space.keys()]
     if len(wrong) > 0:
-        help = "available dimensions: {}".format(", ".join(space.keys()))
+        hint = "available dimensions: {}".format(", ".join(space.keys()))
         report(
             LogLevel.FATAL,
             "specified order contains invalid dimensions",
             ", ".join(wrong),
-            help=help,
+            hint=hint,
         )
     for k in desired:
         order.append(order.pop(order.index(k)))
@@ -295,7 +295,7 @@ def run_trial(ctx, f, i, configuration):
     point = {key: x for key, x in zip(order, configuration)}
 
     point_id = os.path.join(
-        args.temp_directory,
+        args.temp_dir,
         "{}.{}.tmp".format(ctx["random_key"], point_to_string(point)),
     )
     report(
@@ -315,14 +315,14 @@ def run_trial(ctx, f, i, configuration):
     )
     if cmd_result.returncode != 0:
         if os.path.exists(point_id):
-            help = "try `cat {}` for more information".format(point_id)
+            hint = "try `cat {}` for more information".format(point_id)
         else:
-            help = point_id
+            hint = point_id
         report(
             LogLevel.ERROR,
             point_to_string(point),
             f"failed trials (code {cmd_result.returncode})",
-            help=help,
+            hint=hint,
         )
     mvalues = dict()
     for metric, command in data["metrics"].items():
@@ -332,7 +332,7 @@ def run_trial(ctx, f, i, configuration):
             command, shell=True, universal_newlines=True, capture_output=True, env=env
         )
         if cmd_result.returncode != 0:
-            help = "the command '{}' produced the following output:\n{}".format(
+            hint = "the command '{}' produced the following output:\n{}".format(
                 command,
                 cmd_result.stdout.strip(),
             )
@@ -340,7 +340,7 @@ def run_trial(ctx, f, i, configuration):
                 LogLevel.ERROR,
                 point_to_string(point),
                 "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
-                help=help,
+                hint=hint,
             )
         cmd_lines = cmd_result.stdout.strip().split("\n")
         mvalues[metric] = [float(line) for line in cmd_lines]
@@ -408,10 +408,10 @@ def run_trials(ctx):
     report(LogLevel.INFO, "finished")
     if not args.dry_run:
         y_axis = ctx["data"]["metrics"].keys()
-        help = "use `yuclid plot {} -y {}` to analyze the results".format(
+        hint = "use `yuclid plot {} -y {}` to analyze the results".format(
             ctx["output"], ",".join(y_axis)
         )
-        report(LogLevel.INFO, "output data written to", ctx["output"], help=help)
+        report(LogLevel.INFO, "output data written to", ctx["output"], hint=hint)
 
 
 def validate_presets(ctx):
@@ -444,8 +444,8 @@ def validate_presets(ctx):
     for pname, pspace in presets.items():
         for k, values in pspace.items():
             if k not in space:
-                help = "available dimensions: {}".format(", ".join(space.keys()))
-                report(LogLevel.FATAL, "preset dimension not in space", k, help=help)
+                hint = "available dimensions: {}".format(", ".join(space.keys()))
+                report(LogLevel.FATAL, "preset dimension not in space", k, hint=hint)
             new_values = []
             wrong = []
             for v in values:
@@ -466,12 +466,12 @@ def validate_presets(ctx):
                     new_values.append(v)
 
             if len(wrong) > 0:
-                help = "available names: {}".format(", ".join(space_names[k]))
+                hint = "available names: {}".format(", ".join(space_names[k]))
                 report(
                     LogLevel.FATAL,
                     f"unknown name in preset '{pname}'",
                     ", ".join(wrong),
-                    help=help,
+                    hint=hint,
                 )
             presets[pname][k] = new_values
 
@@ -486,8 +486,8 @@ def validate_presets(ctx):
         selected_presets = dict()
         for p in args.presets.split(","):
             if p not in presets:
-                help = "available presets: {}".format(", ".join(presets.keys()))
-                report(LogLevel.FATAL, "unknown preset", p, help=help)
+                hint = "available presets: {}".format(", ".join(presets.keys()))
+                report(LogLevel.FATAL, "unknown preset", p, hint=hint)
             else:
                 selected_presets[p] = presets[p]
     ctx["presets"] = presets
@@ -498,9 +498,9 @@ def validate_subspace(ctx):
     subspace = ctx["subspace"]
     undefined = [k for k, v in subspace.items() if v is None]
     if len(undefined) > 0:
-        help = "define dimensions with presets or select them with --select. "
+        hint = "define dimensions with presets or select them with --select. "
         help += "E.g. --select {}=value1,value2".format(undefined[0])
-        report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), help=help)
+        report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
     ctx["subspace_size"] = pd.Series([len(v) for k, v in subspace.items()]).prod()
     ctx["subspace_values"] = {
         key: [x["value"] for x in subspace[key]] for key in subspace
@@ -527,7 +527,7 @@ def validate_args(ctx):
     for file in args.inputs:
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
-    os.makedirs(args.temp_directory, exist_ok=True)
+    os.makedirs(args.temp_dir, exist_ok=True)
     ctx["random_key"] = "".join(
         random.choices(string.ascii_letters + string.digits, k=8)
     )
@@ -535,7 +535,7 @@ def validate_args(ctx):
     report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
-    report(LogLevel.INFO, "temp directory", args.temp_directory)
+    report(LogLevel.INFO, "temp directory", args.temp_dir)
 
 
 def launch(args):

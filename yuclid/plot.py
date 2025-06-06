@@ -468,8 +468,8 @@ def validate_options(ctx):
     for col in [args.x, args.z] + y_dims:
         if col not in df.columns:
             available = list(df.columns)
-            help = "available columns: {}".format(", ".join(available))
-            report(LogLevel.FATAL, "invalid column", col, help=help)
+            hint = "available columns: {}".format(", ".join(available))
+            report(LogLevel.FATAL, "invalid column", col, hint=hint)
     for y in y_dims:
         if not pd.api.types.is_numeric_dtype(df[y]):
             t = df[y].dtype

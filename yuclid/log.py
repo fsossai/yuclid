@@ -9,7 +9,7 @@ class LogLevel:
     WARNING = 2
     ERROR = 3
     FATAL = 4
-    HELP = 5
+    HINT = 5
 
 
 def init(ignore_errors):
@@ -32,7 +32,7 @@ def init(ignore_errors):
         LogLevel.WARNING: "{}WARNING{}".format(style["yellow"], style["none"]),
         LogLevel.ERROR: "{}ERROR{}".format(style["red"], style["none"]),
         LogLevel.FATAL: "{}FATAL{}".format(style["red"], style["none"]),
-        LogLevel.HELP: "{}HELP{}".format(style.get("purple", ""), style["none"]),
+        LogLevel.HINT: "{}HINT{}".format(style.get("purple", ""), style["none"]),
     }
 
 
@@ -46,10 +46,10 @@ def yprint(level, *args, **kwargs):
 
 
 def report(level, *args, **kwargs):
-    help = kwargs.pop("help", None)
+    hint = kwargs.pop("hint", None)
     yprint(level, *args, **kwargs)
-    if help is not None:
-        yprint(LogLevel.HELP, help)
+    if hint is not None:
+        yprint(LogLevel.HINT, hint)
     if level == LogLevel.FATAL:
         sys.exit(2)
     if not _state["ignore_errors"] and level == LogLevel.ERROR:

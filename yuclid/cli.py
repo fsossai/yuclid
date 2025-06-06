@@ -34,10 +34,14 @@ def main():
         help="JSON output file path for the generated data",
     )
     run_parser.add_argument(
-        "-d",
         "--output-dir",
         default=None,
         help="Directory path where the generated data will be saved",
+    )
+    run_parser.add_argument(
+        "--temp-dir",
+        default=".yuclid",
+        help="Directory where temporary file will be saved",
     )
     run_parser.add_argument(
         "-p",
@@ -63,11 +67,6 @@ def main():
         default=False,
         action="store_true",
         help="Fold metric values into an array per experiment",
-    )
-    run_parser.add_argument(
-        "--temp-directory",
-        default=".yuclid",
-        help="Directory where temporary file will be saved",
     )
     run_parser.add_argument(
         "--dry-run",
