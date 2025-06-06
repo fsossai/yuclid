@@ -70,6 +70,7 @@ def build_environment(ctx):
     if ctx["args"].dry_run:
         for key, value in ctx["data"]["env"].items():
             report(LogLevel.INFO, "dry env", f"{key}=\"{value}\"")
+        ctx["env"] = dict()
     else:
         data = ctx["data"]
         env = os.environ.copy()
@@ -233,7 +234,7 @@ def run_setup(ctx):
         if args.dry_run:
             report(LogLevel.INFO, "dry run", command)
         else:
-            result = subprocess.run(command, shell=True, env=env)
+            result = subprocess.run(command, shell=True, env=ctx["env"])
             if result.returncode != 0:
                 errors = True
                 report(
