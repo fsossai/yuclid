@@ -44,7 +44,7 @@ def read_configurations(ctx):
 
     for file in args.inputs:
         with open(file, "r") as f:
-            current = normalize_data(ctx, json.load(f))
+            current = normalize_data(json.load(f))
             for key, val in current.items():
                 if isinstance(data[key], list):
                     data[key].extend(val)
@@ -134,24 +134,32 @@ def normalize_command_list(cl):
     return normalized
 
 
-def normalize_data(ctx, json_data):
+def normalize_point(x):
+    normalized = None
+    if isinstance(x, (str, int, float)):
+        normalized = {"name": str(x), "value": x, "group": 0}
+    elif isinstance(x, dict):
+        if "value" in x:
+            normalized = {
+                "name": x.get("name", x["value"]),
+                "value": x["value"],
+                "group": x.get("group", 0),
+            }
+    return normalized
+
+
+def normalize_data(json_data):
     normalized = json_data.copy()
 
     space = dict()
     for key, values in json_data.get("space", dict()).items():
         if key.endswith(":py"):
             name = key.split(":")[-2]
-            space[name] = [{"name": x, "value": x} for x in eval(values)]
+            space[name] = [{"name": x, "value": x, "group": 0} for x in eval(values)]
         elif values is not None:
             space[key] = []
             for x in values:
-                if isinstance(x, (str, int, float)):
-                    space[key].append({"name": str(x), "value": x})
-                elif isinstance(x, dict):
-                    if "value" in x:
-                        space[key].append(
-                            {"name": x.get("name", x["value"]), "value": x["value"]}
-                        )
+                space[key].append(normalize_point(x))
         else:
             space[key] = None
 
@@ -223,7 +231,7 @@ def build_subspace(ctx):
         if key in preset:
             subvalues = []
             if values is None:
-                subvalues = [{"name": str(x), "value": x} for x in preset[key]]
+                subvalues = [normalize_point(x) for x in preset[key]]
             else:
                 vmap = {x["name"]: x for x in values}
                 subvalues = [vmap[n] for n in preset[key] if n in vmap]
