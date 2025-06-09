@@ -400,7 +400,7 @@ def run_point_setup(ctx):
         point = {key: x for key, x in zip(suborder, configuration)}
         pcommand = substitute_point_vars(gcommand, point, None)
 
-        if not valid_conditions(configuration):
+        if not valid_conditions(configuration, suborder):
             return
 
         if args.dry_run:
@@ -438,15 +438,14 @@ def run_point_setup(ctx):
             return
 
         for seq_config in seq_points:
-            if valid_conditions(seq_config):
-                named_seq_config = [
-                    (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
-                ]
-                named_ordered_config = sorted(
-                    named_par_config + named_seq_config, key=lambda x: order.index(x[0])
-                )
-                final_config = [x[1] for x in named_ordered_config]
-                run_single_point_command(command, final_config)
+            named_seq_config = [
+                (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
+            ]
+            named_ordered_config = sorted(
+                named_par_config + named_seq_config, key=lambda x: order.index(x[0])
+            )
+            final_config = [x[1] for x in named_ordered_config]
+            run_single_point_command(command, final_config)
 
     num_parallel_dims = len(ctx["parallel_setup_dims"])
     if num_parallel_dims == 0:
@@ -562,7 +561,7 @@ def run_point_trials(ctx, f, i, configuration):
     compatible_trials = [
         trial
         for trial in data["trials"]
-        if valid_conditions(list(configuration) + [trial])
+        if valid_condition(trial["condition"], configuration, order)
     ]
 
     if len(compatible_trials) == 0:
@@ -654,6 +653,11 @@ def valid_conditions(configuration, order):
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     return all(eval(x["condition"], point_context) for x in configuration)
 
+def valid_condition(condition, configuration, order):
+    point_context = {}
+    yuclid = {name: x["value"] for name, x in zip(order, configuration)}
+    point_context["yuclid"] = type("Yuclid", (), yuclid)()
+    return eval(condition, point_context)
 
 def run_subspace_trials(ctx):
     args = ctx["args"]
