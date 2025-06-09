@@ -204,24 +204,22 @@ def normalize_command_list(cl):
     return normalized
 
 
-def normalize_groups(x):
-    if isinstance(x, dict):
-        report(LogLevel.FATAL, "groups must be a list or a value", x)
-    if not isinstance(x, list):
-        x = [x]
+def normalize_condition(x):
+    if not isinstance(x, str):
+        report(LogLevel.FATAL, "condition must be a string", x)
     return x
 
 
 def normalize_point(x):
     normalized = None
     if isinstance(x, (str, int, float)):
-        normalized = {"name": str(x), "value": x, "groups": [0], "setup": []}
+        normalized = {"name": str(x), "value": x, "condition": "True", "setup": []}
     elif isinstance(x, dict):
         if "value" in x:
             normalized = {
                 "name": str(x.get("name", x["value"])),
                 "value": x["value"],
-                "groups": normalize_groups(x.get("groups", [0])),
+                "condition": normalize_condition(x.get("condition", "True")),
                 "setup": normalize_command_list(x.get("setup", [])),
             }
     elif isinstance(x, list):
@@ -231,11 +229,11 @@ def normalize_point(x):
 
 def normalize_trial(trial):
     if isinstance(trial, str):
-        return [{"command": trial, "groups": [0]}]
+        return [{"command": trial, "condition": ["True"]}]
     elif isinstance(trial, list):
         items = []
         for cmd in trial:
-            item = {"command": None, "groups": [0]}
+            item = {"command": None, "condition": ["True"]}
             if isinstance(cmd, str):
                 item["command"] = normalize_command(cmd)
             elif isinstance(cmd, dict):
@@ -245,7 +243,7 @@ def normalize_trial(trial):
                     )
                     return None
                 item["command"] = normalize_command(cmd["command"])
-                item["groups"] = cmd.get("groups", [0])
+                item["condition"] = cmd.get("condition", ["True"])
             items.append(item)
         return items
     else:
@@ -402,7 +400,7 @@ def run_point_setup(ctx):
         point = {key: x for key, x in zip(suborder, configuration)}
         pcommand = substitute_point_vars(gcommand, point, None)
 
-        if not compatible_groups(configuration):
+        if not valid_conditions(configuration):
             return
 
         if args.dry_run:
@@ -440,7 +438,7 @@ def run_point_setup(ctx):
             return
 
         for seq_config in seq_points:
-            if compatible_groups(seq_config):
+            if valid_conditions(seq_config):
                 named_seq_config = [
                     (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
                 ]
@@ -564,7 +562,7 @@ def run_point_trials(ctx, f, i, configuration):
     compatible_trials = [
         trial
         for trial in data["trials"]
-        if compatible_groups(list(configuration) + [trial])
+        if valid_conditions(list(configuration) + [trial])
     ]
 
     if len(compatible_trials) == 0:
@@ -650,13 +648,11 @@ def run_point_trials(ctx, f, i, configuration):
     f.flush()
 
 
-def compatible_groups(configuration):
-    if all(0 in x["groups"] for x in configuration):
-        return True
-    else:
-        groups_list = [set(x["groups"]) for x in configuration if 0 not in x["groups"]]
-        common = set.intersection(*groups_list)
-        return len(common) > 0
+def valid_conditions(configuration, order):
+    point_context = {}
+    yuclid = {name: x["value"] for name, x in zip(order, configuration)}
+    point_context["yuclid"] = type("Yuclid", (), yuclid)()
+    return all(eval(x["condition"], point_context) for x in configuration)
 
 
 def run_subspace_trials(ctx):
@@ -668,7 +664,7 @@ def run_subspace_trials(ctx):
     if args.dry_run:
         for i, configuration in enumerate(ctx["subspace_points"], start=1):
             point = {key: x for key, x in zip(order, configuration)}
-            if compatible_groups(configuration):
+            if valid_conditions(configuration, order):
                 report(
                     LogLevel.INFO,
                     get_progress(i, ctx["subspace_size"]),
@@ -774,7 +770,7 @@ def validate_subspace(ctx):
 
     ctx["subspace_points"] = []
     for point in itertools.product(*ordered_subspace):
-        if compatible_groups(point):
+        if valid_conditions(point, order):
             ctx["subspace_points"].append(point)
     ctx["subspace_size"] = len(ctx["subspace_points"])
 
@@ -789,13 +785,6 @@ def validate_subspace(ctx):
         report(LogLevel.WARNING, "empty subspace")
     else:
         report(LogLevel.INFO, "subspace size", ctx["subspace_size"])
-
-    # checking group compatibility
-    for key, values in subspace.items():
-        groups = {g for x in values for g in x["groups"]}
-        if len(groups) > 1 and 0 in groups:
-            hint = "items with neutral group (i.e. 0) should be all or none"
-            report(LogLevel.WARNING, "unusual group configuration", key, hint=hint)
 
 
 def build_setup(ctx):
