@@ -15,8 +15,9 @@ import os
 def substitute_point_vars(ctx, x, point, point_id):
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point[m.group(1)]["value"]), x)
-    pattern = r"\$\{yuclid\.\@\}"
-    y = re.sub(pattern, lambda m: f"{point_id}", y)
+    if point_id is not None:
+        pattern = r"\$\{yuclid\.\@\}"
+        y = re.sub(pattern, lambda m: f"{point_id}", y)
     return y
 
 
@@ -34,7 +35,7 @@ def read_configurations(ctx):
     args = ctx["args"]
     data = {
         "env": dict(),
-        "setup": [],
+        "setup": dict(),
         "space": dict(),
         "trial": [],
         "metrics": dict(),
@@ -172,7 +173,7 @@ def normalize_data(json_data):
 
     normalized["space"] = space
     normalized["trial"] = normalize_command_list(json_data.get("trial", []))
-    normalized["setup"] = normalize_command_list(json_data.get("setup", []))
+    normalized["setup"] = normalize_setup(json_data.get("setup", {}))
     normalized["metrics"] = metrics
 
     return normalized
@@ -244,32 +245,83 @@ def build_subspace(ctx):
     ctx["subspace"] = subspace
 
 
-def run_setup(ctx):
+def run_point_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
-    setup = []
-    for command in data["setup"]:
-        command = substitute_global_vars(ctx, command)
-        setup.append(command)
+    order = ctx["order"]
+    setup = ctx["data"]["setup"]
+
+    if args.dry_run:
+        report(LogLevel.INFO, "starting dry point setup")
+    else:
+        report(LogLevel.INFO, "starting point setup")
+    
+    total_points = ctx["subspace_size"]
+    total_commands = len(setup["point"])   
+
+    errors = False
+    i = 1
+    for i, command in enumerate(setup["point"], start=1):
+        gcommand = substitute_global_vars(ctx, command)
+        for j, configuration in enumerate(ctx["subspace_points"], start=1):
+            point = {key: x for key, x in zip(order, configuration)}
+            pcommand = substitute_point_vars(ctx, gcommand, point, None)
+            if compatible_groups(configuration):
+                if args.dry_run:
+                    report(
+                        LogLevel.INFO,
+                        "[{}/{}, {}/{}]".format(i, total_commands, j, total_points),
+                        "dry run",
+                        point_to_string(point),
+                    )
+                else:
+                    result = subprocess.run(
+                        pcommand,
+                        shell=True,
+                        universal_newlines=True,
+                        capture_output=False,
+                        env=ctx["env"],
+                    )
+                    if result.returncode != 0:
+                        errors = True
+                        report(
+                            LogLevel.ERROR,
+                            "point setup",
+                            f"'{command}'",
+                            f"failed (code {result.returncode})",
+                        )
+    if errors:
+        report(LogLevel.WARNING, "errors have occurred during point setup")
+        report(LogLevel.INFO, "point setup failed")
+    if args.dry_run:
+        report(LogLevel.INFO, "dry point setup completed")
+    else:
+        report(LogLevel.INFO, "point setup completed")
+
+
+def run_global_setup(ctx):
+    args = ctx["args"]
+    data = ctx["data"]
+    setup_commands = ctx["data"]["setup"]["global"].copy()
 
     # gather setup commands from space
     for key, values in ctx["subspace"].items():
         for value in values:
             if len(value["setup"]) > 0:
                 for cmd in value["setup"]:
-                    cmd = substitute_global_vars(ctx, cmd)
-                    setup.append(cmd)
+                    setup_commands.append(cmd)
 
     if args.dry_run:
-        report(LogLevel.INFO, "starting dry setup")
+        report(LogLevel.INFO, "starting dry global setup")
     else:
-        report(LogLevel.INFO, "starting setup")
+        report(LogLevel.INFO, "starting global setup")
 
     errors = False
-    for command in setup:
+    for command in setup_commands:
         if args.dry_run:
             report(LogLevel.INFO, "dry run", command)
         else:
+            command = substitute_global_vars(ctx, command)
             result = subprocess.run(
                 command,
                 shell=True,
@@ -292,6 +344,11 @@ def run_setup(ctx):
         report(LogLevel.INFO, "dry setup completed")
     else:
         report(LogLevel.INFO, "setup completed")
+
+
+def run_setup(ctx):
+    run_global_setup(ctx)
+    run_point_setup(ctx)
 
 
 def point_to_string(point):
@@ -575,6 +632,28 @@ def validate_args(ctx):
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
     report(LogLevel.INFO, "temp directory", args.temp_dir)
+
+
+def normalize_setup(setup):
+    normalized = {"global": [], "point": []}
+
+    gsetup = []
+    psetup = []
+
+    if not isinstance(setup, dict):
+        report(LogLevel.FATAL, "setup must have fields 'global' and/or 'point'")
+
+    if "global" in setup:
+        gsetup = normalize_command_list(setup["global"])
+    if "point" in setup:
+        psetup = normalize_command_list(setup["point"])
+
+    normalized["global"] = gsetup
+    normalized["point"] = psetup
+    report(LogLevel.INFO, "global setup commands", ", ".join(gsetup))
+    report(LogLevel.INFO, "point setup commands", ", ".join(psetup))
+
+    return normalized
 
 
 def launch(args):
