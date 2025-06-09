@@ -40,15 +40,18 @@ def detect_invalid_yuclid_vars(ctx):
 
     # in setup.point
     for command in setup["point"]["commands"]:
-        # match ${yuclid.<name>}
-        pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
+        # match ${yuclid.(<name>|@)}
+        pattern = r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
         # for all matches, check if the name is in on_dims
         names = re.findall(pattern, command)
         for name in names:
             if name not in on_dims:
+                print(name)
                 hint = "available variables: {}".format(
                     ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
                 )
+                if name == "@":
+                    hint += ". ${yuclid.@} is reserved for trial commands"
                 report(
                     LogLevel.FATAL,
                     f"invalid yuclid variable '{name}' in point setup",
@@ -792,11 +795,11 @@ def validate_args(ctx):
     ctx["random_key"] = "".join(
         random.choices(string.ascii_letters + string.digits, k=8)
     )
-    report(LogLevel.INFO, "random key", ctx["random_key"])
     report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", ctx["output"])
     report(LogLevel.INFO, "temp directory", args.temp_dir)
+    report(LogLevel.INFO, "random key", ctx["random_key"])
 
 
 def normalize_setup(setup):
