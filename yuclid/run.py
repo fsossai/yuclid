@@ -584,13 +584,9 @@ def run_trial(ctx, f, i, configuration):
     f.flush()
 
 
-def trim_groups(subspace):
-    return subspace
-
-
 def compatible_groups(configuration):
     non_neutral_groups = [x["group"] for x in configuration if x["group"] != 0]
-    return len(set(non_neutral_groups)) == 1
+    return len(set(non_neutral_groups)) <= 1
 
 
 def run_trials(ctx):
