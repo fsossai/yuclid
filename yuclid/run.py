@@ -228,6 +228,30 @@ def normalize_point(x):
     return normalized
 
 
+def normalize_trial(trial):
+    if isinstance(trial, str):
+        return [{"command": trial, "group": 0}]
+    elif isinstance(trial, list):
+        items = []
+        for cmd in trial:
+            item = {"command": None, "group": 0}
+            if isinstance(cmd, str):
+                item["command"] = normalize_command(cmd)
+            elif isinstance(cmd, dict):
+                if "command" not in cmd:
+                    report(
+                        LogLevel.FATAL, "each trial item must have a 'command' field"
+                    )
+                    return None
+                item["command"] = normalize_command(cmd["command"])
+                item["group"] = cmd.get("group", 0)
+            items.append(item)
+        return items
+    else:
+        report(LogLevel.FATAL, "trial must be a string or a list of strings")
+        return None
+
+
 def normalize_data(json_data):
     normalized = json_data.copy()
 
@@ -248,7 +272,7 @@ def normalize_data(json_data):
         metrics[key] = normalize_command(value)
 
     normalized["space"] = space
-    normalized["trial"] = normalize_command_list(json_data.get("trial", []))
+    normalized["trial"] = normalize_trial(json_data.get("trial", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}))
     normalized["metrics"] = metrics
 
@@ -416,9 +440,7 @@ def run_point_setup(ctx):
                 run_sequential_points(command, [])
             else:
                 for j, par_config in enumerate(par_points, start=1):
-                    future = executor.submit(
-                        run_sequential_points, command, par_config
-                    )
+                    future = executor.submit(run_sequential_points, command, par_config)
                 futures.append(future)
         concurrent.futures.wait(futures)
 
@@ -500,7 +522,6 @@ def run_trial(ctx, f, i, configuration):
     env = ctx["env"]
     data = ctx["data"]
     order = ctx["order"]
-    trial = ctx["trial"]
     point = {key: x for key, x in zip(order, configuration)}
 
     point_id = os.path.join(
@@ -513,26 +534,29 @@ def run_trial(ctx, f, i, configuration):
         point_to_string(point),
         "started",
     )
-    command = substitute_global_vars(ctx, trial)
-    command = substitute_point_vars(command, point, point_id)
-    cmd_result = subprocess.run(
-        command,
-        shell=True,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    if cmd_result.returncode != 0:
-        if os.path.exists(point_id):
-            hint = "try `cat {}` for more information".format(point_id)
-        else:
-            hint = None
-        report(
-            LogLevel.ERROR,
-            point_to_string(point),
-            f"failed trials (code {cmd_result.returncode})",
-            hint=hint,
+
+    for trial in data["trial"]:
+        command = substitute_global_vars(ctx, trial["command"])
+        command = substitute_point_vars(command, point, point_id)
+        cmd_result = subprocess.run(
+            command,
+            shell=True,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
+        if cmd_result.returncode != 0:
+            if os.path.exists(point_id):
+                hint = "try `cat {}` for more information".format(point_id)
+            else:
+                hint = None
+            report(
+                LogLevel.ERROR,
+                point_to_string(point),
+                f"failed trials (code {cmd_result.returncode})",
+                hint=hint,
+            )
+
     mvalues = dict()
     for metric, command in data["metrics"].items():
         command = substitute_global_vars(ctx, command)
@@ -553,6 +577,7 @@ def run_trial(ctx, f, i, configuration):
             )
         cmd_lines = cmd_result.stdout.strip().split("\n")
         mvalues[metric] = [float(line) for line in cmd_lines]
+
     mvalues_df = pd.DataFrame.from_dict(mvalues, orient="index").transpose()
     if not args.fold:
         NaNs = mvalues_df.columns[mvalues_df.isnull().any()]
@@ -574,6 +599,7 @@ def run_trial(ctx, f, i, configuration):
         for record in mvalues_df.to_dict(orient="records"):
             result.update(record)
             f.write(json.dumps(result) + "\n")
+
     report(LogLevel.INFO, "obtained", metrics_to_string(mvalues))
     report(
         LogLevel.INFO,
@@ -594,17 +620,6 @@ def run_trials(ctx):
     data = ctx["data"]
     order = ctx["order"]
     subspace = ctx["subspace"]
-
-    if len(data.get("trial", [])) == 0:
-        report(LogLevel.FATAL, "missing 'trial' command")
-    if isinstance(data.get("trial"), str):
-        trial = data["trial"]
-    elif isinstance(data.get("trial"), list):
-        trial = " ".join(data["trial"])
-    else:
-        hint = "try string or list of strings"
-        report(LogLevel.FATAL, "wrong format for 'trial'", hint=hint)
-    ctx["trial"] = trial
 
     if args.dry_run:
         for i, configuration in enumerate(ctx["subspace_points"], start=1):
