@@ -738,7 +738,7 @@ def validate_subspace(ctx):
             report(LogLevel.WARNING, "unusual group configuration", key, hint=hint)
 
 
-def validate_parallel_setup(ctx):
+def build_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
     order = ctx["order"]
@@ -768,13 +768,13 @@ def validate_parallel_setup(ctx):
         ctx["parallel_setup_dims"] = []
 
     # create valid subspace for parallel setup
-    space = ctx["space"]
+    subspace = ctx["subspace"]
     parallel_dims = set(ctx["parallel_setup_dims"])
     sequential_dims = set(on_dims) - parallel_dims
     ctx["parallel_setup_dims"] = [x for x in order if x in parallel_dims]
     ctx["sequential_setup_dims"] = [x for x in order if x in sequential_dims]
-    ctx["parallel_setup_space"] = [space[k] for k in ctx["parallel_setup_dims"]]
-    ctx["sequential_setup_space"] = [space[k] for k in ctx["sequential_setup_dims"]]
+    ctx["parallel_setup_space"] = [subspace[k] for k in ctx["parallel_setup_dims"]]
+    ctx["sequential_setup_space"] = [subspace[k] for k in ctx["sequential_setup_dims"]]
 
 
 def validate_args(ctx):
@@ -843,7 +843,6 @@ def launch(args):
     build_space(ctx)
     define_order(ctx)
     validate_presets(ctx)
-    validate_parallel_setup(ctx)
     detect_invalid_yuclid_vars(ctx)
 
     if len(ctx["selected_presets"]) > 0:
@@ -851,6 +850,7 @@ def launch(args):
             ctx["current_preset"] = preset_name
             report(LogLevel.INFO, "loading preset", preset_name)
             build_subspace(ctx)
+            build_setup(ctx)
             overwrite_configuration(ctx)
             validate_subspace(ctx)
             run_setup(ctx)
@@ -860,6 +860,7 @@ def launch(args):
         ctx["subspace"] = ctx["space"].copy()
         overwrite_configuration(ctx)
         validate_subspace(ctx)
+        build_setup(ctx)
         run_setup(ctx)
         run_trials(ctx)
 
