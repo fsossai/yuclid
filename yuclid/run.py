@@ -14,7 +14,7 @@ import re
 import os
 
 
-def substitute_point_vars(ctx, x, point, point_id):
+def substitute_point_vars(x, point, point_id):
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point[m.group(1)]["value"]), x)
     if point_id is not None:
@@ -31,6 +31,62 @@ def substitute_global_vars(ctx, x):
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.names\}"
     y = re.sub(pattern, lambda m: " ".join(subspace_names[m.group(1)]), y)
     return y
+
+
+def detect_invalid_yuclid_vars(ctx):
+    data = ctx["data"]
+    setup = data["setup"]
+    on_dims = setup["point"]["on"] or data["space"].keys()
+
+    # in setup.point
+    for command in setup["point"]["commands"]:
+        # match ${yuclid.<name>}
+        pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
+        # for all matches, check if the name is in on_dims
+        names = re.findall(pattern, command)
+        for name in names:
+            if name not in on_dims:
+                hint = "available variables: {}".format(
+                    ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
+                )
+                report(
+                    LogLevel.FATAL,
+                    f"invalid yuclid variable '{name}' in point setup",
+                    command,
+                    hint=hint,
+                )
+
+    # in setup.global
+    for command in setup["global"]:
+        # match ${yuclid.<name>}
+        pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
+        # for all matches, check if the name is in on_dims
+        names = re.findall(pattern, command)
+        for name in names:
+            hint = (
+                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
+                    name, name
+                )
+            )
+            report(
+                LogLevel.FATAL,
+                f"cannot use yuclid point variables in global setup",
+                command,
+                hint=hint,
+            )
+
+    # in env
+    for key, value in ctx["data"]["env"].items():
+        if re.search(pattern, value):
+            hint = "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
+                key, key
+            )
+            report(
+                LogLevel.FATAL,
+                f"cannot use yuclid point variables in env",
+                value,
+                hint=hint,
+            )
 
 
 def read_configurations(ctx):
@@ -252,18 +308,13 @@ def run_point_setup(ctx):
     data = ctx["data"]
     order = ctx["order"]
     setup = ctx["data"]["setup"]
-    parallel_setup = ctx["parallel_setup"]
+    parallel_space = ctx["parallel_setup_space"]
+    sequential_space = ctx["sequential_setup_space"]
 
     if args.dry_run:
-        if parallel_setup:
-            report(LogLevel.INFO, "starting dry point setup (parallel)")
-        else:
-            report(LogLevel.INFO, "starting dry point setup")
+        report(LogLevel.INFO, "starting dry point setup")
     else:
-        if parallel_setup:
-            report(LogLevel.INFO, "starting point setup (parallel)")
-        else:
-            report(LogLevel.INFO, "starting point setup")
+        report(LogLevel.INFO, "starting point setup")
 
     total_points = ctx["subspace_size"]
     commands = setup["point"]["commands"]
@@ -279,7 +330,7 @@ def run_point_setup(ctx):
         nonlocal errors
         gcommand = substitute_global_vars(ctx, command)
         point = {key: x for key, x in zip(order, configuration)}
-        pcommand = substitute_point_vars(ctx, gcommand, point, None)
+        pcommand = substitute_point_vars(gcommand, point, None)
 
         if not compatible_groups(configuration):
             return
@@ -288,7 +339,7 @@ def run_point_setup(ctx):
             report(
                 LogLevel.INFO,
                 "[{}/{}]".format(command_idx, len(commands)),
-                "dry run (parallel)" if parallel_setup else "dry run",
+                "dry run",
                 point_to_string(point),
             )
         else:
@@ -309,29 +360,46 @@ def run_point_setup(ctx):
                     f"failed (code {result.returncode})",
                 )
 
-    if parallel_setup and not args.dry_run:
-        if parallel_setup == "all":
-            max_workers = min(total_points, os.cpu_count() or 1)
-        else:
-            max_workers = min(4, os.cpu_count() or 1)
+    def run_sequential_points(command_idx, command, par_config):
+        seq_points = itertools.product(*ctx["sequential_setup_space"])
+        named_par_config = [
+            (name, x) for name, x in zip(ctx["parallel_setup_dims"], par_config)
+        ]
 
-        report(LogLevel.INFO, f"using {max_workers} parallel workers")
+        for config_idx, seq_config in enumerate(seq_points, start=1):
+            if compatible_groups(seq_config):
+                named_seq_config = [
+                    (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
+                ]
+                named_ordered_config = sorted(
+                    named_par_config + named_seq_config, key=lambda x: order.index(x[0])
+                )
+                final_config = [x[1] for x in named_ordered_config]
+                run_single_point_command(command_idx, command, config_idx, final_config)
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for i, command in enumerate(commands, start=1):
-                for j, configuration in enumerate(ctx["subspace_points"], start=1):
-                    future = executor.submit(
-                        run_single_point_command, i, command, j, configuration
-                    )
-                    futures.append(future)
-
-            concurrent.futures.wait(futures)
+    num_parallel_dims = len(ctx["parallel_setup_dims"])
+    if num_parallel_dims == 0:
+        max_workers = 1
     else:
-        # sequential execution
+        max_workers = min(total_points, os.cpu_count() or 1)
+    report(LogLevel.INFO, f"using {max_workers} workers for point setup")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = []
+        par_points = itertools.product(*ctx["parallel_setup_space"])
         for i, command in enumerate(commands, start=1):
-            for j, configuration in enumerate(ctx["subspace_points"], start=1):
-                run_single_point_command(i, command, j, configuration)
+            for j, par_config in enumerate(par_points, start=1):
+                if len(ctx["sequential_setup_space"]) == 0:
+                    # no sequential dimensions, run the command directly
+                    future = executor.submit(
+                        run_single_point_command, i, command, j, par_config
+                    )
+                else:
+                    future = executor.submit(
+                        run_sequential_points, i, command, par_config
+                    )
+                futures.append(future)
+        concurrent.futures.wait(futures)
 
     if errors:
         report(LogLevel.WARNING, "errors have occurred during point setup")
@@ -425,7 +493,7 @@ def run_trial(ctx, f, i, configuration):
         "started",
     )
     command = substitute_global_vars(ctx, trial)
-    command = substitute_point_vars(ctx, command, point, point_id)
+    command = substitute_point_vars(command, point, point_id)
     cmd_result = subprocess.run(
         command,
         shell=True,
@@ -447,7 +515,7 @@ def run_trial(ctx, f, i, configuration):
     mvalues = dict()
     for metric, command in data["metrics"].items():
         command = substitute_global_vars(ctx, command)
-        command = substitute_point_vars(ctx, command, point, point_id)
+        command = substitute_point_vars(command, point, point_id)
         cmd_result = subprocess.run(
             command, shell=True, universal_newlines=True, capture_output=True, env=env
         )
@@ -652,48 +720,46 @@ def validate_subspace(ctx):
 def validate_parallel_setup(ctx):
     args = ctx["args"]
     data = ctx["data"]
-    if args.parallel_point_setup_all and args.parallel_point_setup:
+    order = ctx["order"]
+    on_dims = data["setup"]["point"]["on"] or data["space"].keys()
+
+    if args.parallel_point_setup_all and args.parallel_point_setup is not None:
         report(
             LogLevel.FATAL,
             "cannot use both --parallel-point-setup-all and --parallel-point-setup",
         )
     elif args.parallel_point_setup_all:
-        ctx["parallel_setup"] = data["setup"]["point"]["on"]
+        ctx["parallel_setup_dims"] = on_dims
+
     elif args.parallel_point_setup is not None:
-        dims = args.parallel_point_setup.split(",")
-        for dim in dims:
-            if dim not in data["setup"]["point"]["on"]:
-                hint = "available point setup dimensions: {}".format(
-                    ", ".join(data["setup"]["point"]["on"])
-                )
+        candidate_dims = args.parallel_point_setup.split(",")
+        for candidate_dim in candidate_dims:
+            if candidate_dim not in on_dims:
+                hint = "available point setup dimensions: {}".format(", ".join(on_dims))
                 report(
                     LogLevel.FATAL,
                     "unknown point setup dimension",
-                    dim,
+                    candidate_dim,
                     hint=hint,
                 )
-        ctx["parallel_setup"] = dims
+        ctx["parallel_setup_dims"] = candidate_dims
     else:
-        ctx["parallel_setup"] = None
+        ctx["parallel_setup_dims"] = []
+
+    # create valid subspace for parallel setup
+    space = ctx["space"]
+    parallel_dims = set(ctx["parallel_setup_dims"])
+    sequential_dims = set(on_dims) - parallel_dims
+    ctx["parallel_setup_dims"] = [x for x in order if x in parallel_dims]
+    ctx["sequential_setup_dims"] = [x for x in order if x in sequential_dims]
+    ctx["parallel_setup_space"] = [space[k] for k in ctx["parallel_setup_dims"]]
+    ctx["sequential_setup_space"] = [space[k] for k in ctx["sequential_setup_dims"]]
 
 
 def validate_args(ctx):
     args = ctx["args"]
     now = "{:%Y%m%d-%H%M}".format(datetime.now())
     filename = f"trials.{now}.json"
-
-    if (
-        args.parallel_point_setup_all is not None
-        and args.parallel_point_setup is not None
-    ):
-        report(
-            LogLevel.FATAL,
-            "cannot use both --parallel-point-setup-all and --parallel-point-setup",
-        )
-    else:
-        ctx["parallel_config"] = (
-            "all" if args.parallel_point_setup_all else args.parallel_point_setup
-        )
 
     if args.output is None and args.output_dir is None:
         ctx["output"] = filename
@@ -757,6 +823,7 @@ def launch(args):
     define_order(ctx)
     validate_presets(ctx)
     validate_parallel_setup(ctx)
+    detect_invalid_yuclid_vars(ctx)
 
     if len(ctx["selected_presets"]) > 0:
         for preset_name in ctx["selected_presets"]:
