@@ -326,6 +326,7 @@ def run_point_setup(ctx):
     data = ctx["data"]
     order = ctx["order"]
     setup = ctx["data"]["setup"]
+    on_dims = setup["point"]["on"] or data["space"].keys()
     parallel_space = ctx["parallel_setup_space"]
     sequential_space = ctx["sequential_setup_space"]
 
@@ -347,7 +348,8 @@ def run_point_setup(ctx):
     def run_single_point_command(command_idx, command, config_idx, configuration):
         nonlocal errors
         gcommand = substitute_global_vars(ctx, command)
-        point = {key: x for key, x in zip(order, configuration)}
+        suborder = [d for d in order if d in on_dims]
+        point = {key: x for key, x in zip(suborder, configuration)}
         pcommand = substitute_point_vars(gcommand, point, None)
 
         if not compatible_groups(configuration):
@@ -383,6 +385,10 @@ def run_point_setup(ctx):
         named_par_config = [
             (name, x) for name, x in zip(ctx["parallel_setup_dims"], par_config)
         ]
+        if len(ctx["sequential_setup_dims"]) == 0:
+            final_config = [x[1] for x in named_par_config]
+            run_single_point_command(command_idx, command, 1, final_config)
+            return
 
         for config_idx, seq_config in enumerate(seq_points, start=1):
             if compatible_groups(seq_config):
@@ -405,14 +411,12 @@ def run_point_setup(ctx):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = []
         par_points = itertools.product(*ctx["parallel_setup_space"])
+
         for i, command in enumerate(commands, start=1):
-            for j, par_config in enumerate(par_points, start=1):
-                if len(ctx["sequential_setup_space"]) == 0:
-                    # no sequential dimensions, run the command directly
-                    future = executor.submit(
-                        run_single_point_command, i, command, j, par_config
-                    )
-                else:
+            if len(ctx["parallel_setup_dims"]) == 0:
+                run_sequential_points(1, command, [])
+            else:
+                for j, par_config in enumerate(par_points, start=1):
                     future = executor.submit(
                         run_sequential_points, i, command, par_config
                     )
