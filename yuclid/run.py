@@ -227,13 +227,13 @@ def normalize_point(x):
     return normalized
 
 
-def normalize_trial(trial):
+def normalize_trials(trial):
     if isinstance(trial, str):
-        return [{"command": trial, "condition": ["True"]}]
+        return [{"command": trial, "condition": "True"}]
     elif isinstance(trial, list):
         items = []
         for cmd in trial:
-            item = {"command": None, "condition": ["True"]}
+            item = {"command": None, "condition": "True"}
             if isinstance(cmd, str):
                 item["command"] = normalize_command(cmd)
             elif isinstance(cmd, dict):
@@ -243,7 +243,7 @@ def normalize_trial(trial):
                     )
                     return None
                 item["command"] = normalize_command(cmd["command"])
-                item["condition"] = cmd.get("condition", ["True"])
+                item["condition"] = cmd.get("condition", "True")
             items.append(item)
         return items
     else:
@@ -290,7 +290,7 @@ def normalize_data(json_data):
         metrics[key] = normalize_command(value)
 
     normalized["space"] = space
-    normalized["trials"] = normalize_trial(json_data.get("trials", []))
+    normalized["trials"] = normalize_trials(json_data.get("trials", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}))
     normalized["metrics"] = metrics
 
