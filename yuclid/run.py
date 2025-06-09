@@ -413,7 +413,7 @@ def run_point_setup(ctx):
 
         for i, command in enumerate(commands, start=1):
             if len(ctx["parallel_setup_dims"]) == 0:
-                run_sequential_points(1, command, [])
+                run_sequential_points(command, [])
             else:
                 for j, par_config in enumerate(par_points, start=1):
                     future = executor.submit(
