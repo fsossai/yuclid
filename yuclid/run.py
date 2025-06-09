@@ -46,7 +46,6 @@ def detect_invalid_yuclid_vars(ctx):
         names = re.findall(pattern, command)
         for name in names:
             if name not in on_dims:
-                print(name)
                 hint = "available variables: {}".format(
                     ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
                 )
@@ -104,24 +103,18 @@ def load_json(f):
             f.name,
             f"at line {e.lineno}, column {e.colno}: {e.msg}",
         )
-        sys.exit(1)
 
 
 def read_configurations(ctx):
     args = ctx["args"]
-    data = {
-        "env": dict(),
-        "setup": dict(),
-        "space": dict(),
-        "trial": [],
-        "metrics": dict(),
-        "presets": dict(),
-        "order": [],
-    }
+    data = None
 
     for file in args.inputs:
         with open(file, "r") as f:
             current = normalize_data(load_json(f))
+            if data is None:
+                data = current
+                continue
             for key, val in current.items():
                 if isinstance(data[key], list):
                     data[key].extend(val)
@@ -211,16 +204,24 @@ def normalize_command_list(cl):
     return normalized
 
 
+def normalize_groups(x):
+    if isinstance(x, dict):
+        report(LogLevel.FATAL, "groups must be a list or a value", x)
+    if not isinstance(x, list):
+        x = [x]
+    return x
+
+
 def normalize_point(x):
     normalized = None
     if isinstance(x, (str, int, float)):
-        normalized = {"name": str(x), "value": x, "group": 0, "setup": []}
+        normalized = {"name": str(x), "value": x, "groups": [0], "setup": []}
     elif isinstance(x, dict):
         if "value" in x:
             normalized = {
                 "name": str(x.get("name", x["value"])),
                 "value": x["value"],
-                "group": x.get("group", 0),
+                "groups": normalize_groups(x.get("groups", [0])),
                 "setup": normalize_command_list(x.get("setup", [])),
             }
     elif isinstance(x, list):
@@ -230,11 +231,11 @@ def normalize_point(x):
 
 def normalize_trial(trial):
     if isinstance(trial, str):
-        return [{"command": trial, "group": 0}]
+        return [{"command": trial, "groups": [0]}]
     elif isinstance(trial, list):
         items = []
         for cmd in trial:
-            item = {"command": None, "group": 0}
+            item = {"command": None, "groups": [0]}
             if isinstance(cmd, str):
                 item["command"] = normalize_command(cmd)
             elif isinstance(cmd, dict):
@@ -244,7 +245,7 @@ def normalize_trial(trial):
                     )
                     return None
                 item["command"] = normalize_command(cmd["command"])
-                item["group"] = cmd.get("group", 0)
+                item["groups"] = cmd.get("groups", [0])
             items.append(item)
         return items
     else:
@@ -253,7 +254,26 @@ def normalize_trial(trial):
 
 
 def normalize_data(json_data):
-    normalized = json_data.copy()
+    normalized = {
+        "env": dict(),
+        "setup": dict(),
+        "space": dict(),
+        "trials": [],
+        "metrics": dict(),
+        "presets": dict(),
+        "order": [],
+    }
+
+    for key in json_data.keys():
+        if key in normalized.keys():
+            normalized[key] = json_data[key]
+        else:
+            report(
+                LogLevel.WARNING,
+                "unknown field in configuration",
+                key,
+                hint="available fields: {}".format(", ".join(normalized.keys())),
+            )
 
     space = dict()
     for key, values in json_data.get("space", dict()).items():
@@ -272,9 +292,15 @@ def normalize_data(json_data):
         metrics[key] = normalize_command(value)
 
     normalized["space"] = space
-    normalized["trial"] = normalize_trial(json_data.get("trial", []))
+    normalized["trials"] = normalize_trial(json_data.get("trials", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}))
     normalized["metrics"] = metrics
+
+    if len(normalized["trials"]) == 0:
+        report(LogLevel.FATAL, "no valid trials found")
+
+    if len(normalized["metrics"]) == 0:
+        report(LogLevel.WARNING, "no metrics found. Trials will not be evaluated")
 
     return normalized
 
@@ -517,7 +543,7 @@ def get_progress(i, subspace_size):
     return "[{}/{}]".format(i, subspace_size)
 
 
-def run_trial(ctx, f, i, configuration):
+def run_point_trials(ctx, f, i, configuration):
     args = ctx["args"]
     env = ctx["env"]
     data = ctx["data"]
@@ -535,7 +561,21 @@ def run_trial(ctx, f, i, configuration):
         "started",
     )
 
-    for trial in data["trial"]:
+    compatible_trials = [
+        trial
+        for trial in data["trials"]
+        if compatible_groups(list(configuration) + [trial])
+    ]
+
+    if len(compatible_trials) == 0:
+        report(
+            LogLevel.WARNING,
+            point_to_string(point),
+            "no compatible trials found",
+            "skipping",
+        )
+
+    for trial in compatible_trials:
         command = substitute_global_vars(ctx, trial["command"])
         command = substitute_point_vars(command, point, point_id)
         cmd_result = subprocess.run(
@@ -611,11 +651,15 @@ def run_trial(ctx, f, i, configuration):
 
 
 def compatible_groups(configuration):
-    non_neutral_groups = [x["group"] for x in configuration if x["group"] != 0]
-    return len(set(non_neutral_groups)) <= 1
+    if all(0 in x["groups"] for x in configuration):
+        return True
+    else:
+        groups_list = [set(x["groups"]) for x in configuration if 0 not in x["groups"]]
+        common = set.intersection(*groups_list)
+        return len(common) > 0
 
 
-def run_trials(ctx):
+def run_subspace_trials(ctx):
     args = ctx["args"]
     data = ctx["data"]
     order = ctx["order"]
@@ -634,7 +678,7 @@ def run_trials(ctx):
     else:
         with open(ctx["output"], "a") as f:
             for i, configuration in enumerate(ctx["subspace_points"], start=1):
-                run_trial(ctx, f, i, configuration)
+                run_point_trials(ctx, f, i, configuration)
                 f.flush()
 
 
@@ -741,9 +785,14 @@ def validate_subspace(ctx):
         key: [x["name"] for x in subspace[key]] for key in subspace
     }
 
+    if ctx["subspace_size"] == 0:
+        report(LogLevel.WARNING, "empty subspace")
+    else:
+        report(LogLevel.INFO, "subspace size", ctx["subspace_size"])
+
     # checking group compatibility
     for key, values in subspace.items():
-        groups = {x["group"] for x in values}
+        groups = {g for x in values for g in x["groups"]}
         if len(groups) > 1 and 0 in groups:
             hint = "items with neutral group (i.e. 0) should be all or none"
             report(LogLevel.WARNING, "unusual group configuration", key, hint=hint)
@@ -865,7 +914,7 @@ def launch(args):
             overwrite_configuration(ctx)
             validate_subspace(ctx)
             run_setup(ctx)
-            run_trials(ctx)
+            run_subspace_trials(ctx)
             report(LogLevel.INFO, "completed preset", preset_name)
     else:
         ctx["subspace"] = ctx["space"].copy()
@@ -873,7 +922,7 @@ def launch(args):
         validate_subspace(ctx)
         build_setup(ctx)
         run_setup(ctx)
-        run_trials(ctx)
+        run_subspace_trials(ctx)
 
     report(LogLevel.INFO, "finished")
     if not args.dry_run:
