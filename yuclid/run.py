@@ -455,17 +455,17 @@ def run_point_setup(ctx):
     report(LogLevel.INFO, f"using {max_workers} workers for point setup")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = []
-        par_points = itertools.product(*ctx["parallel_setup_space"])
+        par_points = list(itertools.product(*ctx["parallel_setup_space"]))
 
         for i, command in enumerate(commands, start=1):
             if len(ctx["parallel_setup_dims"]) == 0:
                 run_sequential_points(command, [])
             else:
+                futures = []
                 for j, par_config in enumerate(par_points, start=1):
                     future = executor.submit(run_sequential_points, command, par_config)
-                futures.append(future)
-        concurrent.futures.wait(futures)
+                    futures.append(future)
+                concurrent.futures.wait(futures)
 
     if errors:
         report(LogLevel.WARNING, "errors have occurred during point setup")
@@ -653,11 +653,13 @@ def valid_conditions(configuration, order):
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     return all(eval(x["condition"], point_context) for x in configuration)
 
+
 def valid_condition(condition, configuration, order):
     point_context = {}
     yuclid = {name: x["value"] for name, x in zip(order, configuration)}
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     return eval(condition, point_context)
+
 
 def run_subspace_trials(ctx):
     args = ctx["args"]
