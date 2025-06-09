@@ -78,8 +78,10 @@ def detect_invalid_yuclid_vars(ctx):
     # in env
     for key, value in ctx["data"]["env"].items():
         if re.search(pattern, value):
-            hint = "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
-                key, key
+            hint = (
+                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
+                    key, key
+                )
             )
             report(
                 LogLevel.FATAL,
@@ -87,6 +89,19 @@ def detect_invalid_yuclid_vars(ctx):
                 value,
                 hint=hint,
             )
+
+
+def load_json(f):
+    try:
+        return json.load(f)
+    except json.JSONDecodeError as e:
+        report(
+            LogLevel.FATAL,
+            "failed to parse JSON",
+            f.name,
+            f"at line {e.lineno}, column {e.colno}: {e.msg}",
+        )
+        sys.exit(1)
 
 
 def read_configurations(ctx):
@@ -103,7 +118,7 @@ def read_configurations(ctx):
 
     for file in args.inputs:
         with open(file, "r") as f:
-            current = normalize_data(json.load(f))
+            current = normalize_data(load_json(f))
             for key, val in current.items():
                 if isinstance(data[key], list):
                     data[key].extend(val)
