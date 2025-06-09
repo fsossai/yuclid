@@ -345,7 +345,7 @@ def run_point_setup(ctx):
     errors_lock = threading.Lock()
     errors = False
 
-    def run_single_point_command(command_idx, command, config_idx, configuration):
+    def run_single_point_command(command, configuration):
         nonlocal errors
         gcommand = substitute_global_vars(ctx, command)
         suborder = [d for d in order if d in on_dims]
@@ -358,9 +358,8 @@ def run_point_setup(ctx):
         if args.dry_run:
             report(
                 LogLevel.INFO,
-                "[{}/{}]".format(command_idx, len(commands)),
                 "dry run",
-                point_to_string(point),
+                pcommand,
             )
         else:
             result = subprocess.run(
@@ -380,17 +379,17 @@ def run_point_setup(ctx):
                     f"failed (code {result.returncode})",
                 )
 
-    def run_sequential_points(command_idx, command, par_config):
+    def run_sequential_points(command, par_config):
         seq_points = itertools.product(*ctx["sequential_setup_space"])
         named_par_config = [
             (name, x) for name, x in zip(ctx["parallel_setup_dims"], par_config)
         ]
         if len(ctx["sequential_setup_dims"]) == 0:
             final_config = [x[1] for x in named_par_config]
-            run_single_point_command(command_idx, command, 1, final_config)
+            run_single_point_command(command, final_config)
             return
 
-        for config_idx, seq_config in enumerate(seq_points, start=1):
+        for seq_config in seq_points:
             if compatible_groups(seq_config):
                 named_seq_config = [
                     (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
@@ -399,7 +398,7 @@ def run_point_setup(ctx):
                     named_par_config + named_seq_config, key=lambda x: order.index(x[0])
                 )
                 final_config = [x[1] for x in named_ordered_config]
-                run_single_point_command(command_idx, command, config_idx, final_config)
+                run_single_point_command(command, final_config)
 
     num_parallel_dims = len(ctx["parallel_setup_dims"])
     if num_parallel_dims == 0:
@@ -418,7 +417,7 @@ def run_point_setup(ctx):
             else:
                 for j, par_config in enumerate(par_points, start=1):
                     future = executor.submit(
-                        run_sequential_points, i, command, par_config
+                        run_sequential_points, command, par_config
                     )
                 futures.append(future)
         concurrent.futures.wait(futures)
