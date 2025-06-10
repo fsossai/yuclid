@@ -940,6 +940,14 @@ def normalize_point_setup(psetup):
     elif isinstance(psetup, list):
         normalized = []
         for item in psetup:
+            unexpected = [x for x in item if x not in ["commands", "on", "parallel"]]
+            if len(unexpected) > 0:
+                report(
+                    LogLevel.WARNING,
+                    "point setup item has unexpected fields",
+                    ", ".join(unexpected),
+                    hint="fields: 'commands', 'on', 'parallel'",
+                )
             if isinstance(item, str):
                 normalized.append({"commands": [item], "on": None, "parallel": False})
             elif isinstance(item, dict):
@@ -960,7 +968,7 @@ def normalize_point_setup(psetup):
                 report(LogLevel.FATAL, "point setup must be a string or a list")
     elif isinstance(psetup, dict):
         report(LogLevel.FATAL, "point setup must be a string or a list")
-        
+    
     return normalized
 
 
