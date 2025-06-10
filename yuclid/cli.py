@@ -75,16 +75,6 @@ def main():
         action="store_true",
         help="Show experiment that would run",
     )
-    run_parser.add_argument(
-        "--parallel-point-setup-all",
-        action="store_true",
-        help="Run point setup in parallel for all dimensions",
-    )
-    run_parser.add_argument(
-        "--parallel-point-setup",
-        default=None,
-        help="Run point setup in parallel for specified comma-separated dimension names",
-    )
 
     # plot subcommand
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")

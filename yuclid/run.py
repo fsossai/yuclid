@@ -915,11 +915,6 @@ def validate_args(ctx):
     for file in args.inputs:
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
-    if args.parallel_point_setup_all and args.parallel_point_setup is not None:
-        report(
-            LogLevel.FATAL,
-            "cannot use both --parallel-point-setup-all and --parallel-point-setup",
-        )
     os.makedirs(args.temp_dir, exist_ok=True)
     ctx["random_key"] = "".join(
         random.choices(string.ascii_letters + string.digits, k=8)
