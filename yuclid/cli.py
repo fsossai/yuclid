@@ -82,12 +82,8 @@ def main():
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
     )
     plot_parser.add_argument("-x", required=True, help="X-axis column name")
-    plot_parser.add_argument(
-        "-y", required=True, help="Comma-separated Y-axis column names"
-    )
-    plot_parser.add_argument(
-        "-z", required=False, default="file", help="Grouping column name"
-    )
+    plot_parser.add_argument("-y", help="Comma-separated Y-axis column names")
+    plot_parser.add_argument("-z", default="file", help="Grouping column name")
     plot_parser.add_argument(
         "-n", "--normalize", default=None, help="Normalize w.r.t. a value in -z"
     )

@@ -494,7 +494,7 @@ def compute_missing(ctx):
     return pd.DataFrame(list(missing), columns=space_columns)
 
 
-def validate_options(ctx):
+def validate_args(ctx):
     args = ctx["args"]
     df = ctx["df"]
     c = 0
@@ -523,8 +523,25 @@ def validate_options(ctx):
                 LogLevel.FATAL,
                 "--speedup only works when the X-axis has a numeric type.",
             )
+        
     # Y-axis
-    y_dims = args.y.split(",")
+    if args.y is None:
+        report(
+            LogLevel.WARNING,
+            "No Y-axis specified. Using the floating point columns as Y-axis.",
+        )
+        # find the floating point numeric columns
+        numeric_cols = df.select_dtypes(
+            include=[np.float64, np.float32]
+        ).columns.tolist()
+        if len(numeric_cols) == 0:
+            report(LogLevel.FATAL, "No numeric columns found in the data.")
+        report(LogLevel.INFO, "Using '{}' as Y-axis.".format(", ".join(numeric_cols)))
+        args.y = ",".join(numeric_cols)
+        y_dims = numeric_cols
+    else:
+        y_dims = args.y.split(",")
+        
     y_axis = y_dims[0]
     for col in [args.x, args.z] + y_dims:
         if col not in df.columns:
@@ -623,7 +640,7 @@ def launch(args):
     ctx["local_files"] = locate_files(ctx["valid_files"])
     sync_files(ctx)
     generate_dataframe(ctx)
-    validate_options(ctx)
+    validate_args(ctx)
     generate_space(ctx)
     compute_ylimits(ctx)
     initialize_figure(ctx)
