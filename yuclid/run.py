@@ -33,37 +33,35 @@ def substitute_global_vars(ctx, x):
     return y
 
 
-def detect_invalid_yuclid_vars(ctx):
+def get_yvar_pattern():
+    return r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
+
+
+def validate_yvars_in_env(ctx):
+    for key, value in ctx["data"]["env"].items():
+        if re.search(get_yvar_pattern(), value):
+            hint = (
+                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
+                    key, key
+                )
+            )
+            report(
+                LogLevel.FATAL,
+                f"cannot use yuclid point variables in env",
+                value,
+                hint=hint,
+            )
+
+
+def validate_vars_in_setup(ctx):
     data = ctx["data"]
     setup = data["setup"]
-    on_dims = setup["point"]["on"] or data["space"].keys()
 
-    # in setup.point
-    for command in setup["point"]["commands"]:
-        # match ${yuclid.(<name>|@)}
-        pattern = r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
-        # for all matches, check if the name is in on_dims
-        names = re.findall(pattern, command)
-        for name in names:
-            if name not in on_dims:
-                hint = "available variables: {}".format(
-                    ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
-                )
-                if name == "@":
-                    hint += ". ${yuclid.@} is reserved for trial commands"
-                report(
-                    LogLevel.FATAL,
-                    f"invalid yuclid variable '{name}' in point setup",
-                    command,
-                    hint=hint,
-                )
-
-    # in setup.global
+    # global setup
     for command in setup["global"]:
         # match ${yuclid.<name>}
-        pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
         # for all matches, check if the name is in on_dims
-        names = re.findall(pattern, command)
+        names = re.findall(get_yvar_pattern(), command)
         for name in names:
             hint = (
                 "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
@@ -77,20 +75,33 @@ def detect_invalid_yuclid_vars(ctx):
                 hint=hint,
             )
 
-    # in env
-    for key, value in ctx["data"]["env"].items():
-        if re.search(pattern, value):
-            hint = (
-                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
-                    key, key
-                )
-            )
-            report(
-                LogLevel.FATAL,
-                f"cannot use yuclid point variables in env",
-                value,
-                hint=hint,
-            )
+    # point setup
+    for point_item in setup["point"]:
+        on_dims = point_item["on"] or data["space"].keys()
+        commands = point_item["commands"]
+        for command in commands:
+            # match ${yuclid.(<name>|@)}
+            pattern = r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
+            # for all matches, check if the name is in on_dims
+            names = re.findall(pattern, command)
+            for name in names:
+                if name not in on_dims:
+                    hint = "available variables: {}".format(
+                        ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
+                    )
+                    if name == "@":
+                        hint = ". ${yuclid.@} is reserved for trial commands"
+                        report(
+                            LogLevel.FATAL,
+                            f"invalid yuclid variable '{name}' in point setup",
+                            command,
+                            hint=hint,
+                        )
+
+
+def validate_yvars(ctx):
+    validate_yvars_in_env()
+    validate_vars_in_setup()
 
 
 def load_json(f):
@@ -322,6 +333,9 @@ def build_space(ctx):
     ctx["space_names"] = space_names
 
 
+# def build_space(ctx):
+
+
 def define_order(ctx):
     args = ctx["args"]
     data = ctx["data"]
@@ -369,14 +383,19 @@ def build_subspace(ctx):
     ctx["subspace"] = subspace
 
 
-def run_point_setup(ctx):
+def run_point_setup_item(ctx, item):
     args = ctx["args"]
     data = ctx["data"]
     order = ctx["order"]
     setup = ctx["data"]["setup"]
-    on_dims = setup["point"]["on"] or data["space"].keys()
-    parallel_space = ctx["parallel_setup_space"]
-    sequential_space = ctx["sequential_setup_space"]
+    on_dims = item["on"]
+    commands = item["commands"]
+    point_context = get_point_setup_context(ctx, item)
+
+    parallel_space = point_context["parallel_space"]
+    sequential_space = point_context["sequential_space"]
+    parallel_dims = point_context["parallel_dims"]
+    sequential_dims = point_context["sequential_dims"]
 
     if args.dry_run:
         report(LogLevel.INFO, "starting dry point setup")
@@ -384,10 +403,6 @@ def run_point_setup(ctx):
         report(LogLevel.INFO, "starting point setup")
 
     total_points = ctx["subspace_size"]
-    commands = setup["point"]["commands"]
-
-    if len(commands) == 0:
-        return
 
     # thread-safe error tracking
     errors_lock = threading.Lock()
@@ -428,26 +443,22 @@ def run_point_setup(ctx):
                 )
 
     def run_sequential_points(command, par_config):
-        seq_points = itertools.product(*ctx["sequential_setup_space"])
-        named_par_config = [
-            (name, x) for name, x in zip(ctx["parallel_setup_dims"], par_config)
-        ]
-        if len(ctx["sequential_setup_dims"]) == 0:
+        seq_points = list(itertools.product(*sequential_space))
+        named_par_config = [(name, x) for name, x in zip(parallel_dims, par_config)]
+        if len(sequential_dims) == 0:
             final_config = [x[1] for x in named_par_config]
             run_single_point_command(command, final_config)
             return
 
         for seq_config in seq_points:
-            named_seq_config = [
-                (dim, x) for dim, x in zip(ctx["sequential_setup_dims"], seq_config)
-            ]
+            named_seq_config = [(dim, x) for dim, x in zip(sequential_dims, seq_config)]
             named_ordered_config = sorted(
                 named_par_config + named_seq_config, key=lambda x: order.index(x[0])
             )
             final_config = [x[1] for x in named_ordered_config]
             run_single_point_command(command, final_config)
 
-    num_parallel_dims = len(ctx["parallel_setup_dims"])
+    num_parallel_dims = len(parallel_space)
     if num_parallel_dims == 0:
         max_workers = 1
     else:
@@ -455,17 +466,20 @@ def run_point_setup(ctx):
     report(LogLevel.INFO, f"using {max_workers} workers for point setup")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        par_points = list(itertools.product(*ctx["parallel_setup_space"]))
+        par_points = list(itertools.product(*parallel_space))
 
         for i, command in enumerate(commands, start=1):
-            if len(ctx["parallel_setup_dims"]) == 0:
+            if len(parallel_dims) == 0:
                 run_sequential_points(command, [])
             else:
                 futures = []
                 for j, par_config in enumerate(par_points, start=1):
                     future = executor.submit(run_sequential_points, command, par_config)
                     futures.append(future)
-                concurrent.futures.wait(futures)
+                for future in concurrent.futures.as_completed(futures):
+                    exc = future.exception()
+                    if exc is not None:
+                        report(LogLevel.ERROR, "point setup", f"failed: {command}")
 
     if errors:
         report(LogLevel.WARNING, "errors have occurred during point setup")
@@ -474,6 +488,23 @@ def run_point_setup(ctx):
         report(LogLevel.INFO, "dry point setup completed")
     else:
         report(LogLevel.INFO, "point setup completed")
+
+
+def run_point_setup(ctx):
+    for item in ctx["data"]["setup"]["point"]:
+        if item["on"] is None:
+            item["on"] = ctx["data"]["space"].keys()
+            
+        # reordering
+        item["on"] = [x for x in item["on"] if x in ctx["order"]]
+        if len(item["on"]) == 0:
+            report(
+                LogLevel.WARNING,
+                "point setup item has no valid 'on' dimensions. Skipping",
+                item,
+            )
+            continue
+        run_point_setup_item(ctx, item)
 
 
 def run_global_setup(ctx):
@@ -793,43 +824,78 @@ def validate_subspace(ctx):
         report(LogLevel.INFO, "subspace size", ctx["subspace_size"])
 
 
-def build_setup(ctx):
+def validate_setup(ctx):
+    setup = ctx["data"]["setup"]
+    # we assume setup is normalized
+    psetup = setup["point"]
+
+    # check validity of 'on' fields
+    for item in psetup:
+        on = item["on"]
+        if not isinstance(on, (list, type(None))):
+            report(LogLevel.FATAL, "point setup 'on' must be a list or None")
+        for dim in item["on"]:
+            if not isinstance(dim, str):
+                report(LogLevel.FATAL, "every 'on' dimension must be a string")
+
+    # check validity of 'parallel' fields
+    for item in psetup:
+        parallel = item["parallel"]
+        if not isinstance(parallel, (bool, list)):
+            report(LogLevel.FATAL, "point setup 'parallel' must be a boolean or a list")
+        if isinstance(parallel, list):
+            wrong = [
+                x for x in parallel if not isinstance(x, str) or x not in item["on"]
+            ]
+            if len(wrong) > 0:
+                hint = "available dimensions: {}".format(", ".join(item["on"]))
+                report(
+                    LogLevel.FATAL,
+                    "invalid parallel dimensions",
+                    ", ".join(wrong),
+                    hint=hint,
+                )
+
+
+def get_point_setup_context(ctx, item):
     args = ctx["args"]
     data = ctx["data"]
     order = ctx["order"]
-    on_dims = data["setup"]["point"]["on"] or data["space"].keys()
+    dims = item["on"] or data["space"].keys()
 
-    if args.parallel_point_setup_all and args.parallel_point_setup is not None:
-        report(
-            LogLevel.FATAL,
-            "cannot use both --parallel-point-setup-all and --parallel-point-setup",
-        )
-    elif args.parallel_point_setup_all:
-        ctx["parallel_setup_dims"] = on_dims
-
-    elif args.parallel_point_setup is not None:
-        candidate_dims = args.parallel_point_setup.split(",")
-        for candidate_dim in candidate_dims:
-            if candidate_dim not in on_dims:
-                hint = "available point setup dimensions: {}".format(", ".join(on_dims))
+    if isinstance(item["parallel"], bool):
+        if item["parallel"]:
+            item["parallel"] = dims
+        else:
+            item["parallel"] = []
+    elif isinstance(item["parallel"], list):
+        for dim in item["parallel"]:
+            if not isinstance(dim, str):
+                report(LogLevel.FATAL, "parallel dimensions must be strings")
+            if dim not in dims:
+                hint = "available dimensions: {}".format(", ".join(dims))
                 report(
                     LogLevel.FATAL,
-                    "unknown point setup dimension",
-                    candidate_dim,
+                    "invalid parallel dimension",
+                    dim,
                     hint=hint,
                 )
-        ctx["parallel_setup_dims"] = candidate_dims
-    else:
-        ctx["parallel_setup_dims"] = []
 
     # create valid subspace for parallel setup
     subspace = ctx["subspace"]
-    parallel_dims = set(ctx["parallel_setup_dims"])
-    sequential_dims = set(on_dims) - parallel_dims
-    ctx["parallel_setup_dims"] = [x for x in order if x in parallel_dims]
-    ctx["sequential_setup_dims"] = [x for x in order if x in sequential_dims]
-    ctx["parallel_setup_space"] = [subspace[k] for k in ctx["parallel_setup_dims"]]
-    ctx["sequential_setup_space"] = [subspace[k] for k in ctx["sequential_setup_dims"]]
+    parallel_dims = set(item["parallel"])
+    sequential_dims = set(dims) - parallel_dims
+    parallel_dims = [x for x in order if x in parallel_dims]
+    sequential_dims = [x for x in order if x in sequential_dims]
+    parallel_space = [subspace[k] for k in parallel_dims]
+    sequential_space = [subspace[k] for k in sequential_dims]
+
+    return {
+        "parallel_dims": parallel_dims,
+        "sequential_dims": sequential_dims,
+        "parallel_space": parallel_space,
+        "sequential_space": sequential_space,
+    }
 
 
 def validate_args(ctx):
@@ -849,6 +915,11 @@ def validate_args(ctx):
     for file in args.inputs:
         if not os.path.isfile(file):
             report(LogLevel.FATAL, f"'{file}' does not exist")
+    if args.parallel_point_setup_all and args.parallel_point_setup is not None:
+        report(
+            LogLevel.FATAL,
+            "cannot use both --parallel-point-setup-all and --parallel-point-setup",
+        )
     os.makedirs(args.temp_dir, exist_ok=True)
     ctx["random_key"] = "".join(
         random.choices(string.ascii_letters + string.digits, k=8)
@@ -860,32 +931,50 @@ def validate_args(ctx):
     report(LogLevel.INFO, "random key", ctx["random_key"])
 
 
+def normalize_point_setup(psetup):
+    if isinstance(psetup, str):
+        psetup = [
+            {"commands": [x], "on": None, "parallel": False}
+            for x in normalize_command_list(psetup)
+        ]
+    elif isinstance(psetup, list):
+        normalized = []
+        for item in psetup:
+            if isinstance(item, str):
+                normalized.append({"commands": [item], "on": None, "parallel": False})
+            elif isinstance(item, dict):
+                if "commands" in item:
+                    normalized.append(
+                        {
+                            "commands": normalize_command_list(item["commands"]),
+                            "on": item.get("on", None),
+                            "parallel": item.get("parallel", False),
+                        }
+                    )
+                else:
+                    report(
+                        LogLevel.FATAL,
+                        "point setup item must have 'commands' field",
+                    )
+            else:
+                report(LogLevel.FATAL, "point setup must be a string or a list")
+    elif isinstance(psetup, dict):
+        report(LogLevel.FATAL, "point setup must be a string or a list")
+        
+    return normalized
+
+
 def normalize_setup(setup):
     normalized = {"global": [], "point": []}
-    gsetup = []
-    psetup = dict()
 
     if not isinstance(setup, dict):
         report(LogLevel.FATAL, "setup must have fields 'global' and/or 'point'")
 
     if "global" in setup:
-        gsetup = normalize_command_list(setup["global"])
-    if "point" in setup:
-        if isinstance(setup["point"], (str, list)):
-            psetup = {
-                "on": None,
-                "commands": normalize_command_list(setup["point"]),
-            }
-        elif isinstance(setup["point"], dict):
-            psetup = {
-                "on": setup["point"].get("on", None),
-                "commands": normalize_command_list(setup["point"].get("commands", [])),
-            }
-        else:
-            report(LogLevel.FATAL, "point setup must be a string, list or dict")
+        normalized["global"] = normalize_command_list(setup["global"])
 
-    normalized["global"] = gsetup
-    normalized["point"] = psetup
+    if "point" in setup:
+        normalized["point"] = normalize_point_setup(setup["point"])
 
     return normalized
 
@@ -898,16 +987,17 @@ def launch(args):
     build_space(ctx)
     define_order(ctx)
     validate_presets(ctx)
-    detect_invalid_yuclid_vars(ctx)
+    validate_yvars_in_env(ctx)
 
     if len(ctx["selected_presets"]) > 0:
         for preset_name in ctx["selected_presets"]:
             ctx["current_preset"] = preset_name
             report(LogLevel.INFO, "loading preset", preset_name)
             build_subspace(ctx)
-            build_setup(ctx)
             overwrite_configuration(ctx)
             validate_subspace(ctx)
+            # build_setup(ctx)
+            validate_setup(ctx)
             run_setup(ctx)
             run_subspace_trials(ctx)
             report(LogLevel.INFO, "completed preset", preset_name)
@@ -915,7 +1005,8 @@ def launch(args):
         ctx["subspace"] = ctx["space"].copy()
         overwrite_configuration(ctx)
         validate_subspace(ctx)
-        build_setup(ctx)
+        # build_setup(ctx)
+        validate_setup(ctx)
         run_setup(ctx)
         run_subspace_trials(ctx)
 
