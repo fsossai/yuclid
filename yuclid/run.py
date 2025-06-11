@@ -170,30 +170,45 @@ def build_environment(ctx):
         ctx["env"] = resolved_env
 
 
-def overwrite_configuration(ctx):
-    args = ctx["args"]
-    subspace = ctx["subspace"]
-    if args.select is not None:
-        new_values = dict(pair.split("=") for pair in args.select)
-        for k, values in new_values.items():
+def apply_user_selectors(subspace, selector_pairs):
+    selectors = dict(pair.split("=") for pair in selector_pairs)
+    for dim, csv_selection in selectors.items():
+        selectors = csv_selection.split(",")
+        if subspace[dim] is None:
+            selection = [normalize_point(x) for x in selectors]
+        else:
             selection = []
-            if subspace[k] is None:
-                selection = [normalize_point(x) for x in values.split(",")]
-            else:
-                valid = {str(x["name"]): x for x in subspace[k]}
-                for current in values.split(","):
-                    if current in valid.keys():
-                        selection.append(valid[current])
+            valid = {str(x["name"]): x for x in subspace[dim]}
+            for selector in selectors:
+                if selector in valid.keys():
+                    selection.append(valid[selector])
+                else:
+                    report(
+                        LogLevel.ERROR,
+                        "invalid selector",
+                        selector,
+                        hint="available: {}".format(", ".join(valid.keys())),
+                    )
+
             if len(selection) == 0:
-                available = ", ".join(
-                    [str(x["name"]) for x in subspace[k]]
-                    if subspace[k] is not None
+                available = (
+                    [str(x["name"]) for x in subspace[dim]]
+                    if subspace[dim] is not None
                     else []
                 )
-                hint = "pick from the following values: {}".format(available)
-                report(LogLevel.FATAL, "invalid value", values, hint=hint)
-            subspace[k] = selection
-    ctx["subspace"] = subspace
+                if len(available) == 0:
+                    hint = None
+                else:
+                    hint = "pick from the following values: {}".format(
+                        ", ".join(available)
+                    )
+                report(
+                    LogLevel.FATAL,
+                    "no valid selection for dimension '{}'".format(dim),
+                    hint=hint,
+                )
+        subspace[dim] = selection
+    return subspace
 
 
 def normalize_command(cmd):
@@ -202,7 +217,7 @@ def normalize_command(cmd):
     elif isinstance(cmd, list):
         return " ".join(cmd)
     else:
-        raise ValueError(f"invalid command type {type(cmd)}")
+        report(LogLevel.FATAL, "command must be a string or a list of strings", cmd)
 
 
 def normalize_command_list(cl):
@@ -262,6 +277,21 @@ def normalize_trials(trial):
         return None
 
 
+def normalize_space_values(space):
+    normalized = dict()
+    for key, values in space.items():
+        if key.endswith(":py"):
+            name = key.split(":")[-2]
+            normalized[name] = normalize_point(eval(values))
+        elif values is not None:
+            normalized[key] = []
+            for x in values:
+                normalized[key].append(normalize_point(x))
+        else:
+            normalized[key] = None
+    return normalized
+
+
 def normalize_data(json_data):
     normalized = {
         "env": dict(),
@@ -284,17 +314,7 @@ def normalize_data(json_data):
                 hint="available fields: {}".format(", ".join(normalized.keys())),
             )
 
-    space = dict()
-    for key, values in json_data.get("space", dict()).items():
-        if key.endswith(":py"):
-            name = key.split(":")[-2]
-            space[name] = normalize_point(eval(values))
-        elif values is not None:
-            space[key] = []
-            for x in values:
-                space[key].append(normalize_point(x))
-        else:
-            space[key] = None
+    space = normalize_space_values(json_data.get("space", {}))
 
     metrics = dict()
     for key, value in json_data.get("metrics", dict()).items():
@@ -304,6 +324,7 @@ def normalize_data(json_data):
     normalized["trials"] = normalize_trials(json_data.get("trials", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}))
     normalized["metrics"] = metrics
+    normalized["presets"] = json_data.get("presets", dict())
 
     if len(normalized["trials"]) == 0:
         report(LogLevel.FATAL, "no valid trials found")
@@ -328,12 +349,11 @@ def build_space(ctx):
     undefined_space_names = {key: [] for key in space if space[key] is None}
     space_values = {**defined_space_values, **undefined_space_values}
     space_names = {**defined_space_names, **undefined_space_names}
+    ctx["unfiltered_space"] = space.copy()
+    apply_user_selectors(space, ctx["args"].select or [])
     ctx["space"] = space
     ctx["space_values"] = space_values
     ctx["space_names"] = space_names
-
-
-# def build_space(ctx):
 
 
 def define_order(ctx):
@@ -365,21 +385,82 @@ def define_order(ctx):
     ctx["order"] = order
 
 
-def build_subspace(ctx):
+def build_subspace(ctx, preset_name):
     space = ctx["space"]
     subspace = dict()
-    preset = ctx["presets"][ctx["current_preset"]]
-    for key, values in space.items():
+    space_names = ctx["space_names"]
+    preset_space = ctx["data"]["presets"][preset_name]
+    preset = dict()
+
+    for dim, space_items in preset_space.items():
+        if dim not in space:
+            hint = "available dimensions: {}".format(", ".join(space.keys()))
+            report(LogLevel.FATAL, "preset dimension not in space", dim, hint=hint)
+        new_items = []
+        wrong = []
+        for item in space_items:
+            if not isinstance(item, (str, int, float)):
+                report(
+                    LogLevel.FATAL, "preset item must be a string, int or float", item
+                )
+            if space[dim] is None:
+                if isinstance(item, str) and "*" in item:
+                    # regex definition
+                    report(
+                        LogLevel.FATAL,
+                        "regex cannot be used on undefined dimensions",
+                        dim,
+                    )
+                elif isinstance(item, (str, int, float)):
+                    new_items.append(item)
+                else:
+                    report(
+                        LogLevel.FATAL,
+                        "preset item for undefined dimensions must be a string, int or float",
+                        item,
+                    )
+            elif isinstance(item, str) and "*" in item:
+                # definition via regex
+                pattern = "^" + re.escape(item).replace("\\*", ".*") + "$"
+                regex = re.compile(pattern)
+                new_items += [n for n in space_names[dim] if regex.match(n)]
+            elif str(item) not in space_names[dim]:
+                report(
+                    LogLevel.ERROR,
+                    "unknown name in preset",
+                    hint="in order to use '{}' in preset '{}', define it first in the space".format(
+                        item, preset_name
+                    ),
+                )
+            else:
+                new_items.append(item)
+
+        if len(wrong) > 0:
+            hint = "available names: {}".format(", ".join(space_names[dim]))
+            report(
+                LogLevel.FATAL,
+                f"unknown name in preset '{preset_name}'",
+                ", ".join(wrong),
+                hint=hint,
+            )
+        preset[dim] = new_items
+
+    for dim, space_items in preset_space.items():
+        if len(space_items) == 0:
+            report(LogLevel.ERROR, f"empty dimension in preset '{preset_name}'", dim)
+
+    for key, space_items in space.items():
         if key in preset:
             subvalues = []
-            if values is None:
+            if space_items is None:
                 subvalues = [normalize_point(x) for x in preset[key]]
             else:
-                vmap = {x["name"]: x for x in values}
+                vmap = {x["name"]: x for x in space_items}
                 subvalues = [vmap[n] for n in preset[key] if n in vmap]
             subspace[key] = subvalues
         else:
-            subspace[key] = values
+            subspace[key] = space_items
+    apply_user_selectors(subspace, ctx["args"].select or [])
     ctx["subspace"] = subspace
 
 
@@ -563,8 +644,8 @@ def point_to_string(point):
     return ".".join([str(x["name"]) for x in point.values()])
 
 
-def metrics_to_string(mvalues):
-    return " ".join([f"{m}={v}" for m, v in mvalues.items()])
+def metrics_to_string(metric_values):
+    return " ".join([f"{m}={v}" for m, v in metric_values.items()])
 
 
 def get_progress(i, subspace_size):
@@ -620,7 +701,7 @@ def run_point_trials(ctx, f, i, configuration):
                 hint=hint,
             )
 
-    mvalues = dict()
+    metric_values = dict()
     for metric, command in data["metrics"].items():
         command = substitute_global_vars(ctx, command)
         command = substitute_point_vars(command, point, point_id)
@@ -640,11 +721,11 @@ def run_point_trials(ctx, f, i, configuration):
             )
         else:
             cmd_lines = cmd_result.stdout.strip().split("\n")
-            mvalues[metric] = [float(line) for line in cmd_lines]
+            metric_values[metric] = [float(line) for line in cmd_lines]
 
-    mvalues_df = pd.DataFrame.from_dict(mvalues, orient="index").transpose()
+    metric_values_df = pd.DataFrame.from_dict(metric_values, orient="index").transpose()
     if not args.fold:
-        NaNs = mvalues_df.columns[mvalues_df.isnull().any()]
+        NaNs = metric_values_df.columns[metric_values_df.isnull().any()]
         if len(NaNs) > 0:
             report(
                 LogLevel.WARNING,
@@ -657,14 +738,14 @@ def run_point_trials(ctx, f, i, configuration):
     else:
         result = {k: x["name"] for k, x in point.items()}
     if args.fold:
-        result.update(mvalues_df.to_dict(orient="list"))
+        result.update(metric_values_df.to_dict(orient="list"))
         f.write(json.dumps(result) + "\n")
     else:
-        for record in mvalues_df.to_dict(orient="records"):
+        for record in metric_values_df.to_dict(orient="records"):
             result.update(record)
             f.write(json.dumps(result) + "\n")
 
-    report(LogLevel.INFO, "obtained", metrics_to_string(mvalues))
+    report(LogLevel.INFO, "obtained", metrics_to_string(metric_values))
     report(
         LogLevel.INFO,
         get_progress(i, ctx["subspace_size"]),
@@ -703,7 +784,7 @@ def validate_points(ctx):
         report(
             LogLevel.ERROR,
             "no compatible trial commands for the given subspace",
-            hint="maybe your trial conditions are too strict? Try relaxing them or adding more trials.",
+            hint="your trial conditions may be too strict, try relaxing them or adding more trials.",
         )
 
 
@@ -730,84 +811,8 @@ def run_subspace_trials(ctx):
                 f.flush()
 
 
-def validate_presets(ctx):
-    args = ctx["args"]
-    data = ctx["data"]
-    space = ctx["space"]
-    space_names = ctx["space_names"]
-
-    # normalization
-    presets_old = data.get("presets", dict())
-    presets = dict()
-    for pname, pspace in presets_old.items():
-        presets[pname] = dict()
-        for k, values in pspace.items():
-            if k.endswith(":py"):
-                k = k.split(":py")[-2]
-                if isinstance(values, str):
-                    presets[pname][k] = eval(values)
-                else:
-                    report(
-                        LogLevel.FATAL,
-                        "pythonic dimensions must be strings",
-                        f"in '{k}' in '{pname}'",
-                    )
-            elif not isinstance(values, list):
-                presets[pname][k] = [values]
-            else:
-                presets[pname][k] = values
-
-    for pname, pspace in presets.items():
-        for k, values in pspace.items():
-            if k not in space:
-                hint = "available dimensions: {}".format(", ".join(space.keys()))
-                report(LogLevel.FATAL, "preset dimension not in space", k, hint=hint)
-            new_values = []
-            wrong = []
-            for v in values:
-                if isinstance(v, str) and "*" in v:
-                    if space[k] is None:
-                        report(
-                            LogLevel.FATAL,
-                            "regex cannot be used on undefined dimensions",
-                            k,
-                        )
-                    else:
-                        pattern = "^" + re.escape(v).replace("\\*", ".*") + "$"
-                        regex = re.compile(pattern)
-                        new_values += [n for n in space_names[k] if regex.match(n)]
-                elif str(v) not in space_names[k] and space[k] is not None:
-                    wrong.append(str(v))
-                else:
-                    new_values.append(v)
-
-            if len(wrong) > 0:
-                hint = "available names: {}".format(", ".join(space_names[k]))
-                report(
-                    LogLevel.FATAL,
-                    f"unknown name in preset '{pname}'",
-                    ", ".join(wrong),
-                    hint=hint,
-                )
-            presets[pname][k] = new_values
-
-    for pname, pspace in presets.items():
-        for k, v in pspace.items():
-            if len(v) == 0:
-                report(LogLevel.ERROR, f"empty dimension in preset '{pname}'", k)
-
-    if args.presets is None:
-        selected_presets = dict()
-    else:
-        selected_presets = dict()
-        for p in args.presets:
-            if p not in presets:
-                hint = "available presets: {}".format(", ".join(presets.keys()))
-                report(LogLevel.FATAL, "unknown preset", p, hint=hint)
-            else:
-                selected_presets[p] = presets[p]
-    ctx["presets"] = presets
-    ctx["selected_presets"] = selected_presets
+def build_preset(ctx, preset_name):
+    pass
 
 
 def validate_subspace(ctx):
@@ -837,6 +842,20 @@ def validate_subspace(ctx):
         report(LogLevel.WARNING, "empty subspace")
     else:
         report(LogLevel.INFO, "subspace size", ctx["subspace_size"])
+
+
+def validate_presets(ctx):
+    available = ctx["data"]["presets"].keys()
+    args = ctx["args"]
+    for preset_name in args.presets:
+        if preset_name not in available:
+            hint = "available presets: {}".format(", ".join(available))
+            report(
+                LogLevel.FATAL,
+                "invalid preset",
+                preset_name,
+                hint=hint,
+            )
 
 
 def validate_setup(ctx):
@@ -1002,9 +1021,9 @@ def run_experiments(ctx, preset_name=None):
         ctx["subspace"] = ctx["space"].copy()
     else:
         ctx["current_preset"] = preset_name
-        build_subspace(ctx)
+        build_preset(ctx, preset_name)
+        build_subspace(ctx, preset_name)
 
-    overwrite_configuration(ctx)
     validate_subspace(ctx)
     validate_points(ctx)
     validate_setup(ctx)
@@ -1019,11 +1038,11 @@ def launch(args):
     build_environment(ctx)
     build_space(ctx)
     define_order(ctx)
-    validate_presets(ctx)
     validate_yvars(ctx)
+    validate_presets(ctx)
 
-    if len(ctx["selected_presets"]) > 0:
-        for preset_name in ctx["selected_presets"]:
+    if len(args.presets) > 0:
+        for preset_name in args.presets:
             report(LogLevel.INFO, "running preset", preset_name)
             run_experiments(ctx, preset_name)
             report(LogLevel.INFO, "completed preset", preset_name)
