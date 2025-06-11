@@ -108,6 +108,14 @@ def generate_dataframe(ctx):
     ctx["df"] = df
 
 
+def rescale(ctx):
+    df = ctx["df"]
+    args = ctx["args"]
+    for y in ctx["y_dims"]:
+        df[y] = df[y] * args.rescale
+    ctx["df"] = df
+
+
 def generate_space(ctx):
     args = ctx["args"]
     df = ctx["df"]
@@ -148,6 +156,7 @@ def file_monitor(ctx):
             current_hash = None
         if current_hash != last_hash:
             generate_dataframe(ctx)
+            rescale(ctx)
             generate_space(ctx)
             compute_ylimits(ctx)
             space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
@@ -237,6 +246,7 @@ def update_plot(ctx, padding_factor=1.05):
     top = ctx.get("top", None)
 
     sub_df = df.copy()
+
     for d in dims:
         k = domain[d][position[d]]
         sub_df = sub_df[sub_df[d] == k]
@@ -523,7 +533,7 @@ def validate_args(ctx):
                 LogLevel.FATAL,
                 "--speedup only works when the X-axis has a numeric type.",
             )
-        
+
     # Y-axis
     if args.y is None:
         report(
@@ -541,7 +551,7 @@ def validate_args(ctx):
         y_dims = numeric_cols
     else:
         y_dims = args.y.split(",")
-        
+
     y_axis = y_dims[0]
     for col in [args.x, args.z] + y_dims:
         if col not in df.columns:
@@ -596,6 +606,7 @@ def validate_args(ctx):
 
 def start_gui(ctx):
     ctx["alive"] = True
+
     update_plot(ctx)
     update_table(ctx)
     threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
@@ -641,6 +652,7 @@ def launch(args):
     sync_files(ctx)
     generate_dataframe(ctx)
     validate_args(ctx)
+    rescale(ctx)
     generate_space(ctx)
     compute_ylimits(ctx)
     initialize_figure(ctx)

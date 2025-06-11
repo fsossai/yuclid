@@ -142,6 +142,13 @@ def main():
         default=False,
         help="Show missing experiments if any",
     )
+    plot_parser.add_argument(
+        "--rescale",
+        type=float,
+        default=1.0,
+        help="Rescale Y-axis values by multiplying by this number",
+    )
+
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
