@@ -83,7 +83,7 @@ def main():
     )
     plot_parser.add_argument("-x", required=True, help="X-axis column name")
     plot_parser.add_argument("-y", help="Comma-separated Y-axis column names")
-    plot_parser.add_argument("-z", default="file", help="Grouping column name")
+    plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
         "-n", "--normalize", default=None, help="Normalize w.r.t. a value in -z"
     )
@@ -148,7 +148,6 @@ def main():
         default=1.0,
         help="Rescale Y-axis values by multiplying by this number",
     )
-
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 

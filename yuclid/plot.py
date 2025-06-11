@@ -504,6 +504,16 @@ def compute_missing(ctx):
     return pd.DataFrame(list(missing), columns=space_columns)
 
 
+def validate_dimensions(ctx, dims):
+    args = ctx["args"]
+    df = ctx["df"]
+    for col in dims:
+        if col not in df.columns:
+            available = list(df.columns)
+            hint = "available columns: {}".format(", ".join(available))
+            report(LogLevel.FATAL, "invalid column", col, hint=hint)
+
+
 def validate_args(ctx):
     args = ctx["args"]
     df = ctx["df"]
@@ -518,6 +528,101 @@ def validate_args(ctx):
                 LogLevel.FATAL,
                 "--geomean can only be used together with --normalize",
             )
+
+    # Y-axis
+    numeric_cols = (
+        df.drop(columns=[args.x])
+        .select_dtypes(include=[np.float64, np.float32])
+        .columns.tolist()
+    )
+    if args.y is None:
+        # find the floating point numeric columns
+        if len(numeric_cols) == 0:
+            report(
+                LogLevel.FATAL,
+                "No numeric columns found in the data",
+                hint="use -y to specify a Y-axis",
+            )
+        report(LogLevel.INFO, "Using '{}' as Y-axis".format(", ".join(numeric_cols)))
+        args.y = ",".join(numeric_cols)
+        y_dims = numeric_cols
+    else:
+        y_dims = args.y.split(",")
+    y_axis = y_dims[0]
+    for y in y_dims:
+        if not pd.api.types.is_numeric_dtype(df[y]):
+            t = df[y].dtype
+            if len(numeric_cols) > 0:
+                hint = "try {}".format(
+                    numeric_cols[0]
+                    if len(numeric_cols) == 1
+                    else ", ".join(numeric_cols)
+                )
+            else:
+                hint = "use -y to specify a Y-axis"
+            report(
+                LogLevel.FATAL,
+                f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'",
+                hint=hint,
+            )
+    validate_dimensions(ctx, y_dims)
+
+    # X-axis
+    validate_dimensions(ctx, [args.x])
+    if args.x in y_dims:
+        report(
+            LogLevel.FATAL,
+            f"X-axis and Y-axis must be different dimensions",
+        )
+
+    # Z-axis
+    # check that there are at least two dimensions other than y_dims
+    if len(df.columns.difference(y_dims)) < 2:
+        report(
+            LogLevel.FATAL,
+            "there must be at least two dimensions other than the Y-axis",
+        )
+    if args.z is None:
+        # pick the first column that is not args.x or in y_dims
+        available = df.columns.difference([args.x] + y_dims)
+        args.z = available[np.argmin([df[col].nunique() for col in available])]
+        report(LogLevel.INFO, "Using '{}' as Z-axis".format(args.z))
+    else:
+        validate_dimensions(ctx, [args.z])
+    zdom = df[args.z].unique()
+    if len(zdom) == 1 and args.geomean:
+        report(
+            LogLevel.WARNING,
+            "--geomean is superfluous because '{}' is the only value in the '{}' group".format(
+                zdom[0], args.z
+            ),
+        )
+
+    # all axis
+    if args.x == args.z or args.z in y_dims:
+        report(
+            LogLevel.FATAL,
+            "the -z dimension must be different from the dimension used on the X or Y axis",
+        )
+
+    # geomean and lines
+    if args.geomean and args.lines:
+        report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
+    for d in df.columns.difference(y_dims):
+        n = df[d].nunique()
+        if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
+            report(
+                LogLevel.WARNING,
+                f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
+            )
+
+    # speedup and normalize
+    if args.speedup is not None:
+        if not pd.api.types.is_numeric_dtype(df[args.x]):
+            report(
+                LogLevel.FATAL,
+                "--speedup only works when the X-axis has a numeric type",
+            )
     if args.normalize is not None or args.speedup is not None:
         available = df[args.z].unique()
         val = df[args.z].dtype.type(args.normalize or args.speedup)
@@ -526,71 +631,6 @@ def validate_args(ctx):
                 LogLevel.FATAL,
                 "--normalize and --speedup must be one of the following values:",
                 available,
-            )
-    if args.speedup is not None:
-        if not pd.api.types.is_numeric_dtype(df[args.x]):
-            report(
-                LogLevel.FATAL,
-                "--speedup only works when the X-axis has a numeric type.",
-            )
-
-    # Y-axis
-    if args.y is None:
-        report(
-            LogLevel.WARNING,
-            "No Y-axis specified. Using the floating point columns as Y-axis.",
-        )
-        # find the floating point numeric columns
-        numeric_cols = df.select_dtypes(
-            include=[np.float64, np.float32]
-        ).columns.tolist()
-        if len(numeric_cols) == 0:
-            report(LogLevel.FATAL, "No numeric columns found in the data.")
-        report(LogLevel.INFO, "Using '{}' as Y-axis.".format(", ".join(numeric_cols)))
-        args.y = ",".join(numeric_cols)
-        y_dims = numeric_cols
-    else:
-        y_dims = args.y.split(",")
-
-    y_axis = y_dims[0]
-    for col in [args.x, args.z] + y_dims:
-        if col not in df.columns:
-            available = list(df.columns)
-            hint = "available columns: {}".format(", ".join(available))
-            report(LogLevel.FATAL, "invalid column", col, hint=hint)
-    for y in y_dims:
-        if not pd.api.types.is_numeric_dtype(df[y]):
-            t = df[y].dtype
-            report(
-                LogLevel.FATAL,
-                f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'",
-            )
-
-    zdom = df[args.z].unique()
-    if len(zdom) == 1 and args.geomean:
-        report(
-            LogLevel.WARNING,
-            f"--geomean is superfluous because '{zdom[0]}' is the only value in the '{args.z}' group",
-        )
-    if args.geomean and args.lines:
-        report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
-    if args.x in y_dims:
-        report(
-            LogLevel.FATAL,
-            f"X-axis and Y-axis must be different dimensions. Given {args.x}",
-        )
-    if args.x == args.z or args.z in y_dims:
-        report(
-            LogLevel.FATAL,
-            "the -z dimension must be different from the dimension used on the X or Y axis",
-        )
-    space_columns = df.columns.difference(y_dims)
-    for d in space_columns:
-        n = df[d].nunique()
-        if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
-            report(
-                LogLevel.WARNING,
-                f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
             )
 
     if args.show_missing:
