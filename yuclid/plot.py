@@ -111,7 +111,7 @@ def generate_dataframe(ctx):
 def rescale(ctx):
     df = ctx["df"]
     args = ctx["args"]
-    for y in ctx["y_dims"]:
+    for y in args.y:
         df[y] = df[y] * args.rescale
     ctx["df"] = df
 
@@ -119,9 +119,8 @@ def rescale(ctx):
 def generate_space(ctx):
     args = ctx["args"]
     df = ctx["df"]
-    y_dims = ctx["y_dims"]
     z_size = df[args.z].nunique()
-    dims = list(df.columns.difference([args.x, args.z] + y_dims))
+    dims = list(df.columns.difference([args.x, args.z] + args.y))
     dim_keys = "123456789"[: len(dims)]
     selected_index = 0 if len(dims) > 0 else None
     domain = dict()
@@ -160,9 +159,9 @@ def file_monitor(ctx):
             generate_space(ctx)
             compute_ylimits(ctx)
             space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
-            sizes = [f"{d}={ctx['df'][d].nunique()}" for d in space_columns]
+            sizes = ["{}={}".format(d, ctx["df"][d].nunique()) for d in space_columns]
             missing = compute_missing(ctx)
-            report(LogLevel.INFO, f"new space: {' | '.join(sizes)}")
+            report(LogLevel.INFO, "space sizes", " | ".join(sizes))
             if len(missing) > 0:
                 report(LogLevel.WARNING, f"at least {len(missing)} missing experiments")
             update_table(ctx)
@@ -239,7 +238,6 @@ def update_plot(ctx, padding_factor=1.05):
     domain = ctx["domain"]
     position = ctx["position"]
     y_axis = ctx["y_axis"]
-    y_dims = ctx["y_dims"]
     z_dom = ctx["z_dom"]
     z_size = ctx["z_size"]
     ax_plot = ctx["ax_plot"]
@@ -390,7 +388,7 @@ def update_plot(ctx, padding_factor=1.05):
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
     y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
     title_parts = []
-    for i, y in enumerate(y_dims, start=1):
+    for i, y in enumerate(args.y, start=1):
         if y == y_axis:
             title_parts.append(rf"{i}: $\mathbf{{{y}}}$")
         else:
@@ -544,12 +542,9 @@ def validate_args(ctx):
                 hint="use -y to specify a Y-axis",
             )
         report(LogLevel.INFO, "Using '{}' as Y-axis".format(", ".join(numeric_cols)))
-        args.y = ",".join(numeric_cols)
-        y_dims = numeric_cols
-    else:
-        y_dims = args.y.split(",")
-    y_axis = y_dims[0]
-    for y in y_dims:
+        args.y = numeric_cols
+    validate_dimensions(ctx, args.y)
+    for y in args.y:
         if not pd.api.types.is_numeric_dtype(df[y]):
             t = df[y].dtype
             if len(numeric_cols) > 0:
@@ -562,29 +557,28 @@ def validate_args(ctx):
                 hint = "use -y to specify a Y-axis"
             report(
                 LogLevel.FATAL,
-                f"Y-axis must have a numeric type. '{y_axis}' has type '{t}'",
+                f"Y-axis must have a numeric type. '{y}' has type '{t}'",
                 hint=hint,
             )
-    validate_dimensions(ctx, y_dims)
 
     # X-axis
     validate_dimensions(ctx, [args.x])
-    if args.x in y_dims:
+    if args.x in args.y:
         report(
             LogLevel.FATAL,
             f"X-axis and Y-axis must be different dimensions",
         )
 
     # Z-axis
-    # check that there are at least two dimensions other than y_dims
-    if len(df.columns.difference(y_dims)) < 2:
+    # check that there are at least two dimensions other than args.y
+    if len(df.columns.difference(args.y)) < 2:
         report(
             LogLevel.FATAL,
             "there must be at least two dimensions other than the Y-axis",
         )
     if args.z is None:
-        # pick the first column that is not args.x or in y_dims
-        available = df.columns.difference([args.x] + y_dims)
+        # pick the first column that is not args.x or in args.y
+        available = df.columns.difference([args.x] + args.y)
         args.z = available[np.argmin([df[col].nunique() for col in available])]
         report(LogLevel.INFO, "Using '{}' as Z-axis".format(args.z))
     else:
@@ -599,7 +593,7 @@ def validate_args(ctx):
         )
 
     # all axis
-    if args.x == args.z or args.z in y_dims:
+    if args.x == args.z or args.z in args.y:
         report(
             LogLevel.FATAL,
             "the -z dimension must be different from the dimension used on the X or Y axis",
@@ -608,7 +602,7 @@ def validate_args(ctx):
     # geomean and lines
     if args.geomean and args.lines:
         report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
-    for d in df.columns.difference(y_dims):
+    for d in df.columns.difference(args.y):
         n = df[d].nunique()
         if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
             report(
@@ -640,8 +634,8 @@ def validate_args(ctx):
             report(LogLevel.WARNING, "\n" + missing.to_string(index=False))
             report(LogLevel.WARNING, "")
 
-    ctx["y_dims"] = y_dims
-    ctx["y_axis"] = y_dims[0]
+    ctx["y_dims"] = args.y
+    ctx["y_axis"] = args.y[0]
 
 
 def start_gui(ctx):

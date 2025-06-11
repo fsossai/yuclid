@@ -1,6 +1,7 @@
 from yuclid import __version__
-import yuclid.run
+import yuclid.spread
 import yuclid.plot
+import yuclid.run
 import yuclid.log
 import argparse
 
@@ -82,7 +83,7 @@ def main():
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
     )
     plot_parser.add_argument("-x", required=True, help="X-axis column name")
-    plot_parser.add_argument("-y", help="Comma-separated Y-axis column names")
+    plot_parser.add_argument("-y", nargs="*", help="Y-axis column names")
     plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
         "-n", "--normalize", default=None, help="Normalize w.r.t. a value in -z"
@@ -94,7 +95,9 @@ def main():
         "-m",
         "--spread-measure",
         default="pi95",
-        help="Measure of dispersion. Available: pi95, ...",
+        help="Measure of dispersion. Default: pi95. Available: {}".format(
+            ", ".join(yuclid.spread.available)
+        ),
     )
     plot_parser.add_argument(
         "-r",
