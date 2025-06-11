@@ -5,16 +5,15 @@ import pandas as pd
 import subprocess
 import itertools
 import threading
-import argparse
 import random
 import string
 import json
-import sys
 import re
 import os
 
 
-def substitute_point_vars(x, point_map, point_id):
+def substitute_point_yvars(x, point_map, point_id):
+    # replace ${yuclid.<name>} and ${yuclid.@} with point values
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
     y = re.sub(pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     if point_id is not None:
@@ -23,7 +22,7 @@ def substitute_point_vars(x, point_map, point_id):
     return y
 
 
-def substitute_global_vars(x, subspace):
+def substitute_global_yvars(x, subspace):
     # replace ${yuclid.<name>.values} and ${yuclid.<name>.names}
     subspace_values = {k: [str(x["value"]) for x in v] for k, v in subspace.items()}
     subspace_names = {k: [x["name"] for x in v] for k, v in subspace.items()}
@@ -140,12 +139,16 @@ def aggregate_input_data(settings):
 
 
 def remove_duplicates(items):
-    seen = list()
-    return [x for x in items if not (x in seen or seen.append(x))]
+    seen = set()
+    result = []
+    for x in items:
+        if x not in seen:
+            seen.add(x)
+            result.append(x)
+    return result
 
 
 def build_environment(settings, data):
-    print(data.keys())
     if settings["dry_run"]:
         for key, value in data["env"].items():
             report(LogLevel.INFO, "dry env", f'{key}="{value}"')
@@ -166,8 +169,8 @@ def build_environment(settings, data):
 
 
 def apply_user_selectors(settings, subspace):
-    selectors = dict(pair.split("=") for pair in settings["select"])
-    for dim, csv_selection in selectors.items():
+    all_selectors = dict(pair.split("=") for pair in settings["select"])
+    for dim, csv_selection in all_selectors.items():
         selectors = csv_selection.split(",")
         if subspace[dim] is None:
             selection = [normalize_point(x) for x in selectors]
@@ -233,9 +236,17 @@ def normalize_condition(x):
 
 def normalize_point(x):
     normalized = None
+    valid_fields = {"name", "value", "condition", "setup"}
     if isinstance(x, (str, int, float)):
         normalized = {"name": str(x), "value": x, "condition": "True", "setup": []}
     elif isinstance(x, dict):
+        if not set(x.keys()).issubset(valid_fields):
+            report(
+                LogLevel.WARNING,
+                "point has unexpected fields",
+                ", ".join(set(x.keys()) - valid_fields),
+                hint="valid fields: {}".format(", ".join(valid_fields)),
+            )
         if "value" in x:
             normalized = {
                 "name": str(x.get("name", x["value"])),
@@ -243,8 +254,10 @@ def normalize_point(x):
                 "condition": normalize_condition(x.get("condition", "True")),
                 "setup": normalize_command_list(x.get("setup", [])),
             }
-    elif isinstance(x, list):
-        normalized = [normalize_point(item) for item in x]
+        else:
+            report(LogLevel.FATAL, "points must have a 'value' field", x)
+    else:
+        report(LogLevel.FATAL, "point must be a string, int, float or a dict", x)
     return normalized
 
 
@@ -342,13 +355,15 @@ def define_order(settings, data):
     space = data["space"]
 
     available = space.keys()
-    wrong = [k for k in set(settings["order"] + data["order"]) if k not in available]
-    if len(wrong) > 0:
+    invalid_order_keys = [
+        k for k in set(settings["order"] + data["order"]) if k not in available
+    ]
+    if len(invalid_order_keys) > 0:
         hint = "available values: {}".format(", ".join(available))
         report(
             LogLevel.FATAL,
             "invalid order values",
-            ", ".join(wrong),
+            ", ".join(invalid_order_keys),
             hint=hint,
         )
 
@@ -443,10 +458,10 @@ def run_point_setup_item(item, settings, execution):
 
     def run_single_point_command(command, point):
         nonlocal errors
-        gcommand = substitute_global_vars(command, subspace)
+        gcommand = substitute_global_yvars(command, subspace)
         suborder = [d for d in order if d in on_dims]
         point_map = {key: x for key, x in zip(suborder, point)}
-        pcommand = substitute_point_vars(gcommand, point_map, None)
+        pcommand = substitute_point_yvars(gcommand, point_map, None)
 
         if not valid_conditions(point, suborder):
             return
@@ -566,7 +581,7 @@ def run_global_setup(settings, data, execution):
         if settings["dry_run"]:
             report(LogLevel.INFO, "dry run", command)
         else:
-            command = substitute_global_vars(command, subspace)
+            command = substitute_global_yvars(command, subspace)
             result = subprocess.run(
                 command,
                 shell=True,
@@ -631,8 +646,8 @@ def run_point_trials(settings, data, execution, f, i, point):
         report(LogLevel.WARNING, point_to_string(point), "no compatible trials found")
 
     for trial in compatible_trials:
-        command = substitute_global_vars(trial["command"], execution["subspace"])
-        command = substitute_point_vars(command, point_map, point_id)
+        command = substitute_global_yvars(trial["command"], execution["subspace"])
+        command = substitute_point_yvars(command, point_map, point_id)
         cmd_result = subprocess.run(
             command,
             shell=True,
@@ -654,8 +669,8 @@ def run_point_trials(settings, data, execution, f, i, point):
 
     metric_values = dict()
     for metric, command in data["metrics"].items():
-        command = substitute_global_vars(command, execution["subspace"])
-        command = substitute_point_vars(command, point_map, point_id)
+        command = substitute_global_yvars(command, execution["subspace"])
+        command = substitute_point_yvars(command, point_map, point_id)
         cmd_result = subprocess.run(
             command,
             shell=True,
@@ -742,9 +757,9 @@ def validate_execution(execution, data):
 
 def run_subspace_trials(settings, data, execution):
     if settings["dry_run"]:
-        for i, configuration in enumerate(execution["subspace_points"], start=1):
-            point = {key: x for key, x in zip(execution["order"], configuration)}
-            if valid_conditions(configuration, execution["order"]):
+        for i, point in enumerate(execution["subspace_points"], start=1):
+            point_map = {key: x for key, x in zip(execution["order"], point)}
+            if valid_conditions(point, execution["order"]):
                 report(
                     LogLevel.INFO,
                     get_progress(i, execution["subspace_size"]),
