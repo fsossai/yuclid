@@ -100,8 +100,8 @@ def validate_vars_in_setup(ctx):
 
 
 def validate_yvars(ctx):
-    validate_yvars_in_env()
-    validate_vars_in_setup()
+    validate_yvars_in_env(ctx)
+    validate_vars_in_setup(ctx)
 
 
 def load_json(f):
@@ -997,6 +997,21 @@ def normalize_setup(setup):
     return normalized
 
 
+def run_experiments(ctx, preset_name=None):
+    if preset_name is None:
+        ctx["subspace"] = ctx["space"].copy()
+    else:
+        ctx["current_preset"] = preset_name
+        build_subspace(ctx)
+
+    overwrite_configuration(ctx)
+    validate_subspace(ctx)
+    validate_points(ctx)
+    validate_setup(ctx)
+    run_setup(ctx)
+    run_subspace_trials(ctx)
+
+
 def launch(args):
     ctx = {"args": args}
     validate_args(ctx)
@@ -1005,28 +1020,15 @@ def launch(args):
     build_space(ctx)
     define_order(ctx)
     validate_presets(ctx)
-    validate_yvars_in_env(ctx)
+    validate_yvars(ctx)
 
     if len(ctx["selected_presets"]) > 0:
         for preset_name in ctx["selected_presets"]:
-            ctx["current_preset"] = preset_name
-            report(LogLevel.INFO, "loading preset", preset_name)
-            build_subspace(ctx)
-            overwrite_configuration(ctx)
-            validate_subspace(ctx)
-            validate_points(ctx)
-            validate_setup(ctx)
-            run_setup(ctx)
-            run_subspace_trials(ctx)
+            report(LogLevel.INFO, "running preset", preset_name)
+            run_experiments(ctx, preset_name)
             report(LogLevel.INFO, "completed preset", preset_name)
     else:
-        ctx["subspace"] = ctx["space"].copy()
-        overwrite_configuration(ctx)
-        validate_subspace(ctx)
-        validate_points(ctx)
-        validate_setup(ctx)
-        run_setup(ctx)
-        run_subspace_trials(ctx)
+        run_experiments(ctx, preset_name=None)
 
     report(LogLevel.INFO, "finished")
     if not args.dry_run:
