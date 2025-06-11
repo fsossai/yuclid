@@ -800,7 +800,7 @@ def validate_presets(ctx):
         selected_presets = dict()
     else:
         selected_presets = dict()
-        for p in args.presets.split(","):
+        for p in args.presets:
             if p not in presets:
                 hint = "available presets: {}".format(", ".join(presets.keys()))
                 report(LogLevel.FATAL, "unknown preset", p, hint=hint)

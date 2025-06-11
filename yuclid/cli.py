@@ -48,15 +48,16 @@ def main():
     run_parser.add_argument(
         "-p",
         "--presets",
+        nargs="*",
         default=None,
-        help="Specify a combination of presets to run. E.g. large,machine1",
+        help="Specify a list of preset names to run",
     )
     run_parser.add_argument(
         "-s",
         "--select",
         nargs="*",
         default=None,
-        help="Select a subset of names/values for each dimension. E.g. dim=val1,val2",
+        help="Select a list of name=csv_values pairs for each dimension. E.g. dim1=val1,val2 dim2=val3,val4",
     )
     run_parser.add_argument(
         "--verbose-data",
