@@ -27,7 +27,11 @@ def main():
         help="Specify one or more configuration files. Default is 'yuclid.json'",
     )
     run_parser.add_argument(
-        "-r", "--order", default=None, help="Overwrite space order. E.g. dim1,dim2"
+        "-r",
+        "--order",
+        nargs="*",
+        default=[],
+        help="List of dimensions to override the order of experiments",
     )
     run_parser.add_argument(
         "-o",
