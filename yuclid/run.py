@@ -494,7 +494,7 @@ def run_point_setup(ctx):
     for item in ctx["data"]["setup"]["point"]:
         if item["on"] is None:
             item["on"] = ctx["data"]["space"].keys()
-            
+
         # reordering
         item["on"] = [x for x in item["on"] if x in ctx["order"]]
         if len(item["on"]) == 0:
@@ -596,12 +596,7 @@ def run_point_trials(ctx, f, i, configuration):
     ]
 
     if len(compatible_trials) == 0:
-        report(
-            LogLevel.WARNING,
-            point_to_string(point),
-            "no compatible trials found",
-            "skipping",
-        )
+        report(LogLevel.WARNING, point_to_string(point), "no compatible trials found")
 
     for trial in compatible_trials:
         command = substitute_global_vars(ctx, trial["command"])
@@ -643,8 +638,9 @@ def run_point_trials(ctx, f, i, configuration):
                 "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
                 hint=hint,
             )
-        cmd_lines = cmd_result.stdout.strip().split("\n")
-        mvalues[metric] = [float(line) for line in cmd_lines]
+        else:
+            cmd_lines = cmd_result.stdout.strip().split("\n")
+            mvalues[metric] = [float(line) for line in cmd_lines]
 
     mvalues_df = pd.DataFrame.from_dict(mvalues, orient="index").transpose()
     if not args.fold:
@@ -690,6 +686,25 @@ def valid_condition(condition, configuration, order):
     yuclid = {name: x["value"] for name, x in zip(order, configuration)}
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     return eval(condition, point_context)
+
+
+def validate_points(ctx):
+    data = ctx["data"]
+    order = ctx["order"]
+
+    # checking if there's at least of compatible trial command for each point
+    if all(
+        all(
+            not valid_condition(trial["condition"], configuration, order)
+            for trial in data["trials"]
+        )
+        for configuration in ctx["subspace_points"]
+    ):
+        report(
+            LogLevel.ERROR,
+            "no compatible trial commands for the given subspace",
+            hint="maybe your trial conditions are too strict? Try relaxing them or adding more trials.",
+        )
 
 
 def run_subspace_trials(ctx):
@@ -963,7 +978,7 @@ def normalize_point_setup(psetup):
                 report(LogLevel.FATAL, "point setup must be a string or a list")
     elif isinstance(psetup, dict):
         report(LogLevel.FATAL, "point setup must be a string or a list")
-    
+
     return normalized
 
 
@@ -999,7 +1014,7 @@ def launch(args):
             build_subspace(ctx)
             overwrite_configuration(ctx)
             validate_subspace(ctx)
-            # build_setup(ctx)
+            validate_points(ctx)
             validate_setup(ctx)
             run_setup(ctx)
             run_subspace_trials(ctx)
@@ -1008,7 +1023,7 @@ def launch(args):
         ctx["subspace"] = ctx["space"].copy()
         overwrite_configuration(ctx)
         validate_subspace(ctx)
-        # build_setup(ctx)
+        validate_points(ctx)
         validate_setup(ctx)
         run_setup(ctx)
         run_subspace_trials(ctx)
