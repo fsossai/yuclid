@@ -589,18 +589,18 @@ def run_point_setup(settings, data, execution):
                 "point setup item has no valid 'on' dimensions. Skipping",
                 item,
             )
-            continue
-        if settings["dry_run"]:
-            report(LogLevel.INFO, "starting dry point setup")
         else:
-            report(LogLevel.INFO, "starting point setup")
+            if settings["dry_run"]:
+                report(LogLevel.INFO, "starting dry point setup")
+            else:
+                report(LogLevel.INFO, "starting point setup")
 
-        run_point_setup_item(item, settings, execution)
+            run_point_setup_item(item, settings, execution)
 
-        if settings["dry_run"]:
-            report(LogLevel.INFO, "dry point setup completed")
-        else:
-            report(LogLevel.INFO, "point setup completed")
+            if settings["dry_run"]:
+                report(LogLevel.INFO, "dry point setup completed")
+            else:
+                report(LogLevel.INFO, "point setup completed")
 
 
 def run_global_setup(settings, data, execution):
@@ -900,12 +900,18 @@ def get_point_setup_plan(item, subspace, order):
     # collect parallel and sequential dimensions
     parallel_dims = set(item["parallel"])
     sequential_dims = set(dims) - parallel_dims
+
+    # reordering
+    parallel_dims = reorder_dimensions(parallel_dims, order)
+    sequential_dims = reorder_dimensions(sequential_dims, order)
+
+    # building space
     parallel_space = [subspace[k] for k in parallel_dims]
     sequential_space = [subspace[k] for k in sequential_dims]
 
     return {
-        "parallel_dims": reorder_dimensions(parallel_dims, order),
-        "sequential_dims": reorder_dimensions(sequential_dims, order),
+        "parallel_dims": parallel_dims,
+        "sequential_dims": sequential_dims,
         "parallel_space": parallel_space,
         "sequential_space": sequential_space,
     }
