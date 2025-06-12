@@ -19,7 +19,8 @@ import sys
 
 def normalize(input_df, args, y_axis):
     b = input_df[args.z].dtype.type(args.normalize)
-    ref = input_df.groupby([args.x, args.z])[y_axis].apply(np.median)
+    estimator = scipy.stats.gmean if args.geomean else np.mean
+    ref = input_df.groupby([args.x, args.z])[y_axis].apply(estimator)
     input_df[y_axis] /= input_df[args.x].map(lambda x: ref[(x, b)])
 
 
