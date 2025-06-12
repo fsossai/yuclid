@@ -150,6 +150,12 @@ def main():
         default=1.0,
         help="Rescale Y-axis values by multiplying by this number",
     )
+    plot_parser.add_argument(
+        "--annotate",
+        action="store_true",
+        default=False,
+        help="Annotate Y values on each bar or point in the plot",
+    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 

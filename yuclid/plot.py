@@ -343,6 +343,21 @@ def update_plot(ctx, padding_factor=1.05):
             z=args.z,
             palette=palette,
         )
+
+        # annotate points with y values
+        if args.annotate:
+            for line in ax_plot.get_lines():
+                x_data = line.get_xdata()
+                y_data = line.get_ydata()
+                for x, y in zip(x_data, y_data):
+                    ax_plot.annotate(
+                        to_engineering_si(y, precision=2),
+                        (x, y),
+                        textcoords="offset points",
+                        xytext=(0, 5),
+                        ha="center",
+                        fontsize=12,
+                    )
     else:
         sns.barplot(
             data=sub_df,
@@ -355,7 +370,32 @@ def update_plot(ctx, padding_factor=1.05):
             hue=args.z,
             errorbar=custom_error,
             alpha=0.6,
+            err_kws={
+                "color": "black",
+                "alpha": 1.0,
+                "linewidth": 2.0,
+                "solid_capstyle": "round",
+                "solid_joinstyle": "round",
+            },
         )
+
+        # annotate bars with y values
+        if args.annotate:
+            for p in ax_plot.patches:
+                # get error bar data from the axes
+                height = p.get_height()
+                if not np.isnan(height) and height > 0:
+                    ax_plot.annotate(
+                        f"{height:.2f}",
+                        (p.get_x() + p.get_width() / 2.0, height),
+                        ha="center",
+                        va="bottom",
+                        color="grey",
+                        fontsize=12,
+                        fontweight="normal",
+                        xytext=(0, 10),
+                        textcoords="offset points",
+                    )
 
     def format_ylabel(label):
         if args.unit is None:
