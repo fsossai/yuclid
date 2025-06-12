@@ -18,7 +18,7 @@ def substitute_point_yvars(x, point_map, point_id):
     y = re.sub(pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     if point_id is not None:
         pattern = r"\$\{yuclid\.\@\}"
-        y = re.sub(pattern, lambda m: point_id, y)
+        y = re.sub(pattern, lambda m: f"{point_id}.tmp", y)
     return y
 
 
@@ -668,7 +668,7 @@ def get_progress(i, subspace_size):
 def run_point_trials(settings, data, execution, f, i, point):
     point_id = os.path.join(
         settings["temp_dir"],
-        "{}.{}.tmp".format(settings["random_key"], point_to_string(point)),
+        "{}.{}".format(settings["random_key"], point_to_string(point)),
     )
     point_map = {key: x for key, x in zip(execution["order"], point)}
     report(
@@ -709,11 +709,23 @@ def run_point_trials(settings, data, execution, f, i, point):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+        with open(f"{point_id}.out", "w") as output_file:
+            output_file.write(f"Command: {command}\n")
+            output_file.write(f"Return code: {command_output.returncode}\n")
+            if command_output.stdout:
+                output_file.write(command_output.stdout)
+
+        with open(f"{point_id}.err", "w") as error_file:
+            if command_output.stderr:
+                error_file.write(command_output.stderr)
+
         if command_output.returncode != 0:
-            if os.path.exists(point_id):
-                hint = "try `cat {}` for more information".format(point_id)
-            else:
-                hint = None
+            hint = "the command produced the following output:\n{}".format(
+                command_output.stderr
+                if command_output.stderr
+                else command_output.stdout
+            )
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
