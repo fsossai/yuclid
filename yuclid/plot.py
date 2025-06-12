@@ -242,9 +242,24 @@ def fontsize_to_y_units(ctx, fontsize):
     return dy
 
 
-def autospace_annotations(ctx, fontsize, ys, padding_factor=1.05):
-    # TODO
-    return ys
+def autospace_annotations(ctx, fontsize, ys, padding_factor=1.10):
+    text_height = fontsize_to_y_units(ctx, fontsize)
+    h = text_height * padding_factor
+    x_domain = ctx["domains"][ctx["args"].x]
+
+    for x in x_domain:
+        y_vals = [(z, ys[z][x]) for z in ys]
+        lower_bound = -float("inf")
+        for z, y in sorted(y_vals, key=lambda item: item[1]):
+            box_bottom, box_top = y - h / 2, y + h / 2
+            if box_bottom < lower_bound:  # overlap?
+                shift = lower_bound - box_bottom
+                new_y = y + shift
+                lower_bound += box_top + shift
+            else:
+                lower_bound = box_top
+                new_y = y
+            ys[z][x] = new_y
 
 
 def annotate(ctx, sub_df, y_axis, palette):
@@ -260,7 +275,7 @@ def annotate(ctx, sub_df, y_axis, palette):
         "color": "black",
         "fontsize": 12,
         "fontweight": "normal",
-        "xytext": (0, 10),
+        "xytext": (0, 5),
         "textcoords": "offset points",
     }
 
@@ -273,7 +288,7 @@ def annotate(ctx, sub_df, y_axis, palette):
         )
         ys[z] = ys_z
 
-    ys = autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
+    autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
 
     for z in z_domain:
         annotation_kwargs_z = annotation_kwargs.copy()
