@@ -278,13 +278,11 @@ def update_plot(ctx, padding_factor=1.05):
         return f"{coeff:.{precision}f}{prefix}{unit}"
 
     if args.normalize is not None:
+        normalize(sub_df, args, y_axis)
         if args.geomean:
             gm_df = sub_df.copy()
             gm_df[args.x] = "geomean"
-            cols = gm_df.columns.difference([y_axis]).to_list()
-            gm_df = gm_df.groupby(cols)[y_axis].apply(scipy.stats.gmean).reset_index()
             sub_df = pd.concat([sub_df, gm_df])
-        normalize(sub_df, args, y_axis)
 
     if args.speedup is not None:
         c1 = sub_df[args.z] == args.speedup
