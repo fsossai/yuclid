@@ -711,8 +711,6 @@ def run_point_trials(settings, data, execution, f, i, point):
         )
 
         with open(f"{point_id}.out", "w") as output_file:
-            output_file.write(f"Command: {command}\n")
-            output_file.write(f"Return code: {command_output.returncode}\n")
             if command_output.stdout:
                 output_file.write(command_output.stdout)
 
@@ -721,11 +719,8 @@ def run_point_trials(settings, data, execution, f, i, point):
                 error_file.write(command_output.stderr)
 
         if command_output.returncode != 0:
-            hint = "the command produced the following output:\n{}".format(
-                command_output.stderr
-                if command_output.stderr
-                else command_output.stdout
-            )
+            hint = "check the following files for more details:\n"
+            hint += f"{point_id}.out\n{point_id}.err\n{point_id}.tmp"
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
