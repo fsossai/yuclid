@@ -290,7 +290,16 @@ def normalize_space_values(space):
     for key, values in space.items():
         if key.endswith(":py"):
             name = key.split(":")[-2]
-            normalized[name] = normalize_point(eval(values))
+            if not isinstance(values, str):
+                report(LogLevel.FATAL, "python command must be a string", key)
+            result = eval(values)
+            if not isinstance(result, list):
+                report(
+                    LogLevel.FATAL,
+                    "python command generated non-list values",
+                    values
+                )
+            normalized[name] = [normalize_point(x) for x in result]
         elif values is not None:
             normalized[key] = []
             for x in values:
@@ -376,7 +385,9 @@ def define_order(settings, data):
 
 def apply_preset(data, preset_name):
     space = data["space"]
-    space_names = data["space_names"]
+    space_names = {
+        dim: [x["name"] for x in space[dim]] for dim in space if space[dim] is not None
+    }
     preset_space = data["presets"][preset_name]
     subspace = space.copy()
 
@@ -421,7 +432,10 @@ def apply_preset(data, preset_name):
                     ),
                 )
             else:
-                new_items.append(item)
+                # definition via name
+                new_items.append(
+                    next(x for x in space[dim] if x["name"] == str(item))
+                )
 
         if len(wrong) > 0:
             hint = "available names: {}".format(", ".join(space_names[dim]))
@@ -434,7 +448,7 @@ def apply_preset(data, preset_name):
         subspace[dim] = new_items
 
     for dim, items in subspace.items():
-        if len(items) == 0:
+        if items is not None and len(items) == 0:
             report(LogLevel.ERROR, f"empty dimension in preset '{preset_name}'", dim)
 
     return subspace
@@ -703,10 +717,7 @@ def run_point_trials(settings, data, execution, f, i, point):
                 " ".join(list(NaNs)),
             )
 
-    if settings["verbose_data"]:
-        result = point
-    else:
-        result = {k: x["name"] for k, x in point.items()}
+    result = {k: x["name"] for k, x in point_map.items()}
     if settings["fold"]:
         result.update(metric_values_df.to_dict(orient="list"))
         f.write(json.dumps(result) + "\n")
@@ -725,11 +736,11 @@ def run_point_trials(settings, data, execution, f, i, point):
     f.flush()
 
 
-def valid_conditions(configuration, order):
+def valid_conditions(point, order):
     point_context = {}
-    yuclid = {name: x["value"] for name, x in zip(order, configuration)}
+    yuclid = {name: x["value"] for name, x in zip(order, point)}
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
-    return all(eval(x["condition"], point_context) for x in configuration)
+    return all(eval(x["condition"], point_context) for x in point)
 
 
 def valid_condition(condition, configuration, order):

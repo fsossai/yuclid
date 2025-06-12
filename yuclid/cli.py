@@ -64,12 +64,6 @@ def main():
         help="Select a list of name=csv_values pairs for each dimension. E.g. dim1=val1,val2 dim2=val3,val4",
     )
     run_parser.add_argument(
-        "--verbose-data",
-        default=False,
-        action="store_true",
-        help="Dump both name and values of dimension",
-    )
-    run_parser.add_argument(
         "--fold",
         default=False,
         action="store_true",
