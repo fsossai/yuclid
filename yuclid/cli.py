@@ -156,6 +156,18 @@ def main():
         default=False,
         help="Annotate Y values on each bar or point in the plot",
     )
+    plot_parser.add_argument(
+        "--annotate-max",
+        action="store_true",
+        default=False,
+        help="Annotate only the maximum Y value in each group",
+    )
+    plot_parser.add_argument(
+        "--annotate-min",
+        action="store_true",
+        default=False,
+        help="Annotate only the minimum Y value in each group",
+    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 

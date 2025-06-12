@@ -304,7 +304,8 @@ def update_plot(ctx, padding_factor=1.05):
         )
 
     if args.colorblind:
-        palette = "colorblind"
+        palette = sns.color_palette("colorblind", n_colors=len(z_dom))
+        palette = {z: palette[i] for i, z in enumerate(z_dom)}
     else:
         preferred_colors = [
             "#5588dd",
@@ -322,6 +323,17 @@ def update_plot(ctx, padding_factor=1.05):
         ]
         color_gen = iter(preferred_colors)
         palette = {z: next(color_gen) for z in z_dom}
+
+    # annotation options
+    annotation_kwargs = {
+        "ha": "center",
+        "va": "bottom",
+        "color": "black",
+        "fontsize": 12,
+        "fontweight": "normal",
+        "xytext": (0, 10),
+        "textcoords": "offset points",
+    }
 
     if args.lines:
         sns.lineplot(
@@ -356,10 +368,7 @@ def update_plot(ctx, padding_factor=1.05):
                     ax_plot.annotate(
                         to_engineering_si(y, precision=2),
                         (x, y),
-                        textcoords="offset points",
-                        xytext=(0, 5),
-                        ha="center",
-                        fontsize=12,
+                        **annotation_kwargs,
                     )
     else:
         sns.barplot(
@@ -391,14 +400,34 @@ def update_plot(ctx, padding_factor=1.05):
                     ax_plot.annotate(
                         f"{height:.2f}",
                         (p.get_x() + p.get_width() / 2.0, height),
-                        ha="center",
-                        va="bottom",
-                        color="grey",
-                        fontsize=12,
-                        fontweight="normal",
-                        xytext=(0, 10),
-                        textcoords="offset points",
+                        **annotation_kwargs,
                     )
+
+    # annotate maximum and minimum Y value in each group
+    if args.annotate_max or args.annotate_min:
+        for z_value in sub_df[args.z].unique():
+            annotation_kwargs_z = annotation_kwargs.copy()
+            annotation_kwargs_z["color"] = palette[z_value]
+            group = sub_df[sub_df[args.z] == z_value]
+            ys = group.groupby(args.x)[y_axis].apply(
+                scipy.stats.gmean if args.geomean else np.median
+            )
+            if args.annotate_max:
+                max_y = ys.max()
+                max_x = ys.idxmax()
+                ax_plot.annotate(
+                    f"{max_y:.2f}",
+                    (max_x, max_y),
+                    **annotation_kwargs_z,
+                )
+            if args.annotate_min:
+                min_y = ys.min()
+                min_x = ys.idxmin()
+                ax_plot.annotate(
+                    f"{min_y:.2f}",
+                    (min_x, min_y),
+                    **annotation_kwargs_z,
+                )
 
     def format_ylabel(label):
         if args.unit is None:
