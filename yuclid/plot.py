@@ -230,6 +230,80 @@ def sync_files(ctx):
         threading.Thread(target=rsync, daemon=True, args=job).start()
 
 
+def fontsize_to_y_units(ctx, fontsize):
+    fig = ctx["fig"]
+    ax = ctx["ax_plot"]
+    dpi = fig.dpi
+    font_px = fontsize * dpi / 72
+    inv = ax.transData.inverted()
+    _, y0 = inv.transform((0, 0))
+    _, y1 = inv.transform((0, font_px))
+    dy = y1 - y0
+    return dy
+
+
+def autospace_annotations(ctx, fontsize, ys, padding_factor=1.05):
+    # TODO
+    return ys
+
+
+def annotate(ctx, sub_df, y_axis, palette):
+    args = ctx["args"]
+    ax_plot = ctx["ax_plot"]
+
+    if not (args.annotate_max or args.annotate_min or args.annotate):
+        return
+
+    annotation_kwargs = {
+        "ha": "center",
+        "va": "bottom",
+        "color": "black",
+        "fontsize": 12,
+        "fontweight": "normal",
+        "xytext": (0, 10),
+        "textcoords": "offset points",
+    }
+
+    ys = dict()
+    z_domain = sub_df[args.z].unique()
+    for z in z_domain:
+        group = sub_df[sub_df[args.z] == z]
+        ys_z = group.groupby(args.x)[y_axis].apply(
+            scipy.stats.gmean if args.geomean else np.median
+        )
+        ys[z] = ys_z
+
+    ys = autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
+
+    for z in z_domain:
+        annotation_kwargs_z = annotation_kwargs.copy()
+        annotation_kwargs_z["color"] = palette[z]
+        ys_z = ys[z]
+        if args.annotate_max:
+            max_y = ys_z.max()
+            max_x = ys_z.idxmax()
+            ax_plot.annotate(
+                f"{max_y:.2f}",
+                (max_x, max_y),
+                **annotation_kwargs_z,
+            )
+        if args.annotate_min:
+            min_y = ys_z.min()
+            min_x = ys_z.idxmin()
+            ax_plot.annotate(
+                f"{min_y:.2f}",
+                (min_x, min_y),
+                **annotation_kwargs_z,
+            )
+        if args.annotate:
+            for x, y in ys_z.items():
+                ax_plot.annotate(
+                    f"{y:.2f}",
+                    (x, y),
+                    **annotation_kwargs_z,
+                )
+
+
 def update_plot(ctx, padding_factor=1.05):
     args = ctx["args"]
     df = ctx["df"]
@@ -324,17 +398,6 @@ def update_plot(ctx, padding_factor=1.05):
         color_gen = iter(preferred_colors)
         palette = {z: next(color_gen) for z in z_dom}
 
-    # annotation options
-    annotation_kwargs = {
-        "ha": "center",
-        "va": "bottom",
-        "color": "black",
-        "fontsize": 12,
-        "fontweight": "normal",
-        "xytext": (0, 10),
-        "textcoords": "offset points",
-    }
-
     if args.lines:
         sns.lineplot(
             data=sub_df,
@@ -379,44 +442,7 @@ def update_plot(ctx, padding_factor=1.05):
             },
         )
 
-    # annotations
-    if args.annotate_max or args.annotate_min or args.annotate:
-        ys = dict()
-        z_domain = sub_df[args.z].unique()
-        for z in z_domain:
-            group = sub_df[sub_df[args.z] == z]
-            ys_z = group.groupby(args.x)[y_axis].apply(
-                scipy.stats.gmean if args.geomean else np.median
-            )
-            ys[z] = ys_z
-
-        for z in z_domain:
-            annotation_kwargs_z = annotation_kwargs.copy()
-            annotation_kwargs_z["color"] = palette[z]
-            ys_z = ys[z]
-            if args.annotate_max:
-                max_y = ys_z.max()
-                max_x = ys_z.idxmax()
-                ax_plot.annotate(
-                    f"{max_y:.2f}",
-                    (max_x, max_y),
-                    **annotation_kwargs_z,
-                )
-            if args.annotate_min:
-                min_y = ys_z.min()
-                min_x = ys_z.idxmin()
-                ax_plot.annotate(
-                    f"{min_y:.2f}",
-                    (min_x, min_y),
-                    **annotation_kwargs_z,
-                )
-            if args.annotate:
-                for x, y in ys_z.items():
-                    ax_plot.annotate(
-                        f"{y:.2f}",
-                        (x, y),
-                        **annotation_kwargs_z,
-                    )
+    annotate(ctx, sub_df, y_axis, palette)
 
     def format_ylabel(label):
         if args.unit is None:
