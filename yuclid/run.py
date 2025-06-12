@@ -717,7 +717,7 @@ def run_point_trials(settings, data, execution, f, i, point):
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
-                f"failed trials (code {command_output.returncode})",
+                f"failed trial command '{command}' (code {command_output.returncode})",
                 hint=hint,
             )
 
