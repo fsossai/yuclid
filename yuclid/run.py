@@ -311,7 +311,6 @@ def normalize_trials(trial):
     elif isinstance(trial, list):
         items = []
         for item in trial:
-            print(item)
             normalized_item = {"command": None, "condition": "True"}
             if isinstance(item, str):
                 normalized_item["command"] = normalize_command(item)
