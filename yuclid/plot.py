@@ -119,22 +119,22 @@ def generate_space(ctx):
     args = ctx["args"]
     df = ctx["df"]
     z_size = df[args.z].nunique()
-    dims = list(df.columns.difference([args.x, args.z] + args.y))
-    dim_keys = "123456789"[: len(dims)]
-    selected_index = 0 if len(dims) > 0 else None
-    domain = dict()
+    free_dims = list(df.columns.difference([args.x, args.z] + args.y))
+    selected_index = 0 if len(free_dims) > 0 else None
+    domains = dict()
     position = dict()
-    for d in dims:
-        domain[d] = df[d].unique()
+
+    for d in df.columns:
+        domains[d] = df[d].unique()
         position[d] = 0
+
     z_dom = df[args.z].unique()
     ctx.update(
         {
             "z_size": z_size,
-            "dims": dims,
-            "dim_keys": dim_keys,
+            "free_dims": free_dims,
             "selected_index": selected_index,
-            "domain": domain,
+            "domains": domains,
             "position": position,
             "z_dom": z_dom,
         }
@@ -171,22 +171,22 @@ def file_monitor(ctx):
 
 def update_table(ctx):
     ax_table = ctx["ax_table"]
-    dims = ctx["dims"]
-    domain = ctx["domain"]
+    free_dims = ctx["free_dims"]
+    domains = ctx["domains"]
     position = ctx["position"]
     selected_index = ctx["selected_index"]
     ax_table.clear()
     ax_table.axis("off")
-    if len(dims) == 0:
+    if len(free_dims) == 0:
         return
     arrow_up = "\u2191"
     arrow_down = "\u2193"
     fields = []
     values = []
     arrows = []
-    for i, d in enumerate(dims, start=1):
-        value = domain[d][position[d]]
-        if d == dims[selected_index]:
+    for i, d in enumerate(free_dims, start=1):
+        value = domains[d][position[d]]
+        if d == free_dims[selected_index]:
             fields.append(rf"$\mathbf{{{d}}}$")
             values.append(f"{value}")
             arrows.append(f"{arrow_up}{arrow_down}")
@@ -233,8 +233,8 @@ def sync_files(ctx):
 def update_plot(ctx, padding_factor=1.05):
     args = ctx["args"]
     df = ctx["df"]
-    dims = ctx["dims"]
-    domain = ctx["domain"]
+    free_dims = ctx["free_dims"]
+    domains = ctx["domains"]
     position = ctx["position"]
     y_axis = ctx["y_axis"]
     z_dom = ctx["z_dom"]
@@ -244,8 +244,8 @@ def update_plot(ctx, padding_factor=1.05):
 
     sub_df = df.copy()
 
-    for d in dims:
-        k = domain[d][position[d]]
+    for d in free_dims:
+        k = domains[d][position[d]]
         sub_df = sub_df[sub_df[d] == k]
     ax_plot.clear()
 
@@ -448,11 +448,11 @@ def update_plot(ctx, padding_factor=1.05):
 
 def get_config_name(ctx):
     y_axis = ctx["y_axis"]
-    dims = ctx["dims"]
-    domain = ctx["domain"]
+    dims = ctx["free_dims"]
+    domains = ctx["domains"]
     position = ctx["position"]
     status = ["speedup" if ctx["args"].speedup else y_axis]
-    status += [str(domain[d][position[d]]) for d in dims]
+    status += [str(domains[d][position[d]]) for d in dims]
     name = "_".join(status)
     return name
 
@@ -461,9 +461,9 @@ def get_status_description(ctx):
     args = ctx["args"]
     description_parts = []
 
-    for d in ctx["dims"]:
+    for d in ctx["free_dims"]:
         position = ctx["position"]
-        value = ctx["domain"][d][position[d]]
+        value = ctx["domains"][d][position[d]]
         description_parts.append(f"{d}={value}")
 
     description = " | ".join(description_parts)
@@ -497,8 +497,8 @@ def save_to_file(ctx, outfile=None):
 
 def on_key(event, ctx):
     selected_index = ctx["selected_index"]
-    dims = ctx["dims"]
-    domain = ctx["domain"]
+    free_dims = ctx["free_dims"]
+    domains = ctx["domains"]
     position = ctx["position"]
     y_dims = ctx["y_dims"]
     y_axis = ctx["y_axis"]
@@ -506,9 +506,9 @@ def on_key(event, ctx):
         x = 1 if event.key in [" ", "enter", "up"] else -1
         if selected_index is None:
             return
-        selected_dim = dims[selected_index]
+        selected_dim = free_dims[selected_index]
         cur_pos = position[selected_dim]
-        new_pos = (cur_pos + x) % domain[selected_dim].size
+        new_pos = (cur_pos + x) % domains[selected_dim].size
         position[selected_dim] = new_pos
         update_plot(ctx)
         update_table(ctx)
@@ -516,9 +516,9 @@ def on_key(event, ctx):
         if selected_index is None:
             return
         if event.key == "left":
-            ctx["selected_index"] = (selected_index - 1) % len(dims)
+            ctx["selected_index"] = (selected_index - 1) % len(free_dims)
         else:
-            ctx["selected_index"] = (selected_index + 1) % len(dims)
+            ctx["selected_index"] = (selected_index + 1) % len(free_dims)
         update_table(ctx)
     elif event.key in "123456789":
         new_idx = int(event.key) - 1
@@ -693,29 +693,37 @@ def start_gui(ctx):
 
 def compute_ylimits(ctx):
     args = ctx["args"]
-    dims = ctx["dims"]
+    free_dims = ctx["free_dims"]
     df = ctx["df"]
     y_axis = ctx["y_axis"]
-    domain = ctx["domain"]
+    domains = ctx["domains"]
+    free_domains = {k: v for k, v in domains.items() if k in free_dims}
     top = None
-    if len(dims) == 0:
+    if len(free_dims) == 0:
         ctx["top"] = None
         return
     if args.normalize:
         top = 0
-        for config in itertools.product(*domain.values()):
-            filt = (df[domain.keys()] == config).all(axis=1)
-            df_filtered = df[filt].copy()
-            normalize(df_filtered, args, y_axis)
-            zx = df_filtered.groupby([args.z, args.x])[y_axis]
+        for config in itertools.product(*free_domains.values()):
+            filt = (df[free_domains.keys()] == config).all(axis=1)
+            df_config = df[filt].copy()
+            normalize(df_config, args, y_axis)
+            zx = df_config.groupby([args.z, args.x])[y_axis]
             t = zx.apply(spread.upper(args.spread_measure))
             top = max(top, t.max())
     elif args.speedup:
-        c1 = df[args.z] == args.speedup
-        c2 = df[args.x] == df[args.x].min()
-        not_y = df.columns.difference([y_axis]).tolist()
-        baseline = df[(c1 & c2)].groupby(not_y)[y_axis].min().max()
-        top = baseline / df[y_axis].min()
+        top = 0
+        max_speedup = 1.0
+        for config in itertools.product(*free_domains.values()):
+            filt = (df[free_domains.keys()] == config).all(axis=1)
+            df_config = df[filt].copy()
+            c1 = df_config[args.z] == args.speedup
+            c2 = df_config[args.x] == df_config[args.x].min()
+            baseline = df_config[(c1 & c2)][y_axis].min()
+            best = df_config[y_axis].min()
+            speedup = baseline / best
+            max_speedup = max(max_speedup, speedup)
+        top = max_speedup
     else:
         top = df[y_axis].max()
     ctx["top"] = top
