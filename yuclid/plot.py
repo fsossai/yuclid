@@ -251,7 +251,7 @@ def update_plot(ctx, padding_factor=1.05):
 
     initial_sub_df = sub_df.copy()
 
-    def to_engineering_si(x, precision=0):
+    def to_engineering_si(x, precision=0, unit=None):
         if x == 0:
             return f"{0:.{precision}f}"
         si_prefixes = {
@@ -277,7 +277,7 @@ def update_plot(ctx, padding_factor=1.05):
         exp = max(min(exp, 24), -24)  # clamp to available prefixes
         coeff = x / (10**exp)
         prefix = si_prefixes.get(exp, f"e{exp:+03d}")
-        unit = args.unit or ""
+        unit = unit or ""
         return f"{coeff:.{precision}f}{prefix}{unit}"
 
     if args.normalize is not None:
@@ -358,18 +358,6 @@ def update_plot(ctx, padding_factor=1.05):
             z=args.z,
             palette=palette,
         )
-
-        # annotate points with y values
-        if args.annotate:
-            for line in ax_plot.get_lines():
-                x_data = line.get_xdata()
-                y_data = line.get_ydata()
-                for x, y in zip(x_data, y_data):
-                    ax_plot.annotate(
-                        to_engineering_si(y, precision=2),
-                        (x, y),
-                        **annotation_kwargs,
-                    )
     else:
         sns.barplot(
             data=sub_df,
@@ -391,20 +379,8 @@ def update_plot(ctx, padding_factor=1.05):
             },
         )
 
-        # annotate bars with y values
-        if args.annotate:
-            for p in ax_plot.patches:
-                # get error bar data from the axes
-                height = p.get_height()
-                if not np.isnan(height) and height > 0:
-                    ax_plot.annotate(
-                        f"{height:.2f}",
-                        (p.get_x() + p.get_width() / 2.0, height),
-                        **annotation_kwargs,
-                    )
-
     # annotate maximum and minimum Y value in each group
-    if args.annotate_max or args.annotate_min:
+    if args.annotate_max or args.annotate_min or args.annotate:
         for z_value in sub_df[args.z].unique():
             annotation_kwargs_z = annotation_kwargs.copy()
             annotation_kwargs_z["color"] = palette[z_value]
@@ -428,6 +404,13 @@ def update_plot(ctx, padding_factor=1.05):
                     (min_x, min_y),
                     **annotation_kwargs_z,
                 )
+            if args.annotate:
+                for x, y in ys.items():
+                    ax_plot.annotate(
+                        f"{y:.2f}",
+                        (x, y),
+                        **annotation_kwargs_z,
+                    )
 
     def format_ylabel(label):
         if args.unit is None:
@@ -456,7 +439,10 @@ def update_plot(ctx, padding_factor=1.05):
 
     # set figure title
     y_left, y_right = initial_sub_df[y_axis].min(), initial_sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
+    y_range = "[{} - {}]".format(
+        to_engineering_si(y_left, unit=args.unit),
+        to_engineering_si(y_right, unit=args.unit),
+    )
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         if y == y_axis:
@@ -488,10 +474,11 @@ def get_config_name(ctx):
 def get_status_description(ctx):
     args = ctx["args"]
     description_parts = []
+    domains = ctx["domains"]
 
     for d in ctx["free_dims"]:
         position = ctx["position"]
-        value = ctx["domains"][d][position[d]]
+        value = domains[d][position[d]]
         description_parts.append(f"{d}={value}")
 
     description = " | ".join(description_parts)
@@ -529,7 +516,7 @@ def on_key(event, ctx):
     domains = ctx["domains"]
     position = ctx["position"]
     y_dims = ctx["y_dims"]
-    y_axis = ctx["y_axis"]
+
     if event.key in ["enter", " ", "up", "down"]:
         x = 1 if event.key in [" ", "enter", "up"] else -1
         if selected_index is None:
