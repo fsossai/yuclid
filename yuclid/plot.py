@@ -379,33 +379,39 @@ def update_plot(ctx, padding_factor=1.05):
             },
         )
 
-    # annotate maximum and minimum Y value in each group
+    # annotations
     if args.annotate_max or args.annotate_min or args.annotate:
-        for z_value in sub_df[args.z].unique():
-            annotation_kwargs_z = annotation_kwargs.copy()
-            annotation_kwargs_z["color"] = palette[z_value]
-            group = sub_df[sub_df[args.z] == z_value]
-            ys = group.groupby(args.x)[y_axis].apply(
+        ys = dict()
+        z_domain = sub_df[args.z].unique()
+        for z in z_domain:
+            group = sub_df[sub_df[args.z] == z]
+            ys_z = group.groupby(args.x)[y_axis].apply(
                 scipy.stats.gmean if args.geomean else np.median
             )
+            ys[z] = ys_z
+
+        for z in z_domain:
+            annotation_kwargs_z = annotation_kwargs.copy()
+            annotation_kwargs_z["color"] = palette[z]
+            ys_z = ys[z]
             if args.annotate_max:
-                max_y = ys.max()
-                max_x = ys.idxmax()
+                max_y = ys_z.max()
+                max_x = ys_z.idxmax()
                 ax_plot.annotate(
                     f"{max_y:.2f}",
                     (max_x, max_y),
                     **annotation_kwargs_z,
                 )
             if args.annotate_min:
-                min_y = ys.min()
-                min_x = ys.idxmin()
+                min_y = ys_z.min()
+                min_x = ys_z.idxmin()
                 ax_plot.annotate(
                     f"{min_y:.2f}",
                     (min_x, min_y),
                     **annotation_kwargs_z,
                 )
             if args.annotate:
-                for x, y in ys.items():
+                for x, y in ys_z.items():
                     ax_plot.annotate(
                         f"{y:.2f}",
                         (x, y),
