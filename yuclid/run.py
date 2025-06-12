@@ -725,8 +725,8 @@ def run_point_trials(settings, data, execution, f, i, point):
             command,
             shell=True,
             env=execution["env"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            universal_newlines=True,
+            capture_output=True,
         )
 
         with open(f"{point_id}.out", "w") as output_file:
