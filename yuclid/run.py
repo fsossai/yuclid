@@ -212,6 +212,7 @@ def apply_user_selectors(settings, subspace):
 
 
 def normalize_metrics(metrics):
+    valid = {"name", "command", "condition"}
     normalized = []
     if isinstance(metrics, list):
         for metric in metrics:
@@ -222,6 +223,13 @@ def normalize_metrics(metrics):
             if "command" not in metric:
                 report(
                     LogLevel.FATAL, "each metric must have a 'command' field", metric
+                )
+            if not set(metric.keys()).issubset(valid):
+                report(
+                    LogLevel.WARNING,
+                    "metric has unexpected fields",
+                    ", ".join(set(metric.keys()) - valid),
+                    hint="valid fields: {}".format(", ".join(valid)),
                 )
             normalized.append(
                 {
@@ -297,23 +305,34 @@ def normalize_point(x):
 
 
 def normalize_trials(trial):
+    valid = {"command", "condition"}
     if isinstance(trial, str):
         return [{"command": trial, "condition": "True"}]
     elif isinstance(trial, list):
         items = []
-        for cmd in trial:
-            item = {"command": None, "condition": "True"}
-            if isinstance(cmd, str):
-                item["command"] = normalize_command(cmd)
-            elif isinstance(cmd, dict):
-                if "command" not in cmd:
+        for item in trial:
+            print(item)
+            normalized_item = {"command": None, "condition": "True"}
+            if isinstance(item, str):
+                normalized_item["command"] = normalize_command(item)
+            elif isinstance(item, dict):
+                # Check for invalid fields
+                invalid_fields = set(item.keys()) - valid
+                if len(invalid_fields) > 0:
+                    report(
+                        LogLevel.WARNING,
+                        "trial item has unexpected fields",
+                        ", ".join(invalid_fields),
+                        hint="valid fields: {}".format(", ".join(valid)),
+                    )
+                if "command" not in item:
                     report(
                         LogLevel.FATAL, "each trial item must have a 'command' field"
                     )
                     return None
-                item["command"] = normalize_command(cmd["command"])
-                item["condition"] = cmd.get("condition", "True")
-            items.append(item)
+                normalized_item["command"] = normalize_command(item["command"])
+                normalized_item["condition"] = item.get("condition", "True")
+            items.append(normalized_item)
         return items
     else:
         report(LogLevel.FATAL, "trial must be a string or a list of strings")
