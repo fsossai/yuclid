@@ -262,7 +262,7 @@ def autospace_annotations(ctx, fontsize, ys, padding_factor=1.10):
             ys[z][x] = new_y
 
 
-def annotate(ctx, sub_df, y_axis, palette):
+def annotate(ctx, plot_type, sub_df, y_axis, palette):
     args = ctx["args"]
     ax_plot = ctx["ax_plot"]
 
@@ -281,6 +281,8 @@ def annotate(ctx, sub_df, y_axis, palette):
 
     ys = dict()
     z_domain = sub_df[args.z].unique()
+    x_domain = sub_df[args.x].unique()
+
     for z in z_domain:
         group = sub_df[sub_df[args.z] == z]
         ys_z = group.groupby(args.x)[y_axis].apply(
@@ -290,28 +292,50 @@ def annotate(ctx, sub_df, y_axis, palette):
 
     autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
 
+    x_adjust = {z: dict() for z in z_domain}
+
+    # adjust x positions for annotations based on the plot type
+    if plot_type == "lines":
+        for z in z_domain:
+            for x in x_domain:
+                x_adjust[z][x] = x  # no adjustment needed for lines
+    elif plot_type == "bars":
+
+        def x_flat_generator():
+            for p in ax_plot.patches:
+                height = p.get_height()
+                if not np.isnan(height) and height > 0:
+                    yield p.get_x() + p.get_width() / 2
+
+        x_flat_gen = iter(x_flat_generator())
+        for z in z_domain:
+            for x in x_domain:
+                x_adjust[z][x] = next(x_flat_gen)
+
     for z in z_domain:
         annotation_kwargs_z = annotation_kwargs.copy()
         annotation_kwargs_z["color"] = palette[z]
-        ys_z = ys[z]
         if args.annotate_max:
-            max_y = ys_z.max()
-            max_x = ys_z.idxmax()
+            y = ys[z].max()
+            x = ys[z].idxmax()
+            x = x_adjust[z][x]
             ax_plot.annotate(
-                f"{max_y:.2f}",
-                (max_x, max_y),
+                f"{y:.2f}",
+                (x, y),
                 **annotation_kwargs_z,
             )
         if args.annotate_min:
-            min_y = ys_z.min()
-            min_x = ys_z.idxmin()
+            y = ys[z].min()
+            x = ys[z].idxmin()
+            x = x_adjust[z][x]
             ax_plot.annotate(
-                f"{min_y:.2f}",
-                (min_x, min_y),
+                f"{y:.2f}",
+                (x, y),
                 **annotation_kwargs_z,
             )
         if args.annotate:
-            for x, y in ys_z.items():
+            for x, y in ys[z].items():
+                x = x_adjust[z][x]
                 ax_plot.annotate(
                     f"{y:.2f}",
                     (x, y),
@@ -436,6 +460,7 @@ def update_plot(ctx, padding_factor=1.05):
             z=args.z,
             palette=palette,
         )
+        annotate(ctx, "lines", sub_df, y_axis, palette)
     else:
         sns.barplot(
             data=sub_df,
@@ -456,8 +481,7 @@ def update_plot(ctx, padding_factor=1.05):
                 "solid_joinstyle": "round",
             },
         )
-
-    annotate(ctx, sub_df, y_axis, palette)
+        annotate(ctx, "bars", sub_df, y_axis, palette)
 
     def format_ylabel(label):
         if args.unit is None:
