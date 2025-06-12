@@ -249,6 +249,8 @@ def update_plot(ctx, padding_factor=1.05):
         sub_df = sub_df[sub_df[d] == k]
     ax_plot.clear()
 
+    initial_sub_df = sub_df.copy()
+
     def to_engineering_si(x, precision=0):
         if x == 0:
             return f"{0:.{precision}f}"
@@ -401,8 +403,10 @@ def update_plot(ctx, padding_factor=1.05):
     def format_ylabel(label):
         if args.unit is None:
             return label
-        else:
+        elif args.speedup is None:
             return f"{label} [{args.unit}]"
+        else:
+            return f"{label}"
 
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
@@ -422,13 +426,8 @@ def update_plot(ctx, padding_factor=1.05):
         ax_plot.set_ylabel(format_ylabel(y_axis))
 
     # set figure title
-    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    if args.normalize is not None:
-        y_range = f"[{y_left:.2f} - {y_right:.2f}]"
-    else:
-        y_range = "[{} - {}]".format(
-            to_engineering_si(y_left), to_engineering_si(y_right)
-        )
+    y_left, y_right = initial_sub_df[y_axis].min(), initial_sub_df[y_axis].max()
+    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         if y == y_axis:
