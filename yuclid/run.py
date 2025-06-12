@@ -176,10 +176,12 @@ def apply_user_selectors(settings, subspace):
             selection = [normalize_point(x) for x in selectors]
         else:
             selection = []
-            valid = {str(x["name"]): x for x in subspace[dim]}
+            valid = {str(x["name"]) for x in subspace[dim]}
             for selector in selectors:
-                if selector in valid.keys():
-                    selection.append(valid[selector])
+                if selector in valid:
+                    for x in subspace[dim]:
+                        if x["name"] == selector:
+                            selection.append(x)
                 else:
                     report(
                         LogLevel.ERROR,
