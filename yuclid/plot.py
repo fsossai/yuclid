@@ -382,7 +382,12 @@ def update_plot(ctx, padding_factor=1.05):
 
     # set figure title
     y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(to_engineering_si(y_left), to_engineering_si(y_right))
+    if args.normalize is not None:
+        y_range = f"[{y_left:.2f} - {y_right:.2f}]"
+    else:
+        y_range = "[{} - {}]".format(
+            to_engineering_si(y_left), to_engineering_si(y_right)
+        )
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         if y == y_axis:
