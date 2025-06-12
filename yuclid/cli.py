@@ -67,7 +67,7 @@ def main():
         "--fold",
         default=False,
         action="store_true",
-        help="Fold metric values into an array per experiment",
+        help="Stores values produced by a metric in an array",
     )
     run_parser.add_argument(
         "--dry-run",
