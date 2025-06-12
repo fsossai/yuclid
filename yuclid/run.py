@@ -209,6 +209,39 @@ def apply_user_selectors(settings, subspace):
     return subspace
 
 
+def normalize_metrics(metrics):
+    normalized = []
+    if isinstance(metrics, list):
+        for metric in metrics:
+            if not isinstance(metric, dict):
+                report(LogLevel.FATAL, "each metric must be a dict", metric)
+            if "name" not in metric:
+                report(LogLevel.FATAL, "each metric must have a 'name' field", metric)
+            if "command" not in metric:
+                report(
+                    LogLevel.FATAL, "each metric must have a 'command' field", metric
+                )
+            normalized.append(
+                {
+                    "name": metric["name"],
+                    "command": normalize_command(metric["command"]),
+                    "condition": metric.get("condition", "True"),
+                }
+            )
+    elif isinstance(metrics, dict):
+        for name, command in metrics.items():
+            if not isinstance(command, str):
+                report(LogLevel.FATAL, "metric command must be a string", command)
+            normalized.append(
+                {
+                    "name": name,
+                    "command": normalize_command(command),
+                    "condition": "True",
+                }
+            )
+    return normalized
+
+
 def normalize_command(cmd):
     if isinstance(cmd, str):
         return cmd
@@ -295,9 +328,7 @@ def normalize_space_values(space):
             result = eval(values)
             if not isinstance(result, list):
                 report(
-                    LogLevel.FATAL,
-                    "python command generated non-list values",
-                    values
+                    LogLevel.FATAL, "python command generated non-list values", values
                 )
             normalized[name] = [normalize_point(x) for x in result]
         elif values is not None:
@@ -310,37 +341,34 @@ def normalize_space_values(space):
 
 
 def normalize_data(json_data):
-    normalized = {
-        "env": dict(),
-        "setup": dict(),
-        "space": dict(),
-        "trials": [],
-        "metrics": dict(),
-        "presets": dict(),
-        "order": [],
+    valid_fields = {
+        "env",
+        "setup",
+        "space",
+        "trials",
+        "metrics",
+        "presets",
+        "order",
     }
 
+    normalized = dict()
     for key in json_data.keys():
-        if key in normalized.keys():
+        if key in valid_fields:
             normalized[key] = json_data[key]
         else:
             report(
                 LogLevel.WARNING,
                 "unknown field in configuration",
                 key,
-                hint="available fields: {}".format(", ".join(normalized.keys())),
+                hint="available fields: {}".format(", ".join(valid_fields)),
             )
 
     space = normalize_space_values(json_data.get("space", {}))
 
-    metrics = dict()
-    for key, value in json_data.get("metrics", dict()).items():
-        metrics[key] = normalize_command(value)
-
     normalized["space"] = space
     normalized["trials"] = normalize_trials(json_data.get("trials", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}), space)
-    normalized["metrics"] = metrics
+    normalized["metrics"] = normalize_metrics(json_data.get("metrics", []))
     normalized["presets"] = json_data.get("presets", dict())
 
     if len(normalized["trials"]) == 0:
@@ -433,9 +461,7 @@ def apply_preset(data, preset_name):
                 )
             else:
                 # definition via name
-                new_items.append(
-                    next(x for x in space[dim] if x["name"] == str(item))
-                )
+                new_items.append(next(x for x in space[dim] if x["name"] == str(item)))
 
         if len(wrong) > 0:
             hint = "available names: {}".format(", ".join(space_names[dim]))
@@ -659,17 +685,29 @@ def run_point_trials(settings, data, execution, f, i, point):
     if len(compatible_trials) == 0:
         report(LogLevel.WARNING, point_to_string(point), "no compatible trials found")
 
+    compatible_metrics = [
+        metric
+        for metric in data["metrics"]
+        if valid_condition(metric["condition"], point, execution["order"])
+    ]
+
+    if len(compatible_metrics) == 0:
+        report(LogLevel.WARNING, point_to_string(point), "no compatible metrics found")
+
+    if len(compatible_trials) == 0 or len(compatible_metrics) == 0:
+        return
+
     for trial in compatible_trials:
         command = substitute_global_yvars(trial["command"], execution["subspace"])
         command = substitute_point_yvars(command, point_map, point_id)
-        cmd_result = subprocess.run(
+        command_output = subprocess.run(
             command,
             shell=True,
             env=execution["env"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        if cmd_result.returncode != 0:
+        if command_output.returncode != 0:
             if os.path.exists(point_id):
                 hint = "try `cat {}` for more information".format(point_id)
             else:
@@ -677,37 +715,41 @@ def run_point_trials(settings, data, execution, f, i, point):
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
-                f"failed trials (code {cmd_result.returncode})",
+                f"failed trials (code {command_output.returncode})",
                 hint=hint,
             )
 
-    metric_values = dict()
-    for metric, command in data["metrics"].items():
-        command = substitute_global_yvars(command, execution["subspace"])
+    collected_metrics = dict()
+    for metric in compatible_metrics:
+        command = substitute_global_yvars(metric["command"], execution["subspace"])
         command = substitute_point_yvars(command, point_map, point_id)
-        cmd_result = subprocess.run(
+        command_output = subprocess.run(
             command,
             shell=True,
             universal_newlines=True,
             capture_output=True,
             env=execution["env"],
         )
-        if cmd_result.returncode != 0:
+        if command_output.returncode != 0:
             hint = "the command '{}' produced the following output:\n{}".format(
                 command,
-                cmd_result.stdout.strip(),
+                command_output.stdout.strip(),
             )
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
-                "failed metric '{}' (code {})".format(metric, cmd_result.returncode),
+                "failed metric '{}' (code {})".format(
+                    metric, command_output.returncode
+                ),
                 hint=hint,
             )
         else:
-            cmd_lines = cmd_result.stdout.strip().split("\n")
-            metric_values[metric] = [float(line) for line in cmd_lines]
+            output_lines = command_output.stdout.strip().split("\n")
+            collected_metrics[metric["name"]] = [float(line) for line in output_lines]
 
-    metric_values_df = pd.DataFrame.from_dict(metric_values, orient="index").transpose()
+    metric_values_df = pd.DataFrame.from_dict(
+        collected_metrics, orient="index"
+    ).transpose()
     if not settings["fold"]:
         NaNs = metric_values_df.columns[metric_values_df.isnull().any()]
         if len(NaNs) > 0:
@@ -726,7 +768,7 @@ def run_point_trials(settings, data, execution, f, i, point):
             result.update(record)
             f.write(json.dumps(result) + "\n")
 
-    report(LogLevel.INFO, "obtained", metrics_to_string(metric_values))
+    report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
     report(
         LogLevel.INFO,
         get_progress(i, execution["subspace_size"]),
@@ -743,9 +785,9 @@ def valid_conditions(point, order):
     return all(eval(x["condition"], point_context) for x in point)
 
 
-def valid_condition(condition, configuration, order):
+def valid_condition(condition, point, order):
     point_context = {}
-    yuclid = {name: x["value"] for name, x in zip(order, configuration)}
+    yuclid = {name: x["value"] for name, x in zip(order, point)}
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     return eval(condition, point_context)
 
@@ -1025,7 +1067,8 @@ def launch(args):
     report(LogLevel.INFO, "finished")
 
     if not settings["dry_run"]:
+        metric_names = {m["name"] for m in data["metrics"]}
         hint = "use `yuclid plot {} -y {}` to analyze the results".format(
-            settings["output"], ",".join(data["metrics"].keys())
+            settings["output"], ",".join(metric_names)
         )
         report(LogLevel.INFO, "output data written to", settings["output"], hint=hint)
