@@ -610,7 +610,7 @@ def update_plot(ctx, padding_factor=1.05):
         from matplotlib.ticker import FuncFormatter
 
         def format_with_x(x, pos):
-            return f"{x:.0f}x"
+            return f"{x:.2f}x"
 
         ax_plot.yaxis.set_major_formatter(FuncFormatter(format_with_x))
         ax_plot.set_yticks(sorted(set(list(ax_plot.get_yticks()) + [1.0])))
@@ -831,20 +831,72 @@ def validate_args(ctx):
             )
 
     # normalization
-    if args.x_norm is not None and args.ref_norm is not None:
+    def validate_pairs(norm_args):
+        for arg in norm_args:
+            if "=" not in arg:
+                report(
+                    LogLevel.FATAL,
+                    f"invalid normalization argument '{arg}', expected format 'key=value'",
+                )
+        return {pair.split("=")[0]: pair.split("=")[1] for pair in norm_args}
+
+    if (
+        (args.x_norm and args.z_norm)
+        or (args.x_norm and args.ref_norm)
+        or (args.z_norm and args.ref_norm)
+    ):
         report(
             LogLevel.FATAL,
-            "--group-norm and --ref-norm cannot be used together",
+            "only one normalization method can be used at a time: --x-norm, --z-norm, or --ref-norm",
         )
-    if args.ref_norm is not None:
-        keys = {pair.split("=")[0] for pair in args.ref_norm}
-        if args.x not in keys:
-            hint = "try adding '{}=<value>' to --ref-norm".format(args.x)
+    if args.ref_norm:
+        keys = validate_pairs(args.ref_norm).keys()
+        if args.x not in keys or args.z not in keys:
+            hint = "try adding '{}=<value>' or '{}=<value>' to --ref-norm".format(
+                args.x, args.z
+            )
             report(
                 LogLevel.FATAL,
-                "--ref-norm must include the X-axis dimension",
+                "--ref-norm pairs must include both the X-axis and Z-axis dimensions",
                 hint=hint,
             )
+    elif args.x_norm:
+        keys = validate_pairs(args.x_norm).keys()
+        if args.z not in keys:
+            hint = "try adding '{}=<value>' to --x-norm".format(args.z)
+            report(
+                LogLevel.FATAL,
+                "--x-norm pairs must include the Z-axis dimension",
+                hint=hint,
+            )
+        if args.x in keys:
+            hint = "try removing '{}=<value>' from --x-norm".format(args.x)
+            report(
+                LogLevel.FATAL,
+                "--x-norm pairs must not include the X-axis dimension",
+                hint=hint,
+            )
+    elif args.z_norm:
+        keys = validate_pairs(args.z_norm).keys()
+        if args.x not in keys:
+            hint = "try adding '{}=<value>' to --z-norm".format(args.x)
+            report(
+                LogLevel.FATAL,
+                "--z-norm pairs must include the X-axis dimension",
+                hint=hint,
+            )
+        if args.z in keys:
+            hint = "try removing '{}=<value>' from --z-norm".format(args.z)
+            report(
+                LogLevel.FATAL,
+                "--z-norm pairs must not include the Z-axis dimension",
+                hint=hint,
+            )
+    if not (args.x_norm or args.z_norm or args.ref_norm) and args.norm_reverse:
+        report(
+            LogLevel.WARNING,
+            "--norm-reverse is ignored because no normalization is applied",
+        )
 
     if args.show_missing:
         missing = compute_missing(ctx)
