@@ -52,6 +52,11 @@ def group_normalization(df, config, args, y_axis):
     ref_config = {k: v for k, v in config.items()} # copy
     selector = dict(pair.split("=") for pair in args.group_norm)
     ref_config.update(selector)
+
+    # fixing types
+    for k, v in ref_config.items():
+        ref_config[k] = df[k].dtype.type(v)
+        
     ref_df = get_projection(df, ref_config)
     estimator = scipy.stats.gmean if args.geomean else np.median
     gb_cols = df.columns.difference(args.y).tolist()
@@ -811,17 +816,13 @@ def compute_ylimits(ctx):
         return
     if args.group_norm:
         top = 0
-        tt = time.time()
         for point in itertools.product(*free_domains.values()):
             filt = (df[free_domains.keys()] == point).all(axis=1)
-            print(point)
             config = get_config(point, free_domains.keys())
             df_config = group_normalization(df, config, args, y_axis)
             zx = df_config.groupby([args.z, args.x])[y_axis]
             t = zx.apply(spread.upper(args.spread_measure))
             top = max(top, t.max())
-        tt = time.time() - tt
-        report(LogLevel.INFO, tt)
     elif args.ref_norm:
         top = 0
         max_speedup = 1.0
