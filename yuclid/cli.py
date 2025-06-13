@@ -85,15 +85,20 @@ def main():
     plot_parser.add_argument("-y", nargs="*", help="Y-axis column names")
     plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
-        "--group-norm", nargs="*", help="Normalize w.r.t. a value in the group"
+        "-G", "--group-norm", nargs="*", help="Normalize w.r.t. a value in the group"
     )
     plot_parser.add_argument(
-        "--ref-norm", nargs="*", help="Normalize w.r.t. a single reference value"
+        "-R", "--ref-norm", nargs="*", help="Normalize w.r.t. a single reference value"
     )
+    # plot_parser.add_argument(
+    #     "-S",
+    #     "--norm-scope",
+    #     choices=["global", "local"],
+    #     default="local",
+    #     help="Normalization scope",
+    # )
     plot_parser.add_argument(
-        "--norm-scope", choices=["global", "local"], help="Normalization scope"
-    )
-    plot_parser.add_argument(
+        "-r",
         "--norm-reverse",
         action="store_true",
         default=False,
@@ -108,7 +113,6 @@ def main():
         ),
     )
     plot_parser.add_argument(
-        "-r",
         "--rsync-interval",
         metavar="S",
         type=float,
