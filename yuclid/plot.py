@@ -588,9 +588,9 @@ def update_plot(ctx, padding_factor=1.05):
         if args.unit is None:
             return label
         elif args.x_norm or args.z_norm or args.ref_norm:
-            return f"{label} [{args.unit}]"
+            return label
         else:
-            return f"{label}"
+            return f"{label} [{args.unit}]"
 
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
@@ -669,9 +669,11 @@ def save_to_file(ctx, outfile=None):
     if args.ref_norm is not None:
         wrt = " | ".join(args.ref_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
-    elif args.x_norm is not None:
+    elif args.x_norm or args.z_norm:
         wrt = " | ".join(args.x_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
+    else:
+        title = rf"$\mathbf{{{name}}}$"
 
     title += "\n" + get_status_description(ctx)
     ctx["fig"].suptitle(title)
