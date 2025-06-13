@@ -47,10 +47,13 @@ def get_projection(df, config):
     return df[mask].copy()
 
 
-def group_normalization(df, config, args, y_axis):
+def group_normalization(norm_axis, df, config, args, y_axis):
     sub_df = get_projection(df, config)
     ref_config = {k: v for k, v in config.items()}  # copy
-    selector = dict(pair.split("=") for pair in args.group_norm)
+    if norm_axis == "x":
+        selector = dict(pair.split("=") for pair in args.x_norm)
+    elif norm_axis == "z":
+        selector = dict(pair.split("=") for pair in args.z_norm)
     ref_config.update(selector)
 
     # fixing types
@@ -61,8 +64,13 @@ def group_normalization(df, config, args, y_axis):
     estimator = scipy.stats.gmean if args.geomean else np.median
     gb_cols = df.columns.difference(args.y).tolist()
     ref = ref_df.groupby(gb_cols)[y_axis].apply(estimator).reset_index()
-    y_ref_at = lambda x: ref[ref[args.x] == x][y_axis].values[0]
-    y_ref = sub_df[args.x].map(y_ref_at)
+    if norm_axis == "x":
+        y_ref_at = lambda x: ref[ref[args.x] == x][y_axis].values[0]
+        y_ref = sub_df[args.x].map(y_ref_at)
+    elif norm_axis == "z":
+        y_ref_at = lambda z: ref[ref[args.z] == z][y_axis].values[0]
+        y_ref = sub_df[args.z].map(y_ref_at)
+    # breakpoint()
     if args.norm_reverse:
         sub_df[y_axis] = y_ref / sub_df[y_axis]
     else:
@@ -310,11 +318,12 @@ def fontsize_to_y_units(ctx, fontsize):
     return dy
 
 
-def autospace_annotations(ctx, fontsize, ys, padding_factor=1.50):
+def autospace_annotations(ctx, fontsize, ys, padding_factor=1.10):
     text_height = fontsize_to_y_units(ctx, fontsize)
     h = text_height * padding_factor
     x_domain = ctx["domains"][ctx["args"].x]
 
+    y_adjust = {k: dict() for k in ys}
     for x in x_domain:
         y_vals = [(z, ys[z][x]) for z in ys]
         lower_bound = -float("inf")
@@ -323,11 +332,13 @@ def autospace_annotations(ctx, fontsize, ys, padding_factor=1.50):
             if box_bottom < lower_bound:  # overlap?
                 shift = lower_bound - box_bottom
                 new_y = y + shift
-                lower_bound += box_top + shift
+                lower_bound = box_top + shift
             else:
                 lower_bound = box_top
                 new_y = y
-            ys[z][x] = new_y
+            y_adjust[z][x] = new_y
+
+    return y_adjust
 
 
 def annotate(ctx, plot_type, sub_df, y_axis, palette):
@@ -358,9 +369,8 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
         )
         ys[z] = ys_z
 
-    autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
-
     x_adjust = {z: dict() for z in z_domain}
+    y_adjust = autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
 
     # adjust x positions for annotations based on the plot type
     if plot_type == "lines":
@@ -386,27 +396,30 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
         if args.annotate_max:
             y = ys[z].max()
             x = ys[z].idxmax()
-            x = x_adjust[z][x]
+            xa = x_adjust[z][x]
+            ya = y_adjust[z][x]
             ax_plot.annotate(
                 f"{y:.2f}",
-                (x, y),
+                (xa, ya),
                 **annotation_kwargs_z,
             )
         if args.annotate_min:
             y = ys[z].min()
             x = ys[z].idxmin()
-            x = x_adjust[z][x]
+            xa = x_adjust[z][x]
+            ya = y_adjust[z][x]
             ax_plot.annotate(
                 f"{y:.2f}",
-                (x, y),
+                (xa, ya),
                 **annotation_kwargs_z,
             )
         if args.annotate:
             for x, y in ys[z].items():
-                x = x_adjust[z][x]
+                xa = x_adjust[z][x]
+                ya = y_adjust[z][x]
                 ax_plot.annotate(
                     f"{y:.2f}",
-                    (x, y),
+                    (xa, ya),
                     **annotation_kwargs_z,
                 )
 
@@ -450,9 +463,9 @@ def get_palette(values, colorblind=False):
             "#5588dd",
             "#882255",
             "#33bb88",
-            "#ddcc77",
-            "#cc6677",
-            "#999933",
+            "#9624e1",
+            "#BBBB41",
+            "#ed5a15",
             "#aa44ff",
             "#448811",
             "#3fa7d6",
@@ -491,9 +504,11 @@ def update_plot(ctx, padding_factor=1.05):
     title = " | ".join(title_parts) + "\n" + y_range
     ctx["fig"].suptitle(title)
 
-    if args.group_norm is not None:
-        sub_df = group_normalization(df, config, args, y_axis)
-    elif args.ref_norm is not None:
+    if args.x_norm:
+        sub_df = group_normalization("x", df, config, args, y_axis)
+    elif args.z_norm:
+        sub_df = group_normalization("z", df, config, args, y_axis)
+    elif args.ref_norm:
         sub_df = ref_normalization(df, config, args, y_axis)
 
     if args.geomean:
@@ -502,7 +517,7 @@ def update_plot(ctx, padding_factor=1.05):
         sub_df = pd.concat([sub_df, gm_df])
 
     # draw horizontal line at y=1.0
-    if args.group_norm is not None or args.ref_norm is not None:
+    if args.x_norm or args.z_norm or args.ref_norm:
         ax_plot.axhline(y=1.0, linestyle="-", linewidth=4, color="lightgrey")
 
     def custom_error(data):
@@ -572,7 +587,7 @@ def update_plot(ctx, padding_factor=1.05):
     def format_ylabel(label):
         if args.unit is None:
             return label
-        elif args.ref_norm is None and args.group_norm is None:
+        elif args.x_norm or args.z_norm or args.ref_norm:
             return f"{label} [{args.unit}]"
         else:
             return f"{label}"
@@ -580,7 +595,7 @@ def update_plot(ctx, padding_factor=1.05):
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
 
-    if args.group_norm is not None or args.ref_norm is not None:
+    if args.x_norm or args.z_norm or args.ref_norm:
         if args.norm_reverse:
             normalized_label = f"{y_axis} (gain)"
         else:
@@ -590,7 +605,7 @@ def update_plot(ctx, padding_factor=1.05):
         ax_plot.set_ylabel(format_ylabel(y_axis))
 
     # format y-tick labels with 'x' suffix for normalized plots
-    if args.group_norm is not None or args.ref_norm is not None:
+    if args.x_norm or args.z_norm or args.ref_norm:
         # use FuncFormatter to append 'x' to tick labels
         from matplotlib.ticker import FuncFormatter
 
@@ -610,7 +625,7 @@ def get_config_name(ctx):
     position = ctx["position"]
     args = ctx["args"]
     config = get_current_config(ctx)
-    if args.ref_norm is not None or args.group_norm is not None:
+    if args.ref_norm is not None or args.x_norm is not None:
         if args.norm_reverse:
             status = [f"{y_axis}", "gain"]
         else:
@@ -654,8 +669,8 @@ def save_to_file(ctx, outfile=None):
     if args.ref_norm is not None:
         wrt = " | ".join(args.ref_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
-    elif args.group_norm is not None:
-        wrt = " | ".join(args.group_norm)
+    elif args.x_norm is not None:
+        wrt = " | ".join(args.x_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
 
     title += "\n" + get_status_description(ctx)
@@ -814,7 +829,7 @@ def validate_args(ctx):
             )
 
     # normalization
-    if args.group_norm is not None and args.ref_norm is not None:
+    if args.x_norm is not None and args.ref_norm is not None:
         report(
             LogLevel.FATAL,
             "--group-norm and --ref-norm cannot be used together",
@@ -847,7 +862,7 @@ def start_gui(ctx):
     update_table(ctx)
     threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
     report(LogLevel.INFO, "application running")
-    time.sleep(0.5)
+    time.sleep(1.0)  # wait for the GUI to initialize
     plt.show()
 
 
@@ -862,15 +877,17 @@ def compute_ylimits(ctx):
     if len(free_dims) == 0:
         ctx["top"] = None
         return
-    if args.group_norm or args.ref_norm:
+    if args.x_norm or args.z_norm or args.ref_norm:
         top = 0
         for point in itertools.product(*free_domains.values()):
             filt = (df[free_domains.keys()] == point).all(axis=1)
             config = get_config(point, free_domains.keys())
             if args.ref_norm:
                 df_config = ref_normalization(df, config, args, y_axis)
-            elif args.group_norm:
-                df_config = group_normalization(df, config, args, y_axis)
+            elif args.x_norm:
+                df_config = group_normalization("x", df, config, args, y_axis)
+            elif args.z_norm:
+                df_config = group_normalization("z", df, config, args, y_axis)
             zx = df_config.groupby([args.z, args.x])[y_axis]
             t = zx.apply(spread.upper(args.spread_measure))
             top = max(top, t.max())

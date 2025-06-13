@@ -85,10 +85,22 @@ def main():
     plot_parser.add_argument("-y", nargs="*", help="Y-axis column names")
     plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
-        "-G", "--group-norm", nargs="*", help="Normalize w.r.t. a value in the group"
+        "-X",
+        "--x-norm",
+        nargs="*",
+        help="Normalize each x-group w.r.t. a value per group",
     )
     plot_parser.add_argument(
-        "-R", "--ref-norm", nargs="*", help="Normalize w.r.t. a single reference value"
+        "-Z",
+        "--z-norm",
+        nargs="*",
+        help="Normalize each z-group w.r.t. a value per group",
+    )
+    plot_parser.add_argument(
+        "-R",
+        "--ref-norm",
+        nargs="*",
+        help="Normalize all values w.r.t. a single reference",
     )
     # plot_parser.add_argument(
     #     "-S",
