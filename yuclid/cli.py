@@ -85,10 +85,19 @@ def main():
     plot_parser.add_argument("-y", nargs="*", help="Y-axis column names")
     plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
-        "-n", "--normalize", default=None, help="Normalize w.r.t. a value in -z"
+        "--group-norm", nargs="*", help="Normalize w.r.t. a value in the group"
     )
     plot_parser.add_argument(
-        "-s", "--speedup", default=None, help="Reverse-normalize w.r.t. a value in -z"
+        "--ref-norm", nargs="*", help="Normalize w.r.t. a single reference value"
+    )
+    plot_parser.add_argument(
+        "--norm-scope", choices=["global", "local"], help="Normalization scope"
+    )
+    plot_parser.add_argument(
+        "--norm-reverse",
+        action="store_true",
+        default=False,
+        help="Reverse normalization. E.g. a/x instead of x/a",
     )
     plot_parser.add_argument(
         "-m",

@@ -17,11 +17,49 @@ import math
 import sys
 
 
-def normalize(input_df, args, y_axis):
-    b = input_df[args.z].dtype.type(args.normalize)
-    estimator = scipy.stats.gmean if args.geomean else np.mean
-    ref = input_df.groupby([args.x, args.z])[y_axis].apply(estimator)
-    input_df[y_axis] /= input_df[args.x].map(lambda x: ref[(x, b)])
+def get_current_config(ctx):
+    df = ctx["df"]
+    domains = ctx["domains"]
+    position = ctx["position"]
+    free_dims = ctx["free_dims"]
+    config = dict()
+    for d in free_dims:
+        k = domains[d][position[d]]
+        config[d] = k
+    return config
+
+
+def get_config(point, keys):
+    config = dict()
+    for i, k in enumerate(keys):
+        if i < len(point):
+            config[k] = point[i]
+        else:
+            config[k] = None
+    return config
+
+
+def get_projection(df, config):
+    keys = list(config.keys())
+    if len(keys) == 0:
+        return df
+    mask = (df[keys] == pd.Series(config)).all(axis=1)
+    return df[mask].copy()
+
+
+def group_normalization(df, config, args, y_axis):
+    sub_df = get_projection(df, config)
+    ref_config = {k: v for k, v in config.items()} # copy
+    selector = dict(pair.split("=") for pair in args.group_norm)
+    ref_config.update(selector)
+    ref_df = get_projection(df, ref_config)
+    estimator = scipy.stats.gmean if args.geomean else np.median
+    gb_cols = df.columns.difference(args.y).tolist()
+    ref = ref_df.groupby(gb_cols)[y_axis].apply(estimator).reset_index()
+    sub_df[y_axis] /= sub_df[args.x].map(
+        lambda x: ref[ref[args.x] == x][y_axis].values[0]
+    )
+    return sub_df
 
 
 def validate_files(args):
@@ -355,11 +393,9 @@ def update_plot(ctx, padding_factor=1.05):
     ax_plot = ctx["ax_plot"]
     top = ctx.get("top", None)
 
-    sub_df = df.copy()
+    config = get_current_config(ctx)
+    sub_df = get_projection(df, config)
 
-    for d in free_dims:
-        k = domains[d][position[d]]
-        sub_df = sub_df[sub_df[d] == k]
     ax_plot.clear()
 
     initial_sub_df = sub_df.copy()
@@ -393,20 +429,20 @@ def update_plot(ctx, padding_factor=1.05):
         unit = unit or ""
         return f"{coeff:.{precision}f}{prefix}{unit}"
 
-    if args.normalize is not None:
-        normalize(sub_df, args, y_axis)
+    if args.group_norm is not None:
+        sub_df = group_normalization(df, config, args, y_axis)
         if args.geomean:
             gm_df = sub_df.copy()
             gm_df[args.x] = "geomean"
             sub_df = pd.concat([sub_df, gm_df])
 
-    if args.speedup is not None:
-        c1 = sub_df[args.z] == args.speedup
+    if args.ref_norm is not None:
+        c1 = sub_df[args.z] == args.ref_norm
         c2 = sub_df[args.x] == sub_df[args.x].min()
         baseline = sub_df[(c1 & c2)][y_axis].min()
         sub_df[y_axis] = baseline / sub_df[y_axis]
 
-    if args.normalize is not None or args.speedup is not None:
+    if args.group_norm is not None or args.ref_norm is not None:
         ax_plot.axhline(y=1.0, linestyle="-", linewidth=4, color="lightgrey")
 
     def custom_error(data):
@@ -486,22 +522,22 @@ def update_plot(ctx, padding_factor=1.05):
     def format_ylabel(label):
         if args.unit is None:
             return label
-        elif args.speedup is None:
+        elif args.ref_norm is None:
             return f"{label} [{args.unit}]"
         else:
             return f"{label}"
 
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
-    if args.normalize is not None:
-        normalized_label = f"{y_axis} (normalized to {args.normalize})"
+    if args.group_norm is not None:
+        normalized_label = f"{y_axis} (normalized to {args.group_norm})"
         ax_plot.set_ylabel(format_ylabel(normalized_label))
-    elif args.speedup is not None:
-        speedup_label = f"speedup vs {args.speedup}"
-        ax_plot.set_ylabel(format_ylabel(speedup_label))
+    elif args.ref_norm is not None:
+        refnorm_label = f"refnorm vs {args.ref_norm}"
+        ax_plot.set_ylabel(format_ylabel(refnorm_label))
         handles, labels = ax_plot.get_legend_handles_labels()
         new_labels = [
-            f"{args.speedup} (baseline)" if label == args.speedup else label
+            f"{args.ref_norm} (baseline)" if label == args.ref_norm else label
             for label in labels
         ]
         ax_plot.legend(handles, new_labels, loc="upper left")
@@ -536,7 +572,7 @@ def get_config_name(ctx):
     dims = ctx["free_dims"]
     domains = ctx["domains"]
     position = ctx["position"]
-    status = ["speedup" if ctx["args"].speedup else y_axis]
+    status = ["speedup" if ctx["args"].ref_norm else y_axis]
     status += [str(domains[d][position[d]]) for d in dims]
     name = "_".join(status)
     return name
@@ -643,17 +679,6 @@ def validate_dimensions(ctx, dims):
 def validate_args(ctx):
     args = ctx["args"]
     df = ctx["df"]
-    c = 0
-    c += 1 if args.normalize is not None else 0
-    c += 1 if args.speedup is not None else 0
-    if c > 1:
-        report(LogLevel.FATAL, "specifiy only one among --normalize, --speedup")
-    if c == 0:
-        if args.geomean:
-            report(
-                LogLevel.FATAL,
-                "--geomean can only be used together with --normalize",
-            )
 
     # Y-axis
     numeric_cols = (
@@ -739,21 +764,17 @@ def validate_args(ctx):
             )
 
     # speedup and normalize
-    if args.speedup is not None:
+    if args.ref_norm is not None:
         if not pd.api.types.is_numeric_dtype(df[args.x]):
             report(
                 LogLevel.FATAL,
                 "--speedup only works when the X-axis has a numeric type",
             )
-    if args.normalize is not None or args.speedup is not None:
-        available = df[args.z].unique()
-        val = df[args.z].dtype.type(args.normalize or args.speedup)
-        if val not in available:
-            report(
-                LogLevel.FATAL,
-                "--normalize and --speedup must be one of the following values:",
-                available,
-            )
+    if args.group_norm is not None and args.ref_norm is not None:
+        report(
+            LogLevel.FATAL,
+            "--group-norm and --ref-norm cannot be used together",
+        )
 
     if args.show_missing:
         missing = compute_missing(ctx)
@@ -788,22 +809,26 @@ def compute_ylimits(ctx):
     if len(free_dims) == 0:
         ctx["top"] = None
         return
-    if args.normalize:
+    if args.group_norm:
         top = 0
-        for config in itertools.product(*free_domains.values()):
-            filt = (df[free_domains.keys()] == config).all(axis=1)
-            df_config = df[filt].copy()
-            normalize(df_config, args, y_axis)
+        tt = time.time()
+        for point in itertools.product(*free_domains.values()):
+            filt = (df[free_domains.keys()] == point).all(axis=1)
+            print(point)
+            config = get_config(point, free_domains.keys())
+            df_config = group_normalization(df, config, args, y_axis)
             zx = df_config.groupby([args.z, args.x])[y_axis]
             t = zx.apply(spread.upper(args.spread_measure))
             top = max(top, t.max())
-    elif args.speedup:
+        tt = time.time() - tt
+        report(LogLevel.INFO, tt)
+    elif args.ref_norm:
         top = 0
         max_speedup = 1.0
-        for config in itertools.product(*free_domains.values()):
-            filt = (df[free_domains.keys()] == config).all(axis=1)
+        for point in itertools.product(*free_domains.values()):
+            filt = (df[free_domains.keys()] == point).all(axis=1)
             df_config = df[filt].copy()
-            c1 = df_config[args.z] == args.speedup
+            c1 = df_config[args.z] == args.ref_norm
             c2 = df_config[args.x] == df_config[args.x].min()
             baseline = df_config[(c1 & c2)][y_axis].min()
             best = df_config[y_axis].min()
