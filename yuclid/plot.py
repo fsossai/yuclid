@@ -310,7 +310,7 @@ def fontsize_to_y_units(ctx, fontsize):
     return dy
 
 
-def autospace_annotations(ctx, fontsize, ys, padding_factor=1.10):
+def autospace_annotations(ctx, fontsize, ys, padding_factor=1.50):
     text_height = fontsize_to_y_units(ctx, fontsize)
     h = text_height * padding_factor
     x_domain = ctx["domains"][ctx["args"].x]
@@ -411,77 +411,40 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
                 )
 
 
-def update_plot(ctx, padding_factor=1.05):
-    args = ctx["args"]
-    df = ctx["df"]
-    free_dims = ctx["free_dims"]
-    domains = ctx["domains"]
-    position = ctx["position"]
-    y_axis = ctx["y_axis"]
-    z_dom = ctx["z_dom"]
-    z_size = ctx["z_size"]
-    ax_plot = ctx["ax_plot"]
-    top = ctx.get("top", None)
+def to_engineering_si(x, precision=0, unit=None):
+    if x == 0:
+        return f"{0:.{precision}f}"
+    si_prefixes = {
+        -24: "y",
+        -21: "z",
+        -18: "a",
+        -15: "f",
+        -12: "p",
+        -9: "n",
+        -6: "µ",
+        -3: "m",
+        0: "",
+        3: "k",
+        6: "M",
+        9: "G",
+        12: "T",
+        15: "P",
+        18: "E",
+        21: "Z",
+        24: "Y",
+    }
+    exp = int(math.floor(math.log10(abs(x)) // 3 * 3))
+    exp = max(min(exp, 24), -24)  # clamp to available prefixes
+    coeff = x / (10**exp)
+    prefix = si_prefixes.get(exp, f"e{exp:+03d}")
+    unit = unit or ""
+    return f"{coeff:.{precision}f}{prefix}{unit}"
 
-    config = get_current_config(ctx)
-    sub_df = get_projection(df, config)
 
-    ax_plot.clear()
-
-    initial_sub_df = sub_df.copy()
-
-    def to_engineering_si(x, precision=0, unit=None):
-        if x == 0:
-            return f"{0:.{precision}f}"
-        si_prefixes = {
-            -24: "y",
-            -21: "z",
-            -18: "a",
-            -15: "f",
-            -12: "p",
-            -9: "n",
-            -6: "µ",
-            -3: "m",
-            0: "",
-            3: "k",
-            6: "M",
-            9: "G",
-            12: "T",
-            15: "P",
-            18: "E",
-            21: "Z",
-            24: "Y",
-        }
-        exp = int(math.floor(math.log10(abs(x)) // 3 * 3))
-        exp = max(min(exp, 24), -24)  # clamp to available prefixes
-        coeff = x / (10**exp)
-        prefix = si_prefixes.get(exp, f"e{exp:+03d}")
-        unit = unit or ""
-        return f"{coeff:.{precision}f}{prefix}{unit}"
-
-    if args.group_norm is not None:
-        sub_df = group_normalization(df, config, args, y_axis)
-    elif args.ref_norm is not None:
-        sub_df = ref_normalization(df, config, args, y_axis)
-
-    if args.geomean:
-        gm_df = sub_df.copy()
-        gm_df[args.x] = "geomean"
-        sub_df = pd.concat([sub_df, gm_df])
-
-    if args.group_norm is not None or args.ref_norm is not None:
-        ax_plot.axhline(y=1.0, linestyle="-", linewidth=4, color="lightgrey")
-
-    def custom_error(data):
-        d = pd.DataFrame(data)
-        return (
-            spread.lower(args.spread_measure)(d),
-            spread.upper(args.spread_measure)(d),
-        )
-
-    if args.colorblind:
-        palette = sns.color_palette("colorblind", n_colors=len(z_dom))
-        palette = {z: palette[i] for i, z in enumerate(z_dom)}
+def get_palette(values, colorblind=False):
+    if colorblind:
+        palette = sns.color_palette("colorblind", n_colors=len(values))
+        return {v: palette[i] for i, v in enumerate(values)}
     else:
         preferred_colors = [
             "#5588dd",
@@ -498,8 +461,60 @@ def update_plot(ctx, padding_factor=1.05):
             "#dabef9",
         ]
         color_gen = iter(preferred_colors)
-        palette = {z: next(color_gen) for z in z_dom}
+        return {v: next(color_gen) for v in values}
 
+
+def update_plot(ctx, padding_factor=1.05):
+    args = ctx["args"]
+    df = ctx["df"]
+    y_axis = ctx["y_axis"]
+    ax_plot = ctx["ax_plot"]
+    top = ctx.get("top", None)
+
+    config = get_current_config(ctx)
+    sub_df = get_projection(df, config)
+
+    ax_plot.clear()
+
+    # set figure title
+    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
+    y_range = "[{} - {}]".format(
+        to_engineering_si(y_left, unit=args.unit),
+        to_engineering_si(y_right, unit=args.unit),
+    )
+    title_parts = []
+    for i, y in enumerate(args.y, start=1):
+        if y == y_axis:
+            title_parts.append(rf"{i}: $\mathbf{{{y}}}$")
+        else:
+            title_parts.append(f"{i}: {y}")
+    title = " | ".join(title_parts) + "\n" + y_range
+    ctx["fig"].suptitle(title)
+
+    if args.group_norm is not None:
+        sub_df = group_normalization(df, config, args, y_axis)
+    elif args.ref_norm is not None:
+        sub_df = ref_normalization(df, config, args, y_axis)
+
+    if args.geomean:
+        gm_df = sub_df.copy()
+        gm_df[args.x] = "geomean"
+        sub_df = pd.concat([sub_df, gm_df])
+
+    # draw horizontal line at y=1.0
+    if args.group_norm is not None or args.ref_norm is not None:
+        ax_plot.axhline(y=1.0, linestyle="-", linewidth=4, color="lightgrey")
+
+    def custom_error(data):
+        d = pd.DataFrame(data)
+        return (
+            spread.lower(args.spread_measure)(d),
+            spread.upper(args.spread_measure)(d),
+        )
+
+    palette = get_palette(ctx["z_dom"], colorblind=args.colorblind)
+
+    # main plot generation
     if args.lines:
         sns.lineplot(
             data=sub_df,
@@ -546,16 +561,25 @@ def update_plot(ctx, padding_factor=1.05):
         )
         annotate(ctx, "bars", sub_df, y_axis, palette)
 
+    # draw vertical line to separate geomean
+    if args.geomean:
+        pp = sorted(ax_plot.patches, key=lambda x: x.get_x())
+        z_size = ctx["z_size"]
+        x = pp[-z_size].get_x() + pp[-z_size - 1].get_x() + pp[-z_size - 1].get_width()
+        plt.axvline(x=x / 2, color="grey", linewidth=1, linestyle="-")
+
+    # set y-axis label
     def format_ylabel(label):
         if args.unit is None:
             return label
-        elif args.ref_norm is None:
+        elif args.ref_norm is None and args.group_norm is None:
             return f"{label} [{args.unit}]"
         else:
             return f"{label}"
 
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
+
     if args.group_norm is not None or args.ref_norm is not None:
         if args.norm_reverse:
             normalized_label = f"{y_axis} (gain)"
@@ -565,25 +589,16 @@ def update_plot(ctx, padding_factor=1.05):
     else:
         ax_plot.set_ylabel(format_ylabel(y_axis))
 
-    # set figure title
-    y_left, y_right = initial_sub_df[y_axis].min(), initial_sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(
-        to_engineering_si(y_left, unit=args.unit),
-        to_engineering_si(y_right, unit=args.unit),
-    )
-    title_parts = []
-    for i, y in enumerate(args.y, start=1):
-        if y == y_axis:
-            title_parts.append(rf"{i}: $\mathbf{{{y}}}$")
-        else:
-            title_parts.append(f"{i}: {y}")
-    title = " | ".join(title_parts) + "\n" + y_range
-    ctx["fig"].suptitle(title)
+    # format y-tick labels with 'x' suffix for normalized plots
+    if args.group_norm is not None or args.ref_norm is not None:
+        # use FuncFormatter to append 'x' to tick labels
+        from matplotlib.ticker import FuncFormatter
 
-    if args.geomean:
-        pp = sorted(ax_plot.patches, key=lambda x: x.get_x())
-        x = pp[-z_size].get_x() + pp[-z_size - 1].get_x() + pp[-z_size - 1].get_width()
-        plt.axvline(x=x / 2, color="grey", linewidth=1, linestyle="-")
+        def format_with_x(x, pos):
+            return f"{x:.0f}x"
+
+        ax_plot.yaxis.set_major_formatter(FuncFormatter(format_with_x))
+        ax_plot.set_yticks(sorted(set(list(ax_plot.get_yticks()) + [1.0])))
 
     ctx["fig"].canvas.draw_idle()
 
@@ -635,18 +650,13 @@ def save_to_file(ctx, outfile=None):
             legend.set_visible(False)
 
     name = str(ctx["y_axis"])
+    s = "gain" if args.norm_reverse else "normalized"
     if args.ref_norm is not None:
-        if args.norm_reverse:
-            title = rf"$\mathbf{{{name}}}$ (gain)"
-        else:
-            title = rf"$\mathbf{{{name}}}$ (normalized)"
-        title += "\nbaseline: " + ", ".join(args.ref_norm)
+        wrt = " | ".join(args.ref_norm)
+        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
     elif args.group_norm is not None:
-        if args.norm_reverse:
-            title = rf"$\mathbf{{{name}}}$ (gain)"
-        else:
-            title = rf"$\mathbf{{{name}}}$ (normalized)"
-        title += "\nbaseline: " + ", ".join(args.group_norm)
+        wrt = " | ".join(args.group_norm)
+        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
 
     title += "\n" + get_status_description(ctx)
     ctx["fig"].suptitle(title)
