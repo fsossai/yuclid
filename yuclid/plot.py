@@ -49,21 +49,24 @@ def get_projection(df, config):
 
 def group_normalization(df, config, args, y_axis):
     sub_df = get_projection(df, config)
-    ref_config = {k: v for k, v in config.items()} # copy
+    ref_config = {k: v for k, v in config.items()}  # copy
     selector = dict(pair.split("=") for pair in args.group_norm)
     ref_config.update(selector)
 
     # fixing types
     for k, v in ref_config.items():
         ref_config[k] = df[k].dtype.type(v)
-        
+
     ref_df = get_projection(df, ref_config)
     estimator = scipy.stats.gmean if args.geomean else np.median
     gb_cols = df.columns.difference(args.y).tolist()
     ref = ref_df.groupby(gb_cols)[y_axis].apply(estimator).reset_index()
-    sub_df[y_axis] /= sub_df[args.x].map(
-        lambda x: ref[ref[args.x] == x][y_axis].values[0]
-    )
+    y_ref_at = lambda x: ref[ref[args.x] == x][y_axis].values[0]
+    y_ref = sub_df[args.x].map(y_ref_at)
+    if args.norm_reverse:
+        sub_df[y_axis] = y_ref / sub_df[y_axis]
+    else:
+        sub_df[y_axis] = sub_df[y_axis] / y_ref
     return sub_df
 
 
