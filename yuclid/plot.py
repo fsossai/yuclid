@@ -623,7 +623,7 @@ def get_config_name(ctx):
     position = ctx["position"]
     args = ctx["args"]
     config = get_current_config(ctx)
-    if args.ref_norm is not None or args.x_norm is not None:
+    if args.ref_norm or args.x_norm or args.z_norm:
         if args.norm_reverse:
             status = [f"{y_axis}", "gain"]
         else:
@@ -664,11 +664,14 @@ def save_to_file(ctx, outfile=None):
 
     name = str(ctx["y_axis"])
     s = "gain" if args.norm_reverse else "normalized"
-    if args.ref_norm is not None:
+    if args.ref_norm:
         wrt = " | ".join(args.ref_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
-    elif args.x_norm or args.z_norm:
+    elif args.x_norm:
         wrt = " | ".join(args.x_norm)
+        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
+    elif args.z_norm:
+        wrt = " | ".join(args.z_norm)
         title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
     else:
         title = rf"$\mathbf{{{name}}}$"
