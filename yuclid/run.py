@@ -766,7 +766,7 @@ def run_point_trials(settings, data, execution, f, i, point):
                 LogLevel.ERROR,
                 point_to_string(point),
                 "failed metric '{}' (code {})".format(
-                    metric, command_output.returncode
+                    metric["name"], command_output.returncode
                 ),
                 hint=hint,
             )
@@ -796,6 +796,14 @@ def run_point_trials(settings, data, execution, f, i, point):
             f.write(json.dumps(result) + "\n")
 
     report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
+    for metric_name, values in collected_metrics.items():
+        if len(values) > 1:
+            report(
+                LogLevel.INFO,
+                "median",
+                metric_name,
+                f"{pd.Series(values).median():.3f}",
+            )
     report(
         LogLevel.INFO,
         get_progress(i, execution["subspace_size"]),
