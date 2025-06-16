@@ -176,6 +176,7 @@ def main():
         help="Rescale Y-axis values by multiplying by this number",
     )
     plot_parser.add_argument(
+        "-A",
         "--annotate",
         action="store_true",
         default=False,

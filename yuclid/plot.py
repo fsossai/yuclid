@@ -70,7 +70,6 @@ def group_normalization(norm_axis, df, config, args, y_axis):
     elif norm_axis == "z":
         y_ref_at = lambda z: ref[ref[args.z] == z][y_axis].values[0]
         y_ref = sub_df[args.z].map(y_ref_at)
-    # breakpoint()
     if args.norm_reverse:
         sub_df[y_axis] = y_ref / sub_df[y_axis]
     else:
@@ -318,10 +317,9 @@ def fontsize_to_y_units(ctx, fontsize):
     return dy
 
 
-def autospace_annotations(ctx, fontsize, ys, padding_factor=1.10):
+def autospace_annotations(ctx, x_domain, ys, fontsize, padding_factor=1.10):
     text_height = fontsize_to_y_units(ctx, fontsize)
     h = text_height * padding_factor
-    x_domain = ctx["domains"][ctx["args"].x]
 
     y_adjust = {k: dict() for k in ys}
     for x in x_domain:
@@ -370,7 +368,7 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
         ys[z] = ys_z
 
     x_adjust = {z: dict() for z in z_domain}
-    y_adjust = autospace_annotations(ctx, annotation_kwargs["fontsize"], ys)
+    y_adjust = autospace_annotations(ctx, x_domain, ys, annotation_kwargs["fontsize"])
 
     # adjust x positions for annotations based on the plot type
     if plot_type == "lines":
