@@ -179,7 +179,6 @@ def generate_dataframe(ctx):
         for k, v_list in user_filter.items():
             user_filter_mask &= df[k].isin(v_list)
         df = df[user_filter_mask]
-        breakpoint()
 
     if len(df) == 0:
         if args.filter:
