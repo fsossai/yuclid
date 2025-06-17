@@ -684,9 +684,13 @@ def get_progress(i, subspace_size):
 
 
 def run_point_trials(settings, data, execution, f, i, point):
+    os.makedirs(
+        os.path.join(settings["temp_dir"], settings["random_key"]), exist_ok=True
+    )
     point_id = os.path.join(
         settings["temp_dir"],
-        "{}.{}".format(settings["random_key"], point_to_string(point)),
+        settings["random_key"],
+        point_to_string(point),
     )
     point_map = {key: x for key, x in zip(execution["order"], point)}
     report(
