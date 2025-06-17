@@ -762,6 +762,8 @@ def validate_args(ctx):
     args = ctx["args"]
     df = ctx["df"]
 
+    validate_dimensions(ctx, [args.x])
+
     # Y-axis
     numeric_cols = (
         df.drop(columns=[args.x])
@@ -796,8 +798,6 @@ def validate_args(ctx):
                 hint=hint,
             )
 
-    # X-axis
-    validate_dimensions(ctx, [args.x])
     if args.x in args.y:
         report(
             LogLevel.FATAL,
