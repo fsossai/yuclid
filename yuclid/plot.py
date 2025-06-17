@@ -164,7 +164,11 @@ def generate_dataframe(ctx):
         sys.exit(1)
 
     df = pd.concat(dfs)
-    df = df.reset_index(level=0, names=["file"])
+
+    if args.no_merge_inputs:
+        df = df.reset_index(level=0, names=["file"])
+    else:
+        df = df.reset_index(drop=True)
 
     if args.filter is None:
         user_filter = dict()

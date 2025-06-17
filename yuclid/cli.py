@@ -195,6 +195,12 @@ def main():
         default=False,
         help="Annotate only the minimum Y value in each group",
     )
+    plot_parser.add_argument(
+        "--no-merge-inputs",
+        action="store_true",
+        default=False,
+        help="Treat each input file separately instead of merging them (default: merged). A new index column 'file' will be created for each input file.",
+    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
