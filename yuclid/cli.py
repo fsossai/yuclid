@@ -120,7 +120,7 @@ def main():
         "-m",
         "--spread-measure",
         default="pi95",
-        help="Measure of dispersion. Default: pi95. Available: {}".format(
+        help="Measure of dispersion. Default: pi95. Available: none or {}".format(
             ", ".join(yuclid.spread.available)
         ),
     )
@@ -149,6 +149,7 @@ def main():
         "-f",
         "--filter",
         nargs="*",
+        default=None,
         help="Filter dimension with explicit values. E.g. -f a=1 b=value",
     )
     plot_parser.add_argument(

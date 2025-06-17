@@ -170,14 +170,24 @@ def generate_dataframe(ctx):
         user_filter = dict()
     else:
         user_filter = dict(pair.split("=") for pair in args.filter)
-    for k, v in user_filter.items():
-        user_filter[k] = df[k].dtype.type(v)
+    for k, v_list in user_filter.items():
+        v_list = v_list.split(",")
+        user_filter[k] = [df[k].dtype.type(v) for v in v_list]
 
     if user_filter:
-        user_filter_mask = (df[list(user_filter.keys())] == user_filter.values()).all(
-            axis=1
-        )
+        user_filter_mask = np.ones(len(df), dtype=bool)
+        for k, v_list in user_filter.items():
+            user_filter_mask &= df[k].isin(v_list)
         df = df[user_filter_mask]
+        breakpoint()
+
+    if len(df) == 0:
+        if args.filter:
+            report(LogLevel.FATAL, "no valid data after filtering")
+        else:
+            report(LogLevel.FATAL, "no valid data found in the files")
+        ctx["alive"] = False
+        return
 
     ctx["df"] = df
 
@@ -542,15 +552,16 @@ def update_plot(ctx, padding_factor=1.05):
             ax=ax_plot,
             estimator=np.median,
         )
-        spread.draw(
-            ax_plot,
-            [args.spread_measure],
-            sub_df,
-            x=args.x,
-            y=y_axis,
-            z=args.z,
-            palette=palette,
-        )
+        if args.spread_measure != "none":
+            spread.draw(
+                ax_plot,
+                [args.spread_measure],
+                sub_df,
+                x=args.x,
+                y=y_axis,
+                z=args.z,
+                palette=palette,
+            )
         annotate(ctx, "lines", sub_df, y_axis, palette)
     else:
         sns.barplot(
@@ -562,7 +573,7 @@ def update_plot(ctx, padding_factor=1.05):
             x=args.x,
             y=y_axis,
             hue=args.z,
-            errorbar=custom_error,
+            errorbar=custom_error if args.spread_measure != "none" else None,
             alpha=0.6,
             err_kws={
                 "color": "black",
@@ -899,15 +910,15 @@ def validate_args(ctx):
             "--norm-reverse is ignored because no normalization is applied",
         )
 
+    ctx["y_dims"] = args.y
+    ctx["y_axis"] = args.y[0]
+
     if args.show_missing:
         missing = compute_missing(ctx)
         if len(missing) > 0:
             report(LogLevel.WARNING, "missing experiments:")
             report(LogLevel.WARNING, "\n" + missing.to_string(index=False))
             report(LogLevel.WARNING, "")
-
-    ctx["y_dims"] = args.y
-    ctx["y_axis"] = args.y[0]
 
 
 def start_gui(ctx):
@@ -944,7 +955,10 @@ def compute_ylimits(ctx):
             elif args.z_norm:
                 df_config = group_normalization("z", df, config, args, y_axis)
             zx = df_config.groupby([args.z, args.x])[y_axis]
-            t = zx.apply(spread.upper(args.spread_measure))
+            if args.spread_measure != "none":
+                t = zx.apply(spread.upper(args.spread_measure))
+            else:
+                t = zx.max()
             top = max(top, t.max())
     else:
         top = df[y_axis].max()
