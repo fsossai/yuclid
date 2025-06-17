@@ -119,9 +119,9 @@ def main():
     plot_parser.add_argument(
         "-m",
         "--spread-measure",
-        default="pi95",
-        help="Measure of dispersion. Default: pi95. Available: none or {}".format(
-            ", ".join(yuclid.spread.available)
+        default="pi,95",
+        help="Measure of dispersion. Default: pi,95. Available: none or {}".format(
+            " - ".join(yuclid.spread.available)
         ),
     )
     plot_parser.add_argument(

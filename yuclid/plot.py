@@ -913,6 +913,10 @@ def validate_args(ctx):
             "--norm-reverse is ignored because no normalization is applied",
         )
 
+    if args.spread_measure != "none":
+        if not spread.assert_validity(args.spread_measure):
+            args.spread_measure = "none"
+
     ctx["y_dims"] = args.y
     ctx["y_axis"] = args.y[0]
 

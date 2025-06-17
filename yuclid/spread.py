@@ -1,10 +1,19 @@
+from yuclid.log import report, LogLevel
 from scipy.stats import norm
 import seaborn as sns
 import pandas as pd
 import numpy as np
 import re
 
-available = {"sd", "piX", "rsdX", "mad", "range", "iqr"}
+
+available_parametrized = {"sd", "pi", "rsd"}
+available_non_parametrized = {
+    "mad",
+    "range",
+    "iqr",
+}
+available = [f"{name},N" for name in available_parametrized]
+available += [name for name in available_non_parametrized]
 
 
 def mad(y):
@@ -49,6 +58,49 @@ def upper(spread_measure):
         return lambda y: y.max()
     elif spread_measure == "iqr":
         return lambda y: np.quantile(y, 0.75)
+
+
+def assert_validity(spread_measure):
+    if not isinstance(spread_measure, str):
+        report(LogLevel.ERROR, "spread_measure must be a string")
+        return False
+    parts = spread_measure.split(",")
+    if parts[0] not in available_non_parametrized.union(available_parametrized):
+        report(
+            LogLevel.ERROR,
+            f"spread_measure '{spread_measure}' is not available",
+            hint="use one of: " + " - ".join(available),
+        )
+        return False
+    if parts[0] in available_parametrized:
+        if len(parts) < 2:
+            report(
+                LogLevel.ERROR,
+                f"spread_measure '{spread_measure}' is missing a parameter",
+                hint=f"try '{spread_measure},N' where N is a number",
+            )
+            return False
+        n = float(parts[1])
+        if parts[0] == "pi" and n < 0 or n > 100:
+            report(
+                LogLevel.ERROR,
+                "parameter for spread_measure 'pi' must be in [0, 100]",
+            )
+            return False
+        if parts[0] in ["sd", "rsd"] and n <= 0:
+            report(
+                LogLevel.ERROR,
+                "parameter for spread_measure 'sd' and 'rsd' must be positive",
+            )
+            return False
+    if parts[0] in available_non_parametrized:
+        if len(parts) != 1:
+            report(
+                LogLevel.ERROR,
+                f"spread_measure '{spread_measure}' must not have any parameters",
+            )
+            return False
+    return True
 
 
 def draw(
