@@ -855,6 +855,9 @@ def run_subspace_trials(settings, data, execution):
                     point_to_string(point),
                 )
     else:
+        output_dir = os.path.dirname(settings["output"])
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
         with open(settings["output"], "a") as f:
             for i, point in enumerate(execution["subspace_points"], start=1):
                 run_point_trials(settings, data, execution, f, i, point)
