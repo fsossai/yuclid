@@ -1077,6 +1077,12 @@ def normalize_setup(setup, space):
     return normalized
 
 
+def print_subspace(subspace):
+    for dim, values in subspace.items():
+        names = {x["name"] for x in values}
+        report(LogLevel.INFO, "subspace.{}: {}".format(dim, ", ".join(names)))
+
+
 def run_experiments(settings, data, order, env, preset_name=None):
     if preset_name is None:
         subspace = data["space"].copy()
@@ -1085,6 +1091,7 @@ def run_experiments(settings, data, order, env, preset_name=None):
 
     subspace = apply_user_selectors(settings, subspace)
     validate_dimensions(subspace)
+    print_subspace(subspace)
     execution = prepare_subspace_execution(subspace, order, env)
     validate_execution(execution, data)
     run_setup(settings, data, execution)
