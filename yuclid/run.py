@@ -5,8 +5,6 @@ import pandas as pd
 import subprocess
 import itertools
 import threading
-import random
-import string
 import json
 import re
 import os
@@ -685,11 +683,13 @@ def get_progress(i, subspace_size):
 
 def run_point_trials(settings, data, execution, f, i, point):
     os.makedirs(
-        os.path.join(settings["temp_dir"], settings["random_key"]), exist_ok=True
+        os.path.join(settings["temp_dir"], settings["now"]),
+        exist_ok=True,
     )
+
     point_id = os.path.join(
         settings["temp_dir"],
-        settings["random_key"],
+        settings["now"],
         point_to_string(point),
     )
     point_map = {key: x for key, x in zip(execution["order"], point)}
@@ -959,9 +959,6 @@ def get_point_setup_plan(item, subspace, order):
 
 def build_settings(args):
     settings = dict(vars(args))
-    settings["random_key"] = "".join(
-        random.choices(string.ascii_letters + string.digits, k=8)
-    )
 
     # inputs
     settings["inputs"] = []
@@ -973,8 +970,8 @@ def build_settings(args):
     os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
-    now = "{:%Y%m%d-%H%M}".format(datetime.now())
-    filename = f"trials.{now}.json"
+    settings["now"] = "{:%Y%m%d-%H%M}".format(datetime.now())
+    filename = "trials.{}.json".format(settings["now"])
     if args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:
@@ -988,9 +985,11 @@ def build_settings(args):
     report(LogLevel.INFO, "working directory", os.getcwd())
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", settings["output"])
-    report(LogLevel.INFO, "temp directory", args.temp_dir)
-    report(LogLevel.INFO, "random key", settings["random_key"])
-
+    report(
+        LogLevel.INFO,
+        "temp directory",
+        os.path.join(settings["temp_dir"], settings["now"]),
+    )
     return settings
 
 
