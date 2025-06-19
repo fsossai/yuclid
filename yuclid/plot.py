@@ -839,7 +839,7 @@ def validate_args(ctx):
         report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
     for d in df.columns.difference(args.y):
         n = df[d].nunique()
-        if n > 20 and pd.api.types.is_numeric_dtype(df[d]):
+        if n > 100 and pd.api.types.is_numeric_dtype(df[d]):
             report(
                 LogLevel.WARNING,
                 f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
