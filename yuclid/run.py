@@ -135,6 +135,12 @@ def aggregate_input_data(settings):
             order = data.get("order", []) + current.get("order", [])
             data["order"] = remove_duplicates(order)
 
+    if len(data["trials"]) == 0:
+        report(LogLevel.FATAL, "no valid trials found")
+
+    if len(data["metrics"]) == 0:
+        report(LogLevel.WARNING, "no metrics found. Trials will not be evaluated")
+
     return data
 
 
@@ -397,12 +403,6 @@ def normalize_data(json_data):
     normalized["setup"] = normalize_setup(json_data.get("setup", {}), space)
     normalized["metrics"] = normalize_metrics(json_data.get("metrics", []))
     normalized["presets"] = json_data.get("presets", dict())
-
-    if len(normalized["trials"]) == 0:
-        report(LogLevel.FATAL, "no valid trials found")
-
-    if len(normalized["metrics"]) == 0:
-        report(LogLevel.WARNING, "no metrics found. Trials will not be evaluated")
 
     return normalized
 
