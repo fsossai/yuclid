@@ -711,20 +711,8 @@ def run_point_trials(settings, data, execution, f, i, point):
         "started",
     )
 
-    compatible_trials = [
-        trial
-        for trial in data["trials"]
-        if valid_condition(trial["condition"], point, execution["order"])
-    ]
-
-    if len(compatible_trials) == 0:
-        report(LogLevel.WARNING, point_to_string(point), "no compatible trials found")
-
-    compatible_metrics = [
-        metric
-        for metric in data["metrics"]
-        if valid_condition(metric["condition"], point, execution["order"])
-    ]
+    compatible_trials = get_compatible_trials(data, point, execution)
+    compatible_metrics = get_compatible_metrics(data, point, execution)
 
     if len(compatible_metrics) == 0:
         report(LogLevel.WARNING, point_to_string(point), "no compatible metrics found")
@@ -859,17 +847,50 @@ def validate_execution(execution, data):
         )
 
 
+def get_compatible_trials(data, point, execution):
+    compatible_trials = [
+        trial
+        for trial in data["trials"]
+        if valid_condition(trial["condition"], point, execution["order"])
+    ]
+    return compatible_trials
+
+
+def get_compatible_metrics(data, point, execution):
+    compatible_metrics = [
+        metric
+        for metric in data["metrics"]
+        if valid_condition(metric["condition"], point, execution["order"])
+    ]
+    return compatible_metrics
+
+
 def run_subspace_trials(settings, data, execution):
     if settings["dry_run"]:
         for i, point in enumerate(execution["subspace_points"], start=1):
             point_map = {key: x for key, x in zip(execution["order"], point)}
             if valid_conditions(point, execution["order"]):
-                report(
-                    LogLevel.INFO,
-                    get_progress(i, execution["subspace_size"]),
-                    "dry run",
-                    point_to_string(point),
-                )
+                compatible_trials = get_compatible_trials(data, point, execution)
+                compatible_metrics = get_compatible_metrics(data, point, execution)
+                if len(compatible_trials) == 0:
+                    report(
+                        LogLevel.WARNING,
+                        point_to_string(point),
+                        "no compatible trials found",
+                    )
+                elif len(compatible_metrics) == 0:
+                    report(
+                        LogLevel.WARNING,
+                        point_to_string(point),
+                        "no compatible metrics found",
+                    )
+                else:
+                    report(
+                        LogLevel.INFO,
+                        get_progress(i, execution["subspace_size"]),
+                        "dry run",
+                        point_to_string(point),
+                    )
     else:
         output_dir = os.path.dirname(settings["output"])
         if output_dir and not os.path.exists(output_dir):
