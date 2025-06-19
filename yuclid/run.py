@@ -4,7 +4,6 @@ import concurrent.futures
 import pandas as pd
 import subprocess
 import itertools
-import threading
 import json
 import re
 import os
@@ -12,7 +11,7 @@ import os
 
 def substitute_point_yvars(x, point_map, point_id):
     # replace ${yuclid.<name>} and ${yuclid.@} with point values
-    value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
+    value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)(?:\.value)?\}"
     name_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.name\}"
     y = re.sub(value_pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
