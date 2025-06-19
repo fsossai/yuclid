@@ -170,6 +170,13 @@ def apply_user_selectors(settings, subspace):
     all_selectors = dict(pair.split("=") for pair in settings["select"])
     for dim, csv_selection in all_selectors.items():
         selectors = csv_selection.split(",")
+        if dim not in subspace:
+            report(
+                LogLevel.FATAL,
+                "unknown dimension in selector",
+                dim,
+                hint="available dimensions: {}".format(", ".join(subspace.keys())),
+            )
         if subspace[dim] is None:
             selection = [normalize_point(x) for x in selectors]
         else:
