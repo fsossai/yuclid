@@ -1089,7 +1089,7 @@ def normalize_setup(setup, space):
 
 def print_subspace(subspace):
     for dim, values in subspace.items():
-        names = {x["name"] for x in values}
+        names = remove_duplicates([x["name"] for x in values])
         report(LogLevel.INFO, "subspace.{}: {}".format(dim, ", ".join(names)))
 
 
