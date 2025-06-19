@@ -12,18 +12,20 @@ import os
 
 def substitute_point_yvars(x, point_map, point_id):
     # replace ${yuclid.<name>} and ${yuclid.@} with point values
-    pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
-    y = re.sub(pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
+    value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\}"
+    name_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.name\}"
+    y = re.sub(value_pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
+    y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
     if point_id is not None:
-        pattern = r"\$\{yuclid\.\@\}"
-        y = re.sub(pattern, lambda m: f"{point_id}.tmp", y)
+        value_pattern = r"\$\{yuclid\.\@\}"
+        y = re.sub(value_pattern, lambda m: f"{point_id}.tmp", y)
     return y
 
 
 def substitute_global_yvars(x, subspace):
     # replace ${yuclid.<name>.values} and ${yuclid.<name>.names}
     subspace_values = {k: [str(x["value"]) for x in v] for k, v in subspace.items()}
-    subspace_names = {k: [x["name"] for x in v] for k, v in subspace.items()}
+    subspace_names = {k: {x["name"] for x in v} for k, v in subspace.items()}
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.values\}"
     y = re.sub(pattern, lambda m: " ".join(subspace_values[m.group(1)]), x)
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.names\}"
@@ -505,71 +507,70 @@ def apply_preset(data, preset_name):
     return subspace
 
 
-def run_point_setup_item(item, settings, execution):
-    on_dims = item["on"]
+def run_point_command(command, execution, point, on_dims):
+    gcommand = substitute_global_yvars(command, execution["subspace"])
+    suborder = [d for d in execution["order"] if d in on_dims]
+    point_map = {key: x for key, x in zip(suborder, point)}
+    pcommand = substitute_point_yvars(gcommand, point_map, None)
+    print(pcommand)
+
+    if not valid_conditions(point, suborder):
+        return
+
+    if execution["dry_run"]:
+        report(
+            LogLevel.INFO,
+            "dry run",
+            pcommand,
+        )
+    else:
+        result = subprocess.run(
+            pcommand,
+            shell=True,
+            universal_newlines=True,
+            capture_output=False,
+            env=execution["env"],
+        )
+        if result.returncode != 0:
+            report(
+                LogLevel.ERROR,
+                "point setup",
+                f"'{command}'",
+                f"returned {result.returncode}",
+            )
+
+
+def run_points_sequential(command, item_plan, execution, on_dims, par_config):
+    sequential_space = item_plan["sequential_space"]
+    parallel_dims = item_plan["parallel_dims"]
+    seq_points = list(itertools.product(*sequential_space))
+    sequential_dims = item_plan["sequential_dims"]
+    order = execution["order"]
+
+    named_par_config = [(name, x) for name, x in zip(parallel_dims, par_config)]
+    if len(sequential_dims) == 0:
+        final_config = [x[1] for x in named_par_config]
+        run_point_command(command, execution, final_config, on_dims)
+        return
+
+    for seq_config in seq_points:
+        named_seq_config = [(dim, x) for dim, x in zip(sequential_dims, seq_config)]
+        named_ordered_config = sorted(
+            named_par_config + named_seq_config, key=lambda x: order.index(x[0])
+        )
+        final_config = [x[1] for x in named_ordered_config]
+        run_point_command(command, execution, final_config, on_dims)
+
+
+def run_point_setup_item(item, execution):
     commands = item["commands"]
+    on_dims = item["on"]
     order = execution["order"]
     subspace = execution["subspace"]
-    point_context = get_point_setup_plan(item, subspace, order)
+    item_plan = get_point_item_plan(item, subspace, order)
 
-    parallel_space = point_context["parallel_space"]
-    sequential_space = point_context["sequential_space"]
-    parallel_dims = point_context["parallel_dims"]
-    sequential_dims = point_context["sequential_dims"]
-
-    # thread-safe error tracking
-    errors_lock = threading.Lock()
-    errors = False
-
-    def run_single_point_command(command, point):
-        nonlocal errors
-        gcommand = substitute_global_yvars(command, subspace)
-        suborder = [d for d in order if d in on_dims]
-        point_map = {key: x for key, x in zip(suborder, point)}
-        pcommand = substitute_point_yvars(gcommand, point_map, None)
-
-        if not valid_conditions(point, suborder):
-            return
-
-        if settings["dry_run"]:
-            report(
-                LogLevel.INFO,
-                "dry run",
-                pcommand,
-            )
-        else:
-            result = subprocess.run(
-                pcommand,
-                shell=True,
-                universal_newlines=True,
-                capture_output=False,
-                env=execution["env"],
-            )
-            if result.returncode != 0:
-                with errors_lock:
-                    errors = True
-                report(
-                    LogLevel.ERROR,
-                    "point setup",
-                    f"'{command}'",
-                    f"failed (code {result.returncode})",
-                )
-
-    def run_sequential_points(command, par_config):
-        seq_points = list(itertools.product(*sequential_space))
-        named_par_config = [(name, x) for name, x in zip(parallel_dims, par_config)]
-        if len(sequential_dims) == 0:
-            final_config = [x[1] for x in named_par_config]
-            run_single_point_command(command, final_config)
-            return
-
-        for seq_config in seq_points:
-            named_seq_config = [(dim, x) for dim, x in zip(sequential_dims, seq_config)]
-            named_ordered_config = sorted(
-                named_par_config + named_seq_config, key=lambda x: order.index(x[0])
-            )
-            final_config = [x[1] for x in named_ordered_config]
-            run_single_point_command(command, final_config)
+    parallel_space = item_plan["parallel_space"]
+    parallel_dims = item_plan["parallel_dims"]
 
     num_parallel_dims = len(parallel_space)
     if num_parallel_dims == 0:
@@ -583,23 +584,26 @@ def run_point_setup_item(item, settings, execution):
 
         for i, command in enumerate(commands, start=1):
             if len(parallel_dims) == 0:
-                run_sequential_points(command, [])
+                run_points_sequential(command, item_plan, execution, on_dims, [])
             else:
                 futures = []
                 for j, par_config in enumerate(par_points, start=1):
-                    future = executor.submit(run_sequential_points, command, par_config)
+                    future = executor.submit(
+                        run_points_sequential,
+                        command,
+                        item_plan,
+                        execution,
+                        on_dims,
+                        par_config,
+                    )
                     futures.append(future)
                 for future in concurrent.futures.as_completed(futures):
                     exc = future.exception()
                     if exc is not None:
-                        report(LogLevel.ERROR, "point setup", f"failed: {command}")
-
-    if errors:
-        report(LogLevel.WARNING, "errors have occurred during point setup")
-        report(LogLevel.INFO, "point setup failed")
+                        report(LogLevel.ERROR, "point setup failed", command)
 
 
-def run_point_setup(settings, data, execution):
+def run_point_setup(data, execution):
     for item in data["setup"]["point"]:
         if item["on"] is None:
             item["on"] = execution["subspace"].keys()
@@ -613,20 +617,20 @@ def run_point_setup(settings, data, execution):
                 item,
             )
         else:
-            if settings["dry_run"]:
+            if execution["dry_run"]:
                 report(LogLevel.INFO, "starting dry point setup")
             else:
                 report(LogLevel.INFO, "starting point setup")
 
-            run_point_setup_item(item, settings, execution)
+            run_point_setup_item(item, execution)
 
-            if settings["dry_run"]:
+            if execution["dry_run"]:
                 report(LogLevel.INFO, "dry point setup completed")
             else:
                 report(LogLevel.INFO, "point setup completed")
 
 
-def run_global_setup(settings, data, execution):
+def run_global_setup(data, execution):
     subspace = execution["subspace"]
     setup_commands = data["setup"]["global"]
     # gather setup commands from space
@@ -636,14 +640,14 @@ def run_global_setup(settings, data, execution):
                 for cmd in value["setup"]:
                     setup_commands.append(cmd)
 
-    if settings["dry_run"]:
+    if execution["dry_run"]:
         report(LogLevel.INFO, "starting dry global setup")
     else:
         report(LogLevel.INFO, "starting global setup")
 
     errors = False
     for command in setup_commands:
-        if settings["dry_run"]:
+        if execution["dry_run"]:
             report(LogLevel.INFO, "dry run", command)
         else:
             command = substitute_global_yvars(command, subspace)
@@ -660,20 +664,20 @@ def run_global_setup(settings, data, execution):
                     LogLevel.ERROR,
                     "setup",
                     f"'{command}'",
-                    f"failed (code {result.returncode})",
+                    f"returned {result.returncode}",
                 )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
         report(LogLevel.INFO, "setup failed")
-    if settings["dry_run"]:
+    if execution["dry_run"]:
         report(LogLevel.INFO, "dry setup completed")
     else:
         report(LogLevel.INFO, "setup completed")
 
 
 def run_setup(settings, data, execution):
-    run_global_setup(settings, data, execution)
-    run_point_setup(settings, data, execution)
+    run_global_setup(data, execution)
+    run_point_setup(data, execution)
 
 
 def point_to_string(point):
@@ -828,7 +832,8 @@ def valid_conditions(point, order):
     point_context = {}
     yuclid = {name: x["value"] for name, x in zip(order, point)}
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
-    return all(eval(x["condition"], point_context) for x in point)
+    conditions = [x["condition"] for x in point if "condition" in x]
+    return all(eval(c, point_context) for c in conditions)
 
 
 def valid_condition(condition, point, order):
@@ -883,7 +888,7 @@ def validate_dimensions(subspace):
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
 
 
-def prepare_subspace_execution(subspace, order, env):
+def prepare_subspace_execution(subspace, order, env, dry_run):
     ordered_subspace = [subspace[x] for x in order]
 
     execution = dict()
@@ -902,6 +907,7 @@ def prepare_subspace_execution(subspace, order, env):
     execution["subspace"] = subspace
     execution["order"] = order
     execution["env"] = env
+    execution["dry_run"] = dry_run
 
     if execution["subspace_size"] == 0:
         report(LogLevel.WARNING, "empty subspace")
@@ -923,7 +929,7 @@ def validate_presets(settings, data):
             )
 
 
-def get_point_setup_plan(item, subspace, order):
+def get_point_item_plan(item, subspace, order):
     dims = item["on"] or subspace.keys()
 
     if isinstance(item["parallel"], bool):
@@ -1102,7 +1108,9 @@ def run_experiments(settings, data, order, env, preset_name=None):
     subspace = apply_user_selectors(settings, subspace)
     validate_dimensions(subspace)
     print_subspace(subspace)
-    execution = prepare_subspace_execution(subspace, order, env)
+    execution = prepare_subspace_execution(
+        subspace, order, env, dry_run=settings["dry_run"]
+    )
     validate_execution(execution, data)
     run_setup(settings, data, execution)
     run_subspace_trials(settings, data, execution)
