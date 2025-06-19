@@ -509,10 +509,10 @@ def apply_preset(data, preset_name):
 
 def run_point_command(command, execution, point, on_dims):
     gcommand = substitute_global_yvars(command, execution["subspace"])
-    suborder = [d for d in execution["order"] if d in on_dims]
+    on_dims_0 = [dim.split(".")[0] for dim in on_dims]
+    suborder = [d for d in execution["order"] if d in on_dims_0]
     point_map = {key: x for key, x in zip(suborder, point)}
     pcommand = substitute_point_yvars(gcommand, point_map, None)
-    print(pcommand)
 
     if not valid_conditions(point, suborder):
         return
@@ -609,7 +609,7 @@ def run_point_setup(data, execution):
             item["on"] = execution["subspace"].keys()
 
         # reordering
-        item["on"] = [x for x in item["on"] if x in execution["order"]]
+        item["on"] = [x for x in item["on"] if x.split(".")[0] in execution["order"]]
         if len(item["on"]) == 0:
             report(
                 LogLevel.WARNING,
@@ -930,38 +930,41 @@ def validate_presets(settings, data):
 
 
 def get_point_item_plan(item, subspace, order):
-    dims = item["on"] or subspace.keys()
+    all_dims = item["on"] or [f"{k}.values" for k in subspace.keys()]
+
+    name_dims = [d.split(".")[0] for d in all_dims if d.endswith(".names")]
+    value_dims = [d.split(".")[0] for d in all_dims if d.endswith(".values")]
 
     if isinstance(item["parallel"], bool):
         if item["parallel"]:
-            item["parallel"] = dims
+            item["parallel"] = item["on"]
         else:
             item["parallel"] = []
-    elif isinstance(item["parallel"], list):
-        for dim in item["parallel"]:
-            if not isinstance(dim, str):
-                report(LogLevel.FATAL, "parallel dimensions must be strings")
-            if dim not in dims:
-                hint = "available dimensions: {}".format(", ".join(dims))
-                report(
-                    LogLevel.FATAL,
-                    "invalid parallel dimension",
-                    dim,
-                    hint=hint,
-                )
 
     # collect parallel and sequential dimensions
     parallel_dims = set(item["parallel"])
-    sequential_dims = set(dims) - parallel_dims
+    sequential_dims = set([x.split(".")[0] for x in all_dims]) - parallel_dims
 
     # reordering
     parallel_dims = reorder_dimensions(parallel_dims, order)
     sequential_dims = reorder_dimensions(sequential_dims, order)
 
-    # building space
-    parallel_space = [subspace[k] for k in parallel_dims]
-    sequential_space = [subspace[k] for k in sequential_dims]
+    # building the plan_subspace which is just the subspace where `name_dims`
+    # have items with no conditions and name==value
 
+    plan_subspace = dict()
+    plan_subspace.update({k: subspace[k] for k in value_dims})
+
+    subspace_names = {k: {x["name"] for x in subspace[k]} for k in name_dims}
+    plan_subspace.update(
+        {d: [normalize_point(x) for x in names] for d, names in subspace_names.items()}
+    )
+
+    # building space
+    parallel_space = [plan_subspace[k] for k in parallel_dims]
+    sequential_space = [plan_subspace[k] for k in sequential_dims]
+
+    # name_dims don't need to have conditions, and their name is their value
     return {
         "parallel_dims": parallel_dims,
         "sequential_dims": sequential_dims,
@@ -1036,8 +1039,16 @@ def normalize_point_setup(point_setup, space):
                     }
                     if normalized_item["on"] is None:
                         normalized_item["on"] = list(space.keys())
+
+                    # adding .values to 'on' dimensions
+                    normalized_item["on"] = [
+                        x if "." in x else x + ".values" for x in normalized_item["on"]
+                    ]
+
                     if normalized_item["parallel"] == True:
-                        normalized_item["parallel"] = normalized_item["on"]
+                        normalized_item["parallel"] = [
+                            x.split(".")[0] for x in normalized_item["on"]
+                        ]
                     normalized_items.append(normalized_item)
                 else:
                     report(
@@ -1056,6 +1067,15 @@ def normalize_point_setup(point_setup, space):
         for dim in item["on"]:
             if not isinstance(dim, str):
                 report(LogLevel.FATAL, "every 'on' dimension must be a string")
+            elif dim.split(".")[0] not in space:
+                available = list(space.keys())
+                hint = "available dimensions: {}".format(", ".join(available))
+                report(
+                    LogLevel.FATAL,
+                    "point setup 'on' dimension not in space",
+                    dim,
+                    hint=hint,
+                )
 
     # check validity of 'parallel' fields
     for item in point_setup:
