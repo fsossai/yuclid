@@ -199,7 +199,7 @@ def apply_user_selectors(settings, subspace):
                         LogLevel.ERROR,
                         "invalid selector",
                         selector,
-                        hint="available: {}".format(", ".join(valid.keys())),
+                        hint="available: {}".format(", ".join(valid)),
                     )
 
             if len(selection) == 0:
