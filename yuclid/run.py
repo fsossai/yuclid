@@ -317,17 +317,17 @@ def normalize_point(x):
 
 
 def normalize_trials(trial):
-    valid = {"command", "condition"}
+    valid = {"command", "condition", "metrics"}
     if isinstance(trial, str):
-        return [{"command": trial, "condition": "True"}]
+        return [{"command": trial, "condition": "True", "metrics": None}]
     elif isinstance(trial, list):
         items = []
         for item in trial:
-            normalized_item = {"command": None, "condition": "True"}
+            normalized_item = {"command": None, "condition": "True", "metrics": None}
             if isinstance(item, str):
                 normalized_item["command"] = normalize_command(item)
             elif isinstance(item, dict):
-                # Check for invalid fields
+                # check for invalid fields
                 invalid_fields = set(item.keys()) - valid
                 if len(invalid_fields) > 0:
                     report(
@@ -343,6 +343,7 @@ def normalize_trials(trial):
                     return None
                 normalized_item["command"] = normalize_command(item["command"])
                 normalized_item["condition"] = item.get("condition", "True")
+                normalized_item["metrics"] = item.get("metrics", None)
             items.append(normalized_item)
         return items
     else:
@@ -402,6 +403,19 @@ def normalize_data(json_data):
     normalized["setup"] = normalize_setup(json_data.get("setup", {}), space)
     normalized["metrics"] = normalize_metrics(json_data.get("metrics", []))
     normalized["presets"] = json_data.get("presets", dict())
+
+    for trial in normalized["trials"]:
+        if trial["metrics"] is not None:
+            metric_names = [m["name"] for m in normalized["metrics"]]
+            if not all(m in metric_names for m in trial["metrics"]):
+                report(
+                    LogLevel.FATAL,
+                    "trial references unknown metrics",
+                    ", ".join(trial["metrics"]),
+                    hint="available metrics: {}".format(
+                        ", ".join([m["name"] for m in normalized["metrics"]])
+                    ),
+                )
 
     return normalized
 
@@ -710,14 +724,20 @@ def run_point_trials(settings, data, execution, f, i, point):
         "started",
     )
 
-    compatible_trials = get_compatible_trials(data, point, execution)
-    compatible_metrics = get_compatible_metrics(data, point, execution)
+    compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
+        data, point, execution
+    )
 
     if len(compatible_metrics) == 0:
         report(LogLevel.WARNING, point_to_string(point), "no compatible metrics found")
 
     if len(compatible_trials) == 0 or len(compatible_metrics) == 0:
-        return
+        report(
+            LogLevel.WARNING,
+            point_to_string(point),
+            "no compatible trials found",
+            hint="try relaxing your trial conditions or adding more trials.",
+        )
 
     for trial in compatible_trials:
         command = substitute_global_yvars(trial["command"], execution["subspace"])
@@ -832,36 +852,46 @@ def valid_condition(condition, point, order):
 
 def validate_execution(execution, data):
     # checking if there's at least of compatible trial command for each point
-    if all(
-        all(
-            not valid_condition(trial["condition"], point, execution["order"])
-            for trial in data["trials"]
+    for point in execution["subspace_points"]:
+        compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
+            data, point, execution
         )
-        for point in execution["subspace_points"]
-    ):
-        report(
-            LogLevel.ERROR,
-            "no compatible trial commands for the given subspace",
-            hint="your trial conditions may be too strict, try relaxing them or adding more trials.",
-        )
+        if len(compatible_trials) == 0:
+            report(
+                LogLevel.ERROR,
+                "no compatible trials found for point",
+                point_to_string(point),
+                hint="try relaxing your trial conditions or adding more trials.",
+            )
 
 
-def get_compatible_trials(data, point, execution):
+def get_compatible_trials_and_metrics(data, point, execution):
+    all_metric_names = {m["name"] for m in data["metrics"]}
+    selected_metric_names = execution["metrics"] or all_metric_names
+    valid_metrics = [
+        metric
+        for metric in data["metrics"]
+        if metric["name"] in selected_metric_names
+        and valid_condition(metric["condition"], point, execution["order"])
+    ]
     compatible_trials = [
         trial
         for trial in data["trials"]
         if valid_condition(trial["condition"], point, execution["order"])
+        and (
+            trial["metrics"] is None
+            or any(m in valid_metrics for m in trial["metrics"])
+        )
     ]
-    return compatible_trials
-
-
-def get_compatible_metrics(data, point, execution):
     compatible_metrics = [
         metric
-        for metric in data["metrics"]
-        if valid_condition(metric["condition"], point, execution["order"])
+        for metric in valid_metrics
+        if any(
+            trial["metrics"] is None or metric["name"] in trial["metrics"]
+            for trial in compatible_trials
+        )
     ]
-    return compatible_metrics
+    return compatible_trials, compatible_metrics
 
 
 def run_subspace_trials(settings, data, execution):
@@ -869,17 +899,18 @@ def run_subspace_trials(settings, data, execution):
         for i, point in enumerate(execution["subspace_points"], start=1):
             point_map = {key: x for key, x in zip(execution["order"], point)}
             if valid_conditions(point, execution["order"]):
-                compatible_trials = get_compatible_trials(data, point, execution)
-                compatible_metrics = get_compatible_metrics(data, point, execution)
+                compatible_trials, compatible_metrics = (
+                    get_compatible_trials_and_metrics(data, point, execution)
+                )
                 if len(compatible_trials) == 0:
                     report(
-                        LogLevel.WARNING,
+                        LogLevel.ERROR,
                         point_to_string(point),
                         "no compatible trials found",
                     )
                 elif len(compatible_metrics) == 0:
                     report(
-                        LogLevel.WARNING,
+                        LogLevel.ERROR,
                         point_to_string(point),
                         "no compatible metrics found",
                     )
@@ -908,7 +939,7 @@ def validate_dimensions(subspace):
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
 
 
-def prepare_subspace_execution(subspace, order, env, dry_run):
+def prepare_subspace_execution(subspace, order, env, metrics, dry_run):
     ordered_subspace = [subspace[x] for x in order]
 
     execution = dict()
@@ -928,6 +959,7 @@ def prepare_subspace_execution(subspace, order, env, dry_run):
     execution["order"] = order
     execution["env"] = env
     execution["dry_run"] = dry_run
+    execution["metrics"] = metrics
 
     if execution["subspace_size"] == 0:
         report(LogLevel.WARNING, "empty subspace")
@@ -1149,16 +1181,31 @@ def run_experiments(settings, data, order, env, preset_name=None):
     validate_dimensions(subspace)
     print_subspace(subspace)
     execution = prepare_subspace_execution(
-        subspace, order, env, dry_run=settings["dry_run"]
+        subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"]
     )
     validate_execution(execution, data)
     run_setup(settings, data, execution)
     run_subspace_trials(settings, data, execution)
 
 
+def validate_settings(data, settings):
+    if settings["metrics"]:
+        valid = [x["name"] for x in data["metrics"]]
+        wrong = [m for m in settings["metrics"] if m not in valid]
+        if len(wrong) > 0:
+            hint = "available metrics: {}".format(", ".join(valid))
+            report(
+                LogLevel.FATAL,
+                "invalid metrics",
+                ", ".join(wrong),
+                hint=hint,
+            )
+
+
 def launch(args):
     settings = build_settings(args)
     data = aggregate_input_data(settings)
+    validate_settings(data, settings)
     env = build_environment(settings, data)
     order = define_order(settings, data)
     validate_yvars_in_env(env)

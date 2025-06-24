@@ -75,6 +75,13 @@ def main():
         action="store_true",
         help="Show experiment that would run",
     )
+    run_parser.add_argument(
+        "-m",
+        "--metrics",
+        nargs="*",
+        default=None,
+        help="Specify a list of metrics to compute among the registered ones. If empty, all metrics will be computed.",
+    )
 
     # plot subcommand
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
