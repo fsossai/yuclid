@@ -6,7 +6,7 @@ import yuclid.log
 import argparse
 
 
-def main():
+def get_parser():
     parser = argparse.ArgumentParser(prog="yuclid", description="Yuclid CLI tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -211,6 +211,11 @@ def main():
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
+    return parser
+
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
     yuclid.log.init(ignore_errors=args.ignore_errors)
 

@@ -1,4 +1,5 @@
 from yuclid.log import report, LogLevel
+import yuclid.cli
 import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
@@ -99,7 +100,8 @@ def ref_normalization(df, config, args, y_axis):
     return sub_df
 
 
-def validate_files(args):
+def validate_files(ctx):
+    args = ctx["args"]
     valid_files = []
     valid_formats = [".json", ".csv"]
     for file in args.files:
@@ -107,30 +109,37 @@ def validate_files(args):
             valid_files.append(file)
         else:
             report(LogLevel.ERROR, f"unsupported file format {file}")
-    return valid_files
+    ctx["valid_files"] = valid_files
 
 
 def get_local_mirror(rfile):
     return pathlib.Path(rfile.split(":")[1]).name
 
 
-def locate_files(valid_files):
+def locate_files(ctx):
     local_files = []
+    valid_files = ctx["valid_files"]
     for file in valid_files:
         if is_remote(file):
             local_files.append(get_local_mirror(file))
         else:
             local_files.append(file)
-    return local_files
+    ctx["local_files"] = local_files
+
+
+def set_axes_style(ctx):
+    fig = ctx["fig"]
+    fig.set_size_inches(12, 10)
+    sns.set_theme(style="whitegrid")
 
 
 def initialize_figure(ctx):
     fig, axs = plt.subplots(2, 1, gridspec_kw={"height_ratios": [20, 1]})
-    fig.set_size_inches(12, 10)
+    ctx["fig"] = fig
     ax_plot = axs[0]
     ax_table = axs[1]
-    sns.set_theme(style="whitegrid")
     ax_plot.grid(axis="y")
+    set_axes_style(ctx)
     y = ax_table.get_position().y1 + 0.03
     line = mlines.Line2D(
         [0.05, 0.95], [y, y], linewidth=4, transform=fig.transFigure, color="lightgrey"
@@ -139,7 +148,6 @@ def initialize_figure(ctx):
     fig.subplots_adjust(top=0.92, bottom=0.1, hspace=0.3)
     fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
     fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
-    ctx["fig"] = fig
     ctx["ax_plot"] = ax_plot
     ctx["ax_table"] = ax_table
 
@@ -201,6 +209,23 @@ def rescale(ctx):
     for y in args.y:
         df[y] = df[y] * args.rescale
     ctx["df"] = df
+
+
+def draw(fig, ax, cli_args):
+    ctx = dict()
+    parser = yuclid.cli.get_parser()
+    args = parser.parse_args(["plot"] + cli_args)
+    ctx["args"] = args
+    ctx["fig"] = fig
+    ctx["ax_plot"] = ax
+    yuclid.log.init(ignore_errors=args.ignore_errors)
+    validate_files(ctx)
+    locate_files(ctx)
+    set_axes_style(ctx)
+    generate_dataframe(ctx)
+    validate_args(ctx)
+    generate_space(ctx)
+    update_plot(ctx)
 
 
 def generate_space(ctx):
@@ -972,8 +997,8 @@ def compute_ylimits(ctx):
 
 def launch(args):
     ctx = {"args": args, "alive": True}
-    ctx["valid_files"] = validate_files(args)
-    ctx["local_files"] = locate_files(ctx["valid_files"])
+    validate_files(ctx)
+    locate_files(ctx)
     sync_files(ctx)
     generate_dataframe(ctx)
     validate_args(ctx)
