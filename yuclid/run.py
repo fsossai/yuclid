@@ -711,11 +711,6 @@ def run_point_trials(settings, data, execution, f, i, point):
         exist_ok=True,
     )
 
-    point_id = os.path.join(
-        settings["temp_dir"],
-        settings["now"],
-        point_to_string(point),
-    )
     point_map = {key: x for key, x in zip(execution["order"], point)}
     report(
         LogLevel.INFO,
@@ -739,7 +734,11 @@ def run_point_trials(settings, data, execution, f, i, point):
             hint="try relaxing your trial conditions or adding more trials.",
         )
 
-    for trial in compatible_trials:
+    for i, trial in enumerate(compatible_trials):
+        point_id = os.path.join(
+            settings["temp_dir"], settings["now"], point_to_string(point) + f"_trial{i}"
+        )
+
         command = substitute_global_yvars(trial["command"], execution["subspace"])
         command = substitute_point_yvars(command, point_map, point_id)
         command_output = subprocess.run(
