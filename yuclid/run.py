@@ -874,13 +874,14 @@ def get_compatible_trials_and_metrics(data, point, execution):
         if metric["name"] in selected_metric_names
         and valid_condition(metric["condition"], point, execution["order"])
     ]
+    valid_metric_names = {m["name"] for m in valid_metrics}
     compatible_trials = [
         trial
         for trial in data["trials"]
         if valid_condition(trial["condition"], point, execution["order"])
         and (
             trial["metrics"] is None
-            or any(m in valid_metrics for m in trial["metrics"])
+            or any(m in valid_metric_names for m in trial["metrics"])
         )
     ]
     compatible_metrics = [
