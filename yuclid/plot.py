@@ -766,9 +766,7 @@ def validate_args(ctx):
 
     # Y-axis
     numeric_cols = (
-        df.drop(columns=[args.x])
-        .select_dtypes(include=[np.float64, np.float32])
-        .columns.tolist()
+        df.drop(columns=[args.x]).select_dtypes(include=[np.number]).columns.tolist()
     )
     if args.y is None:
         # find the floating point numeric columns
