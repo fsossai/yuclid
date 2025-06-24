@@ -793,7 +793,16 @@ def run_point_trials(settings, data, execution, f, i, point):
             )
         else:
             output_lines = command_output.stdout.strip().split("\n")
-            collected_metrics[metric["name"]] = [float(line) for line in output_lines]
+
+            def int_or_float(x):
+                try:
+                    return int(x)
+                except ValueError:
+                    return float(x)
+
+            collected_metrics[metric["name"]] = [
+                int_or_float(line) for line in output_lines
+            ]
 
     metric_values_df = pd.DataFrame.from_dict(
         collected_metrics, orient="index"
