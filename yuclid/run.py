@@ -779,10 +779,8 @@ def run_point_trials(settings, data, execution, f, i, point):
             env=execution["env"],
         )
         if command_output.returncode != 0:
-            hint = "the command '{}' produced the following output:\n{}".format(
-                command,
-                command_output.stdout.strip(),
-            )
+            hint = "check the following files for more details:\n"
+            hint += f"{point_id}.out\n{point_id}.err\n{point_id}.tmp"
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
