@@ -5,10 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "yuclid"
 version = "0.1.0"
-description = "A Python project."
-authors = [{ name = "Your Name", email = "your.email@example.com" }]
+description = "Run experiments and interactively plot results across combinations of user-specified dimensions"
+authors = [{ name = "Federico Sossai", email = "federico.sossai@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.8"
+dependencies = ["pandas", "numpy", "matplotlib", "seaborn", "scipy"]
+
 
 [project.scripts]
 yuclid = "yuclid.cli:main"
