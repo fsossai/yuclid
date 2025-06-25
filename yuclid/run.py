@@ -1047,8 +1047,8 @@ def build_settings(args):
     os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
-    settings["now"] = "{:%Y%m%d-%H%M}".format(datetime.now())
-    filename = "trials.{}.json".format(settings["now"])
+    settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
+    filename = "results.{}.json".format(settings["now"])
     if args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:
