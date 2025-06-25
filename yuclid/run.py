@@ -734,9 +734,11 @@ def run_point_trials(settings, data, execution, f, i, point):
             hint="try relaxing your trial conditions or adding more trials.",
         )
 
-    for i, trial in enumerate(compatible_trials):
+    i_padded = str(i).zfill(len(str(execution["subspace_size"])))
+    
+    for j, trial in enumerate(compatible_trials):
         point_id = os.path.join(
-            settings["temp_dir"], settings["now"], point_to_string(point) + f"_trial{i}"
+            settings["temp_dir"], settings["now"], f"{i_padded}." + point_to_string(point) + f"_trial{j}"
         )
 
         command = substitute_global_yvars(trial["command"], execution["subspace"])
