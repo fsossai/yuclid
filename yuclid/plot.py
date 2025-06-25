@@ -590,7 +590,6 @@ def update_plot(ctx, padding_factor=1.05):
                 z=args.z,
                 palette=palette,
             )
-        annotate(ctx, "lines", sub_df, y_axis, palette)
     else:
         sns.barplot(
             data=sub_df,
@@ -611,7 +610,6 @@ def update_plot(ctx, padding_factor=1.05):
                 "solid_joinstyle": "round",
             },
         )
-        annotate(ctx, "bars", sub_df, y_axis, palette)
 
     # draw vertical line to separate geomean
     if args.geomean:
@@ -652,14 +650,16 @@ def update_plot(ctx, padding_factor=1.05):
         ax_plot.yaxis.set_major_formatter(FuncFormatter(format_with_x))
         ax_plot.set_yticks(sorted(set(list(ax_plot.get_yticks()) + [1.0])))
 
+    if args.lines:
+        annotate(ctx, "lines", sub_df, y_axis, palette)
+    else:
+        annotate(ctx, "bars", sub_df, y_axis, palette)
+
     ctx["fig"].canvas.draw_idle()
 
 
 def get_config_name(ctx):
     y_axis = ctx["y_axis"]
-    dims = ctx["free_dims"]
-    domains = ctx["domains"]
-    position = ctx["position"]
     args = ctx["args"]
     config = get_current_config(ctx)
     if args.ref_norm or args.x_norm or args.z_norm:
