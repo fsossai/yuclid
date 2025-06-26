@@ -1,6 +1,4 @@
 from yuclid.log import report, LogLevel
-import yuclid.cli
-import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import yuclid.spread as spread
@@ -8,14 +6,10 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import scipy.stats
-import subprocess
-import threading
+import yuclid.cli
 import itertools
 import pathlib
-import hashlib
-import time
 import math
-import sys
 
 
 def get_current_config(ctx):
@@ -168,8 +162,6 @@ def generate_dataframe(ctx):
 
     if len(dfs) == 0:
         report(LogLevel.ERROR, "no valid source of data")
-        ctx["alive"] = False
-        sys.exit(1)
 
     df = pd.concat(dfs)
 
@@ -208,7 +200,6 @@ def rescale(ctx):
     args = ctx["args"]
     for y in args.y:
         df[y] = df[y] * args.rescale
-    ctx["df"] = df
 
 
 def draw(fig, ax, cli_args):
@@ -254,34 +245,6 @@ def generate_space(ctx):
     )
 
 
-def file_monitor(ctx):
-    current_hash = None
-    last_hash = None
-    while ctx["alive"]:
-        try:
-            current_hash = ""
-            for file in ctx["local_files"]:
-                with open(file, "rb") as f:
-                    current_hash += hashlib.md5(f.read()).hexdigest()
-        except FileNotFoundError:
-            current_hash = None
-        if current_hash != last_hash:
-            generate_dataframe(ctx)
-            rescale(ctx)
-            generate_space(ctx)
-            compute_ylimits(ctx)
-            space_columns = ctx["df"].columns.difference([ctx["y_axis"]])
-            sizes = ["{}={}".format(d, ctx["df"][d].nunique()) for d in space_columns]
-            missing = compute_missing(ctx)
-            report(LogLevel.INFO, "space sizes", " | ".join(sizes))
-            if len(missing) > 0:
-                report(LogLevel.WARNING, f"at least {len(missing)} missing experiments")
-            update_table(ctx)
-            update_plot(ctx)
-        last_hash = current_hash
-        time.sleep(1)
-
-
 def update_table(ctx):
     ax_table = ctx["ax_table"]
     free_dims = ctx["free_dims"]
@@ -315,32 +278,6 @@ def update_table(ctx):
 
 def is_remote(file):
     return "@" in file
-
-
-def sync_files(ctx):
-    args = ctx["args"]
-    valid_files = ctx["valid_files"]
-    jobs = []
-    for file in valid_files:
-        if is_remote(file):
-            mirror = get_local_mirror(file)
-            proc = subprocess.run(["scp", file, mirror])
-            if proc.returncode != 0:
-                report(LogLevel.ERROR, f"scp transfer failed for {file}")
-                sys.exit(1)
-            jobs.append((file, mirror))
-
-    def rsync(src, dst):
-        while ctx["alive"]:
-            subprocess.run(
-                ["rsync", "-z", "--checksum", src, dst],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            time.sleep(args.rsync_interval)
-
-    for job in jobs:
-        threading.Thread(target=rsync, daemon=True, args=job).start()
 
 
 def fontsize_to_y_units(ctx, fontsize):
@@ -952,13 +889,9 @@ def validate_args(ctx):
 
 
 def start_gui(ctx):
-    ctx["alive"] = True
-
     update_plot(ctx)
     update_table(ctx)
-    threading.Thread(target=file_monitor, daemon=True, args=(ctx,)).start()
     report(LogLevel.INFO, "application running")
-    time.sleep(1.0)  # wait for the GUI to initialize
     plt.show()
 
 
@@ -998,11 +931,10 @@ def compute_ylimits(ctx):
 def generate_derived_metrics(ctx):
     args = ctx["args"]
     df = ctx["df"]
-    print('derived')
 
     # derived metrics are any -y value with a ":"
     derived_metrics = dict()
-    new_ys= []
+    new_ys = []
     for y in args.y:
         if ":" in y:
             name, func = y.split(":")
@@ -1024,18 +956,18 @@ def generate_derived_metrics(ctx):
             hint = "maybe you misspelled a column name"
             report(
                 LogLevel.ERROR,
-                f"failed to evaluate derived metric '{name}': {e}",
+                f"failed to evaluate derived metric '{name}'",
                 hint=hint,
             )
             continue
-    
+
     args.y = new_ys
 
+
 def launch(args):
-    ctx = {"args": args, "alive": True}
+    ctx = {"args": args}
     validate_files(ctx)
     locate_files(ctx)
-    sync_files(ctx)
     generate_dataframe(ctx)
     generate_derived_metrics(ctx)
     validate_args(ctx)
