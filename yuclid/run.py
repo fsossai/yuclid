@@ -880,6 +880,20 @@ def validate_execution(execution, data):
                 point_to_string(point),
                 hint="try relaxing your trial conditions or adding more trials.",
             )
+        if len(execution["metrics"] or []) > 0:
+            compatible_metric_names = {m["name"] for m in compatible_metrics}
+            incompatible = [
+                m for m in execution["metrics"] if m not in compatible_metric_names
+            ]
+            if len(incompatible) > 0:
+                report(
+                    LogLevel.ERROR,
+                    "some metrics are not compatible with {}".format(
+                        point_to_string(point)
+                    ),
+                    ", ".join(incompatible),
+                    hint="try relaxing your metric conditions or adding more metrics.",
+                )
 
 
 def get_compatible_trials_and_metrics(data, point, execution):
@@ -920,25 +934,12 @@ def run_subspace_trials(settings, data, execution):
                 compatible_trials, compatible_metrics = (
                     get_compatible_trials_and_metrics(data, point, execution)
                 )
-                if len(compatible_trials) == 0:
-                    report(
-                        LogLevel.ERROR,
-                        point_to_string(point),
-                        "no compatible trials found",
-                    )
-                elif len(compatible_metrics) == 0:
-                    report(
-                        LogLevel.ERROR,
-                        point_to_string(point),
-                        "no compatible metrics found",
-                    )
-                else:
-                    report(
-                        LogLevel.INFO,
-                        get_progress(i, execution["subspace_size"]),
-                        "dry run",
-                        point_to_string(point),
-                    )
+                report(
+                    LogLevel.INFO,
+                    get_progress(i, execution["subspace_size"]),
+                    "dry run",
+                    point_to_string(point),
+                )
     else:
         output_dir = os.path.dirname(settings["output"])
         if output_dir and not os.path.exists(output_dir):
