@@ -110,29 +110,36 @@ def load_json(f):
 
 
 def aggregate_input_data(settings):
-    data = None
+    data = {
+        "env": {},
+        "setup": {"global": [], "point": []},
+        "space": {},
+        "trials": [],
+        "metrics": [],
+        "presets": {},
+        "order": [],
+    }
 
     for file in settings["inputs"]:
         with open(file, "r") as f:
             current = normalize_data(load_json(f))
-            if data is None:
-                data = current
-                continue
             for key, val in current.items():
-                if isinstance(data[key], list):
+                if key in ["env", "space", "presets"]:
+                    data[key].update(val)
+                elif key in ["trials", "metrics", "order"]:
                     data[key].extend(val)
-                elif isinstance(data[key], dict):
-                    if key == "space":
-                        for subkey, subval in val.items():
-                            if data[key].get(subkey) is None:
-                                data[key][subkey] = subval
-                            else:
-                                data[key].setdefault(subkey, []).extend(subval)
-                    else:
-                        data[key].update(val)
+                elif key == "setup":
+                    for subkey, subval in val.items():
+                        if data[key].get(subkey) is None:
+                            # undefined dimensions are overridden
+                            data[key][subkey] = subval
+                        else:
+                            data[key].setdefault(subkey, []).extend(subval)
+                elif key == "setup":
+                    data[key]["setup"]["global"] += val["setup"]["global"]
+                    data[key]["setup"]["point"] += val["setup"]["point"]
 
-            order = data.get("order", []) + current.get("order", [])
-            data["order"] = remove_duplicates(order)
+    data["order"] = remove_duplicates(data["order"])
 
     if len(data["trials"]) == 0:
         report(LogLevel.FATAL, "no valid trials found")
@@ -735,10 +742,12 @@ def run_point_trials(settings, data, execution, f, i, point):
         )
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
-    
+
     for j, trial in enumerate(compatible_trials):
         point_id = os.path.join(
-            settings["temp_dir"], settings["now"], f"{i_padded}." + point_to_string(point) + f"_trial{j}"
+            settings["temp_dir"],
+            settings["now"],
+            f"{i_padded}." + point_to_string(point) + f"_trial{j}",
         )
 
         command = substitute_global_yvars(trial["command"], execution["subspace"])
