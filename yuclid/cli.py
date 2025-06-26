@@ -109,13 +109,6 @@ def get_parser():
         nargs="*",
         help="Normalize all values w.r.t. a single reference",
     )
-    # plot_parser.add_argument(
-    #     "-S",
-    #     "--norm-scope",
-    #     choices=["global", "local"],
-    #     default="local",
-    #     help="Normalization scope",
-    # )
     plot_parser.add_argument(
         "-r",
         "--norm-reverse",

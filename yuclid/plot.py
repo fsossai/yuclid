@@ -995,12 +995,49 @@ def compute_ylimits(ctx):
     ctx["top"] = top
 
 
+def generate_derived_metrics(ctx):
+    args = ctx["args"]
+    df = ctx["df"]
+    print('derived')
+
+    # derived metrics are any -y value with a ":"
+    derived_metrics = dict()
+    new_ys= []
+    for y in args.y:
+        if ":" in y:
+            name, func = y.split(":")
+            derived_metrics[name.strip()] = func.strip()
+            new_ys.append(name.strip())
+        else:
+            new_ys.append(y)
+
+    for name, func in derived_metrics.items():
+        try:
+            # replace column names in the expression with df[column_name] syntax
+            expression = func
+            for col in df.columns:
+                if col in expression:
+                    expression = expression.replace(col, f"df['{col}']")
+
+            df[name] = eval(expression)
+        except Exception as e:
+            hint = "maybe you misspelled a column name"
+            report(
+                LogLevel.ERROR,
+                f"failed to evaluate derived metric '{name}': {e}",
+                hint=hint,
+            )
+            continue
+    
+    args.y = new_ys
+
 def launch(args):
     ctx = {"args": args, "alive": True}
     validate_files(ctx)
     locate_files(ctx)
     sync_files(ctx)
     generate_dataframe(ctx)
+    generate_derived_metrics(ctx)
     validate_args(ctx)
     rescale(ctx)
     generate_space(ctx)
