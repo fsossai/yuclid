@@ -1,6 +1,6 @@
 .yuclid
 .DS_Store
-trials.*.json
+*.json
 
 # Python
 *.pyc

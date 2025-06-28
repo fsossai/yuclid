@@ -1139,7 +1139,7 @@ def normalize_point_setup(point_setup, space):
         report(LogLevel.FATAL, "point setup must be a string or a list")
 
     # check validity of 'on' fields
-    for item in point_setup:
+    for item in normalized_items:
         if not isinstance(item["on"], (list, type(None))):
             report(LogLevel.FATAL, "point setup 'on' must be a list or None")
         for dim in item["on"]:
@@ -1156,7 +1156,7 @@ def normalize_point_setup(point_setup, space):
                 )
 
     # check validity of 'parallel' fields
-    for item in point_setup:
+    for item in normalized_items:
         parallel = item["parallel"]
         if not isinstance(parallel, (bool, list)):
             report(LogLevel.FATAL, "point setup 'parallel' must be a boolean or a list")
