@@ -789,7 +789,8 @@ def run_point_trials(settings, data, execution, f, i, point):
             capture_output=True,
             env=execution["env"],
         )
-        if command_output.returncode != 0:
+
+        def complain():
             hint = "check the following files for more details:\n"
             hint += f"{point_id}.out\n{point_id}.err\n{point_id}.tmp"
             report(
@@ -800,6 +801,9 @@ def run_point_trials(settings, data, execution, f, i, point):
                 ),
                 hint=hint,
             )
+
+        if command_output.returncode != 0:
+            complain()
         else:
             output_lines = command_output.stdout.strip().split("\n")
 
@@ -807,7 +811,10 @@ def run_point_trials(settings, data, execution, f, i, point):
                 try:
                     return int(x)
                 except ValueError:
-                    return float(x)
+                    try:
+                        return float(x)
+                    except ValueError:
+                        complain()
 
             collected_metrics[metric["name"]] = [
                 int_or_float(line) for line in output_lines
