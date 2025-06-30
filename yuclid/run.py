@@ -414,7 +414,7 @@ def normalize_data(json_data):
                     "trial references unknown metrics",
                     ", ".join(trial["metrics"]),
                     hint="available metrics: {}".format(
-                        ", ".join([m["name"] for m in normalized["metrics"]])
+                        ", ".join({m["name"] for m in normalized["metrics"]})
                     ),
                 )
 
@@ -1221,7 +1221,7 @@ def run_experiments(settings, data, order, env, preset_name=None):
 
 def validate_settings(data, settings):
     if settings["metrics"]:
-        valid = [x["name"] for x in data["metrics"]]
+        valid = {x["name"] for x in data["metrics"]}
         wrong = [m for m in settings["metrics"] if m not in valid]
         if len(wrong) > 0:
             hint = "available metrics: {}".format(", ".join(valid))
