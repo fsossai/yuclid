@@ -25,7 +25,7 @@ def substitute_point_yvars(x, point_map, point_id):
     y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
     if point_id is not None:
         value_pattern = r"\$\{yuclid\.\@\}"
-        y = re.sub(value_pattern, lambda m: f"{point_id}.tmp", y)
+        y = re.sub(value_pattern, lambda m: f"{point_id}", y)
     return y
 
 
@@ -764,7 +764,7 @@ def run_point_trials(settings, data, execution, f, i, point):
 
         if command_output.returncode != 0:
             hint = "check the following files for more details:\n"
-            hint += f"{point_id}.out\n{point_id}.err\n{point_id}.tmp"
+            hint += f"{point_id}.out\n{point_id}.err"
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
@@ -786,7 +786,7 @@ def run_point_trials(settings, data, execution, f, i, point):
 
         def complain():
             hint = "check the following files for more details:\n"
-            hint += f"{point_id}.out\n{point_id}.err\n{point_id}.tmp"
+            hint += f"{point_id}.out\n{point_id}.err\n"
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
