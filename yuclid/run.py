@@ -1158,12 +1158,23 @@ def normalize_point_setup(point_setup, space):
     # check validity of 'parallel' fields
     for item in normalized_items:
         parallel = item["parallel"]
-        if not isinstance(parallel, (bool, list)):
-            report(LogLevel.FATAL, "point setup 'parallel' must be a boolean or a list")
+        if not isinstance(parallel, (bool, list)) or any(
+            x for x in parallel if not isinstance(x, str)
+        ):
+            report(
+                LogLevel.FATAL,
+                "point setup 'parallel' must be a boolean or a list of strings",
+            )
         if isinstance(parallel, list):
-            wrong = [
-                x for x in parallel if not isinstance(x, str) or x not in item["on"]
-            ]
+            for x in parallel:
+                if x not in space:
+                    report(
+                        LogLevel.FATAL,
+                        "point setup 'parallel' dimension not in space",
+                        x,
+                        hint="available dimensions: {}".format(", ".join(space.keys())),
+                    )
+            wrong = [x for x in parallel if x + ".values" not in item["on"]]
             if len(wrong) > 0:
                 hint = "available dimensions: {}".format(", ".join(item["on"]))
                 report(
