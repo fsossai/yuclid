@@ -1158,8 +1158,8 @@ def normalize_point_setup(point_setup, space):
     # check validity of 'parallel' fields
     for item in normalized_items:
         parallel = item["parallel"]
-        if not isinstance(parallel, (bool, list)) or any(
-            x for x in parallel if not isinstance(x, str)
+        if not isinstance(parallel, (bool, list)) or (
+            isinstance(parallel, list) and any(not isinstance(x, str) for x in parallel)
         ):
             report(
                 LogLevel.FATAL,
