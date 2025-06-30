@@ -13,6 +13,14 @@ def substitute_point_yvars(x, point_map, point_id):
     # replace ${yuclid.<name>} and ${yuclid.@} with point values
     value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)(?:\.value)?\}"
     name_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.name\}"
+    matches = re.findall(name_pattern, x)
+    for name in matches:
+        if name not in point_map:
+            report(
+                LogLevel.FATAL,
+                f"point variable '{name}' not found in point_map",
+                hint=f"available variables: {', '.join(point_map.keys())}",
+            )
     y = re.sub(value_pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
     if point_id is not None:
@@ -32,69 +40,56 @@ def substitute_global_yvars(x, subspace):
     return y
 
 
-def get_yvar_pattern():
-    return r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
+def validate_point_yvars(space, exps):
+    for exp in exps:
+        matches = re.findall(
+            r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value|names|values))?\}", exp
+        )
+        for dim in matches:
+            if dim not in space and dim != "@":
+                report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
-def validate_yvars_in_env(env):
-    for key, value in env.items():
-        if re.search(get_yvar_pattern(), value):
+def validate_global_yvars(space, exps):
+    for exp in exps:
+        exp = str(exp)
+        point_matches = re.findall(
+            r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value))?\}", exp
+        )
+        for dim in point_matches:
             hint = (
                 "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
-                    key, key
+                    dim, dim
                 )
             )
             report(
                 LogLevel.FATAL,
-                f"cannot use yuclid point variables in env",
-                value,
+                "wrong use of yuclid point variable 'yuclid.{}'".format(dim),
                 hint=hint,
             )
+        global_matches = re.findall(
+            r"\$\{yuclid\.([a-zA-Z0-9_@]+)\.(?:names|values)\}", exp
+        )
+        for dim in global_matches:
+            if dim not in space:
+                breakpoint()
+                report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
-def validate_yvars_in_setup(data):
-    setup = data["setup"]
+def validate_yvars_in_env(space, env):
+    validate_global_yvars(space, env.values())
 
-    # global setup
-    for command in setup["global"]:
-        # match ${yuclid.<name>}
-        # for all matches, check if the name is in on_dims
-        names = re.findall(get_yvar_pattern(), command)
-        for name in names:
-            hint = (
-                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
-                    name, name
-                )
-            )
-            report(
-                LogLevel.FATAL,
-                f"cannot use yuclid point variables in global setup",
-                command,
-                hint=hint,
-            )
 
-    # point setup
-    for point_item in setup["point"]:
-        on_dims = point_item["on"] or data["space"].keys()
-        commands = point_item["commands"]
-        for command in commands:
-            # match ${yuclid.(<name>|@)}
-            pattern = r"\$\{yuclid\.([a-zA-Z0-9_@]+)\}"
-            # for all matches, check if the name is in on_dims
-            names = re.findall(pattern, command)
-            for name in names:
-                if name not in on_dims:
-                    hint = "available variables: {}".format(
-                        ", ".join(["${{yuclid.{}}}".format(d) for d in on_dims])
-                    )
-                    if name == "@":
-                        hint = ". ${yuclid.@} is reserved for trial commands"
-                        report(
-                            LogLevel.FATAL,
-                            f"invalid yuclid variable '{name}' in point setup",
-                            command,
-                            hint=hint,
-                        )
+def validate_yvars_in_setup(space, setup):
+    validate_global_yvars(space, setup["global"])
+
+    for point in setup["point"]:
+        validate_point_yvars(space, point["commands"])
+
+
+def validate_yvars_in_trials(space, trials):
+    commands = [trial["command"] for trial in trials]
+    validate_point_yvars(space, commands)
 
 
 def load_json(f):
@@ -1245,8 +1240,10 @@ def launch(args):
     validate_settings(data, settings)
     env = build_environment(settings, data)
     order = define_order(settings, data)
-    validate_yvars_in_env(env)
-    validate_yvars_in_setup(data)
+    validate_yvars_in_env(data["space"], data["env"])
+    validate_yvars_in_setup(data["space"], data["setup"])
+    validate_yvars_in_trials(data["space"], data["trials"])
+
     validate_presets(settings, data)
 
     if len(settings["presets"]) > 0:
