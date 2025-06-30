@@ -72,7 +72,6 @@ def validate_global_yvars(space, exps):
         )
         for dim in global_matches:
             if dim not in space:
-                breakpoint()
                 report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
