@@ -29,6 +29,7 @@ def get_parser():
     run_parser.add_argument(
         "-r",
         "--order",
+        default=[],
         nargs="*",
         help="List of dimensions to override the order of experiments",
     )
@@ -52,12 +53,14 @@ def get_parser():
         "-p",
         "--presets",
         nargs="*",
+        default=[],
         help="Specify a list of preset names to run",
     )
     run_parser.add_argument(
         "-s",
         "--select",
         nargs="*",
+        default=[],
         help="Select a list of name=csv_values pairs for each dimension. E.g. dim1=val1,val2 dim2=val3,val4",
     )
     run_parser.add_argument(
