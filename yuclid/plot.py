@@ -969,6 +969,17 @@ def generate_derived_metrics(ctx):
     args.y = new_ys
 
 
+def reorder_and_numericize(ctx):
+    # convert columns to numeric where possible
+    df = ctx["df"]
+    for col in df.columns:
+        try:
+            df[col] = pd.to_numeric(df[col])
+        except (ValueError, TypeError):
+            pass
+    df.sort_values(by=list(df.columns), inplace=True)
+
+
 def launch(args):
     ctx = {"args": args}
     validate_files(ctx)
@@ -976,6 +987,7 @@ def launch(args):
     generate_dataframe(ctx)
     generate_derived_metrics(ctx)
     validate_args(ctx)
+    reorder_and_numericize(ctx)
     rescale(ctx)
     generate_space(ctx)
     compute_ylimits(ctx)
