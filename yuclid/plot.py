@@ -154,7 +154,7 @@ def generate_dataframe(ctx):
         file = pathlib.Path(file)
         try:
             if file.suffix == ".json":
-                dfs[file.stem] = pd.read_json(file, lines=True)
+                dfs[file.stem] = pd.read_json(file, lines=True, dtype=False)
             elif file.suffix == ".csv":
                 dfs[file.stem] = pd.read_csv(file)
         except:
@@ -730,7 +730,7 @@ def validate_args(ctx):
     numeric_cols = (
         df.drop(columns=[args.x]).select_dtypes(include=[np.number]).columns.tolist()
     )
-    if args.y is None:
+    if len(args.y) == 0:
         # find the floating point numeric columns
         if len(numeric_cols) == 0:
             report(
@@ -740,6 +740,11 @@ def validate_args(ctx):
             )
         report(LogLevel.INFO, "Using '{}' as Y-axis".format(", ".join(numeric_cols)))
         args.y = numeric_cols
+    else:
+        # drop columns that are in numeric_cols but not in args.y
+        drop_cols = [col for col in numeric_cols if col not in args.y]
+        if drop_cols:
+            df.drop(columns=drop_cols, inplace=True)
     validate_dimensions(ctx, args.y)
     for y in args.y:
         if not pd.api.types.is_numeric_dtype(df[y]):
@@ -935,7 +940,7 @@ def generate_derived_metrics(ctx):
     # derived metrics are any -y value with a ":"
     derived_metrics = dict()
     new_ys = []
-    for y in args.y:
+    for y in args.y or []:
         if ":" in y:
             name, func = y.split(":")
             derived_metrics[name.strip()] = func.strip()
