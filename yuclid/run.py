@@ -780,23 +780,26 @@ def run_point_trials(settings, data, execution, f, i, point):
             capture_output=True,
             env=execution["env"],
         )
+        text = command_output.stdout.strip()
 
-        def complain():
+        if command_output.returncode != 0:
             hint = "check the following files for more details:\n"
             hint += f"{point_id}.out\n{point_id}.err\n"
             report(
                 LogLevel.ERROR,
                 point_to_string(point),
-                "failed metric '{}' (code {})".format(
+                "metric {} failed with return code {}".format(
                     metric["name"], command_output.returncode
                 ),
-                hint=hint,
             )
-
-        if command_output.returncode != 0:
-            complain()
+        elif text == "":
+            report(
+                LogLevel.ERROR,
+                point_to_string(point),
+                "metric {} generated an empty string".format(metric["name"]),
+            )
         else:
-            output_lines = command_output.stdout.strip().split("\n")
+            output_elements = re.split("\n| ", text)
 
             def int_or_float(x):
                 try:
@@ -805,10 +808,15 @@ def run_point_trials(settings, data, execution, f, i, point):
                     try:
                         return float(x)
                     except ValueError:
-                        complain()
+                        hint = "the command generated '{}'".format(text)
+                        report(
+                            LogLevel.ERROR,
+                            "cannot parse result of metric {}".format(metric["name"]),
+                            text,
+                        )
 
             collected_metrics[metric["name"]] = [
-                int_or_float(line) for line in output_lines
+                int_or_float(line) for line in output_elements
             ]
 
     metric_values_df = pd.DataFrame.from_dict(

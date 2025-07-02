@@ -60,21 +60,20 @@ Here's a minimal example that you can immediately run on your linux terminal.
     "cpuid": [0, 1, 2, 3]
   },
   "trials": [
-    "{ time -p taskset -c ${yuclid.cpuid} cat /dev/urandom | head -${yuclid.size} | ${yuclid.hash} ; } 2>&1"
+    "time -p taskset -c ${yuclid.cpuid} head -${yuclid.size} /dev/urandom | ${yuclid.hash}"
   ],
   "metrics": [
     {
       "name": "time.real",
-      "command": "cat ${yuclid.@}.out | grep real | grep -oE '[0-9]+\\.[0-9]+'"
+      "command": "cat ${yuclid.@}.err | grep real | grep -oE '[0-9]+\\.[0-9]+'"
     },
     {
       "name": "time.sys",
-      "command": "cat ${yuclid.@}.out | grep sys | grep -oE '[0-9]+\\.[0-9]+'"
+      "command": "cat ${yuclid.@}.err | grep sys | grep -oE '[0-9]+\\.[0-9]+'"
     }
   ]
 }
 ```
-
 The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
 ```json
 {"size": "medium", "hash": "md5sum", "cpuid": "0", "time.real": 1.35, "time.sys": 1.19}
@@ -109,6 +108,13 @@ yuclid plot results.json -x size
 yuclid plot results.json -x hash
 yuclid plot results.json -x size -z cpuid
 ```
+The same configuration can be executed on slices of the space (i.e. subspaces):
+```
+yuclid run -s size=medium
+yuclid run -s cpuid=0,1,2
+yuclid run -s size=small,medium cpuid=3,0
+```
+Check out `yuclid run -h` for more info.
 
 ## Advanced Example
 
@@ -125,44 +131,23 @@ yuclid plot results.json -x size -z cpuid
     ],
     "point": [
       {
-        "on": ["compiler"], // run the command on these dimensions only.
-                            // The entire space is assumed if empty.
+        "on": [ "compiler" ], // run the command on these dimensions only.
+                              // The entire space is assumed if empty.
         "command": "mkdir -p ${yuclid.compiler}",
-        "parallel": ["compiler"] // list|true|false: can execute more commands in parallel
-                                 // true = all dimensions in `on`.
+        "parallel": [ "compiler" ] // list|true|false: can execute more commands in parallel
+                                   // true = all dimensions in `on`.
       },
       {
-        "on": ["compiler"], // run the command on these dimensions only.
-                            // The entire space is assumed if empty.
+        "on": [ "compiler" ], // run the command on these dimensions only.
+                              // The entire space is assumed if empty.
         "command": "make myprogram.out CXX=${yuclid.compiler} OUTDIR=$root/build/${yuclid.compiler}",
         "parallel": true // equivalent to ["compiler"]
-      },
+      }
     ]
   },
-  "trials": [
-    {
-      "command": "{ time -p ${yuclid.compiler}/myprogram.out ${yuclid.dataset} ; } 2>&1",
-      "metrics": ["time", "something_else"] // which metrics this command enables
-      // "condition": "True" can specify extra conditions
-    }
-  ],
-  "metrics": [
-    {
-        "name": "time",
-        // each metric command must generate 1 or more lines contains
-        // an interger or a floating point number.
-        // ${yuclid.@} represents a unique trial identifier
-        // ${yuclid.@}.out and ${yuclid.@}.err are automatically generated for each trial
-        "command": "cat ${yuclid.@}.out | grep real | grep -E '[0-9]+\\.[0-9]+'"
-    },
-    {
-        "name": "something_else",
-        "command": "cat ${yuclid.@}.out | grep something"
-    }
-  ],
   "space": {
-    "compiler": ["g++", "clang++"],
-    "threads": [1, 2, 3, 4],
+    "compiler": [ "g++", "clang++" ],
+    "threads": [ 1, 2, 3, 4 ],
     // or
     "threads:py": "list(range(1,5))", // python!
     // or
@@ -181,8 +166,28 @@ yuclid plot results.json -x size -z cpuid
       }
     ]
   },
-  "order": ["compiler", "dataset", "nthreads"] // different nthreads first,
-                                               // then datasets, then compilers
+  "trials": [
+    {
+      "command": "time -p ${yuclid.compiler}/myprogram.out ${yuclid.dataset}",
+      "metrics": [ "time", "something_else" ] // which metrics this command enables
+                                              // "condition": "True" can specify extra conditions
+    }
+  ],
+  "metrics": [
+    {
+      "name": "time",
+      // each metric command must generate one or more numbers (separated by space or linebreak)
+      // ${yuclid.@} represents a unique trial identifier
+      // ${yuclid.@}.out and ${yuclid.@}.err are automatically generated for each trial
+      "command": "cat ${yuclid.@}.err | grep real | grep -E '[0-9]+\\.[0-9]+'"
+    },
+    {
+      "name": "something_else",
+      "command": "cat ${yuclid.@}.out | grep something"
+    }
+  ],
+  "order": [ "compiler", "dataset", "nthreads" ]  // different nthreads first,
+                                                  // then datasets, then compilers
 }
 ```
 
