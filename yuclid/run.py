@@ -799,7 +799,7 @@ def run_point_trials(settings, data, execution, f, i, point):
                 "metric {} generated an empty string".format(metric["name"]),
             )
         else:
-            output_elements = re.split("\n| ", text)
+            output_elements = re.split("[\n|\r| ]+", text)
 
             def int_or_float(x):
                 try:
