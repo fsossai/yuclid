@@ -52,10 +52,15 @@ Here's a minimal example that you can immediately run on your linux terminal.
         "name": "large",
         "value": 10000000
       }
-    ]
+    ],
+    "hash": [
+      "md5sum",
+      "sha256sum"
+    ],
+    "cpuid": [0, 1, 2, 3]
   },
   "trials": [
-    "{ time -p cat /dev/urandom | head -${yuclid.size} | md5sum ; } 2>&1"
+    "{ time -p taskset -c ${yuclid.cpuid} cat /dev/urandom | head -${yuclid.size} | ${yuclid.hash} ; } 2>&1"
   ],
   "metrics": [
     {
@@ -70,6 +75,40 @@ Here's a minimal example that you can immediately run on your linux terminal.
 }
 ```
 
+The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
+```json
+{"size": "medium", "hash": "md5sum", "cpuid": "0", "time.real": 1.35, "time.sys": 1.19}
+{"size": "medium", "hash": "md5sum", "cpuid": "1", "time.real": 1.36, "time.sys": 1.2}
+{"size": "medium", "hash": "md5sum", "cpuid": "2", "time.real": 1.35, "time.sys": 1.2}
+{"size": "medium", "hash": "md5sum", "cpuid": "3", "time.real": 1.33, "time.sys": 1.18}
+{"size": "medium", "hash": "sha256sum", "cpuid": "0", "time.real": 1.37, "time.sys": 1.19}
+{"size": "medium", "hash": "sha256sum", "cpuid": "1", "time.real": 1.36, "time.sys": 1.19}
+{"size": "medium", "hash": "sha256sum", "cpuid": "2", "time.real": 1.39, "time.sys": 1.2}
+{"size": "medium", "hash": "sha256sum", "cpuid": "3", "time.real": 1.37, "time.sys": 1.19}
+{"size": "small", "hash": "md5sum", "cpuid": "0", "time.real": 0.13, "time.sys": 0.12}
+{"size": "small", "hash": "md5sum", "cpuid": "1", "time.real": 0.13, "time.sys": 0.12}
+{"size": "small", "hash": "md5sum", "cpuid": "2", "time.real": 0.13, "time.sys": 0.12}
+{"size": "small", "hash": "md5sum", "cpuid": "3", "time.real": 0.13, "time.sys": 0.12}
+{"size": "small", "hash": "sha256sum", "cpuid": "0", "time.real": 0.14, "time.sys": 0.12}
+{"size": "small", "hash": "sha256sum", "cpuid": "1", "time.real": 0.14, "time.sys": 0.12}
+{"size": "small", "hash": "sha256sum", "cpuid": "2", "time.real": 0.14, "time.sys": 0.12}
+{"size": "small", "hash": "sha256sum", "cpuid": "3", "time.real": 0.14, "time.sys": 0.12}
+{"size": "large", "hash": "md5sum", "cpuid": "0", "time.real": 13.29, "time.sys": 11.74}
+{"size": "large", "hash": "md5sum", "cpuid": "1", "time.real": 13.34, "time.sys": 11.82}
+{"size": "large", "hash": "md5sum", "cpuid": "2", "time.real": 13.38, "time.sys": 11.81}
+{"size": "large", "hash": "md5sum", "cpuid": "3", "time.real": 13.31, "time.sys": 11.74}
+{"size": "large", "hash": "sha256sum", "cpuid": "0", "time.real": 13.61, "time.sys": 11.81}
+{"size": "large", "hash": "sha256sum", "cpuid": "1", "time.real": 13.66, "time.sys": 11.88}
+{"size": "large", "hash": "sha256sum", "cpuid": "2", "time.real": 13.84, "time.sys": 12.02}
+{"size": "large", "hash": "sha256sum", "cpuid": "3", "time.real": 13.62, "time.sys": 11.82}
+
+```
+These results can be displayed with `yuclid plot`, e.g.:
+```
+yuclid plot results.json -x size
+yuclid plot results.json -x hash
+yuclid plot results.json -x size -z cpuid
+```
 
 ## Advanced Example
 
