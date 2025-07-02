@@ -24,7 +24,8 @@ def get_parser():
         "--inputs",
         default=["yuclid.json"],
         nargs="*",
-        help="Specify one or more configuration files. Default is 'yuclid.json'",
+        help="Specify one or more configuration files. Default is 'yuclid.json'. "
+        "Objects and lists will be joined",
     )
     run_parser.add_argument(
         "-r",
@@ -54,7 +55,9 @@ def get_parser():
         "--presets",
         nargs="*",
         default=[],
-        help="Specify a list of preset names to run",
+        help="Specify a list of preset names to run. "
+        "A subspace will be created and executed for each preset specified, "
+        "one at a time",
     )
     run_parser.add_argument(
         "-s",
@@ -80,7 +83,8 @@ def get_parser():
         "--metrics",
         nargs="*",
         default=None,
-        help="Specify a list of metrics to compute among the registered ones. If empty, all metrics will be computed.",
+        help="Specify a list of metrics to compute among the registered ones. "
+        "If empty, all metrics will be computed.",
     )
 
     # plot subcommand
@@ -123,13 +127,6 @@ def get_parser():
         help="Measure of dispersion. Default: pi,95. Available: none or {}".format(
             " - ".join(yuclid.spread.available)
         ),
-    )
-    plot_parser.add_argument(
-        "--rsync-interval",
-        metavar="S",
-        type=float,
-        default=5,
-        help="[seconds] Remote synchronization interval",
     )
     plot_parser.add_argument(
         "-l",
@@ -199,7 +196,8 @@ def get_parser():
         "--no-merge-inputs",
         action="store_true",
         default=False,
-        help="Treat each input file separately instead of merging them (default: merged). A new index column 'file' will be created for each input file.",
+        help="Treat each input file separately instead of merging them (default: merged). "
+        "A new index column 'file' will be created for each input file.",
     )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
