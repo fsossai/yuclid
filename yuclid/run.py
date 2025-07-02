@@ -549,7 +549,7 @@ def run_point_command(command, execution, point, on_dims):
             report(
                 LogLevel.ERROR,
                 "point setup",
-                f"'{command}'",
+                f"'{pcommand}'",
                 f"returned {result.returncode}",
             )
 
