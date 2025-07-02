@@ -1254,7 +1254,5 @@ def launch(args):
 
     if not settings["dry_run"]:
         metric_names = {m["name"] for m in data["metrics"]}
-        hint = "use `yuclid plot {} -y {}` to analyze the results".format(
-            settings["output"], ",".join(metric_names)
-        )
+        hint = "use `yuclid plot {}` to analyze the results".format(settings["output"])
         report(LogLevel.INFO, "output data written to", settings["output"], hint=hint)

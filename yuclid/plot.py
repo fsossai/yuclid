@@ -738,7 +738,7 @@ def validate_args(ctx):
                 "No numeric columns found in the data",
                 hint="use -y to specify a Y-axis",
             )
-        report(LogLevel.INFO, "Using '{}' as Y-axis".format(", ".join(numeric_cols)))
+        report(LogLevel.INFO, "Using {} as Y-axis".format(", ".join(numeric_cols)))
         args.y = numeric_cols
     else:
         # drop columns that are in numeric_cols but not in args.y
