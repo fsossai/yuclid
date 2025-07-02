@@ -40,55 +40,53 @@ def substitute_global_yvars(x, subspace):
     return y
 
 
-def validate_point_yvars(space, exps):
-    for exp in exps:
-        matches = re.findall(
-            r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value|names|values))?\}", exp
-        )
-        for dim in matches:
-            if dim not in space and dim != "@":
-                report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
+def validate_point_yvars(space, exp):
+    matches = re.findall(
+        r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value|names|values))?\}", exp
+    )
+    for dim in matches:
+        if dim not in space and dim != "@":
+            report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
-def validate_global_yvars(space, exps):
-    for exp in exps:
-        exp = str(exp)
-        point_matches = re.findall(
-            r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value))?\}", exp
+def validate_global_yvars(space, exp):
+    exp = str(exp)
+    point_matches = re.findall(
+        r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value))?\}", exp
+    )
+    for dim in point_matches:
+        hint = "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
+            dim, dim
         )
-        for dim in point_matches:
-            hint = (
-                "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
-                    dim, dim
-                )
-            )
-            report(
-                LogLevel.FATAL,
-                "wrong use of yuclid point variable 'yuclid.{}'".format(dim),
-                hint=hint,
-            )
-        global_matches = re.findall(
-            r"\$\{yuclid\.([a-zA-Z0-9_@]+)\.(?:names|values)\}", exp
+        report(
+            LogLevel.FATAL,
+            "wrong use of yuclid point variable 'yuclid.{}'".format(dim),
+            hint=hint,
         )
-        for dim in global_matches:
-            if dim not in space:
-                report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
+    global_matches = re.findall(
+        r"\$\{yuclid\.([a-zA-Z0-9_@]+)\.(?:names|values)\}", exp
+    )
+    for dim in global_matches:
+        if dim not in space:
+            report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
 def validate_yvars_in_env(space, env):
-    validate_global_yvars(space, env.values())
+    for v in env.values():
+        validate_global_yvars(space, v)
 
 
 def validate_yvars_in_setup(space, setup):
-    validate_global_yvars(space, setup["global"])
+    for command in setup["global"]:
+        validate_global_yvars(space, command)
 
     for point in setup["point"]:
-        validate_point_yvars(space, point["commands"])
+        validate_point_yvars(space, point["command"])
 
 
 def validate_yvars_in_trials(space, trials):
-    commands = [trial["command"] for trial in trials]
-    validate_point_yvars(space, commands)
+    for trial in trials:
+        command = validate_point_yvars(space, trial["command"])
 
 
 def load_json(f):
@@ -577,7 +575,7 @@ def run_points_sequential(command, item_plan, execution, on_dims, par_config):
 
 
 def run_point_setup_item(item, execution):
-    commands = item["commands"]
+    command = item["command"]
     on_dims = item["on"]
     order = execution["order"]
     subspace = execution["subspace"]
@@ -596,25 +594,24 @@ def run_point_setup_item(item, execution):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         par_points = list(itertools.product(*parallel_space))
 
-        for i, command in enumerate(commands, start=1):
-            if len(parallel_dims) == 0:
-                run_points_sequential(command, item_plan, execution, on_dims, [])
-            else:
-                futures = []
-                for j, par_config in enumerate(par_points, start=1):
-                    future = executor.submit(
-                        run_points_sequential,
-                        command,
-                        item_plan,
-                        execution,
-                        on_dims,
-                        par_config,
-                    )
-                    futures.append(future)
-                for future in concurrent.futures.as_completed(futures):
-                    exc = future.exception()
-                    if exc is not None:
-                        report(LogLevel.ERROR, "point setup failed", command)
+        if len(parallel_dims) == 0:
+            run_points_sequential(command, item_plan, execution, on_dims, [])
+        else:
+            futures = []
+            for j, par_config in enumerate(par_points, start=1):
+                future = executor.submit(
+                    run_points_sequential,
+                    command,
+                    item_plan,
+                    execution,
+                    on_dims,
+                    par_config,
+                )
+                futures.append(future)
+            for future in concurrent.futures.as_completed(futures):
+                exc = future.exception()
+                if exc is not None:
+                    report(LogLevel.ERROR, "point setup failed", command)
 
 
 def run_point_setup(data, execution):
@@ -1084,28 +1081,28 @@ def build_settings(args):
 def normalize_point_setup(point_setup, space):
     if isinstance(point_setup, str):
         point_setup = [
-            {"commands": [x], "on": None, "parallel": False}
-            for x in normalize_command_list(point_setup)
+            {"command": [x], "on": None, "parallel": False}
+            for x in normalize_command(point_setup)
         ]
     elif isinstance(point_setup, list):
         normalized_items = []
         for item in point_setup:
-            unexpected = [x for x in item if x not in ["commands", "on", "parallel"]]
+            unexpected = [x for x in item if x not in ["command", "on", "parallel"]]
             if len(unexpected) > 0:
                 report(
                     LogLevel.WARNING,
                     "point setup item has unexpected fields",
                     ", ".join(unexpected),
-                    hint="fields: 'commands', 'on', 'parallel'",
+                    hint="fields: 'command', 'on', 'parallel'",
                 )
             if isinstance(item, str):
                 normalized_items.append(
-                    {"commands": [item], "on": None, "parallel": False}
+                    {"command": [item], "on": None, "parallel": False}
                 )
             elif isinstance(item, dict):
-                if "commands" in item:
+                if "command" in item:
                     normalized_item = {
-                        "commands": normalize_command_list(item["commands"]),
+                        "command": normalize_command(item["command"]),
                         "on": item.get("on", None),
                         "parallel": item.get("parallel", False),
                     }
@@ -1125,7 +1122,7 @@ def normalize_point_setup(point_setup, space):
                 else:
                     report(
                         LogLevel.FATAL,
-                        "point setup item must have 'commands' field",
+                        "point setup item must have 'command' field",
                     )
             else:
                 report(LogLevel.FATAL, "point setup must be a string or a list")
