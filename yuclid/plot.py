@@ -811,14 +811,33 @@ def validate_args(ctx):
             )
 
     # normalization
-    def validate_pairs(norm_args):
+    def validate_normalization_pairs(norm_args):
+        if len(norm_args) == 0:
+            report(LogLevel.WARNING, "no normalization arguments provided")
+            return {}
         for arg in norm_args:
             if "=" not in arg:
                 report(
                     LogLevel.FATAL,
                     f"invalid normalization argument '{arg}', expected format 'key=value'",
                 )
-        return {pair.split("=")[0]: pair.split("=")[1] for pair in norm_args}
+        pairs = {pair.split("=")[0]: pair.split("=")[1] for pair in norm_args}
+        for k, v in pairs.items():
+            if k not in df.columns:
+                report(
+                    LogLevel.FATAL,
+                    f"invalid normalization key '{k}'",
+                    hint="available keys: {}".format(", ".join(df.columns)),
+                )
+            if v not in df[k].values:
+                report(
+                    LogLevel.FATAL,
+                    f"invalid value '{v}' for normalization key '{k}'",
+                    hint="available values for '{}': {}".format(
+                        k, ", ".join(map(str, df[k].unique()))
+                    ),
+                )
+        return pairs
 
     if (
         (args.x_norm and args.z_norm)
@@ -829,8 +848,8 @@ def validate_args(ctx):
             LogLevel.FATAL,
             "only one normalization method can be used at a time: --x-norm, --z-norm, or --ref-norm",
         )
-    if args.ref_norm:
-        keys = validate_pairs(args.ref_norm).keys()
+    if args.ref_norm is not None:
+        keys = validate_normalization_pairs(args.ref_norm).keys()
         if args.x not in keys or args.z not in keys:
             hint = "try adding '{}=<value>' or '{}=<value>' to --ref-norm".format(
                 args.x, args.z
@@ -840,8 +859,8 @@ def validate_args(ctx):
                 "--ref-norm pairs must include both the X-axis and Z-axis dimensions",
                 hint=hint,
             )
-    elif args.x_norm:
-        keys = validate_pairs(args.x_norm).keys()
+    elif args.x_norm is not None:
+        keys = validate_normalization_pairs(args.x_norm).keys()
         if args.z not in keys:
             hint = "try adding '{}=<value>' to --x-norm".format(args.z)
             report(
@@ -856,8 +875,8 @@ def validate_args(ctx):
                 "--x-norm pairs must not include the X-axis dimension",
                 hint=hint,
             )
-    elif args.z_norm:
-        keys = validate_pairs(args.z_norm).keys()
+    elif args.z_norm is not None:
+        keys = validate_normalization_pairs(args.z_norm).keys()
         if args.x not in keys:
             hint = "try adding '{}=<value>' to --z-norm".format(args.x)
             report(
