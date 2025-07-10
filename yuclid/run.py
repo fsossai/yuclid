@@ -849,6 +849,12 @@ def run_point_trials(settings, data, execution, f, i, point):
                 metric_name,
                 f"{pd.Series(values).median():.3f}",
             )
+            report(
+                LogLevel.INFO,
+                "variance",
+                metric_name,
+                f"{pd.Series(values).var():.3f}",
+            )
     report(
         LogLevel.INFO,
         get_progress(i, execution["subspace_size"]),
