@@ -851,9 +851,9 @@ def run_point_trials(settings, data, execution, f, i, point):
             )
             report(
                 LogLevel.INFO,
-                "variance",
+                "stddev",
                 metric_name,
-                f"{pd.Series(values).var():.3f}",
+                f"{pd.Series(values).std():.3f}",
             )
     report(
         LogLevel.INFO,
