@@ -93,7 +93,7 @@ def get_parser():
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
     )
     plot_parser.add_argument("-x", required=True, help="X-axis column name")
-    plot_parser.add_argument("-y", nargs="*", help="Y-axis column names")
+    plot_parser.add_argument("-y", nargs="*", default=[], help="Y-axis column names")
     plot_parser.add_argument("-z", help="Grouping column name")
     plot_parser.add_argument(
         "-X",
