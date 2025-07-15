@@ -118,7 +118,7 @@ Check out `yuclid run -h` for more info.
 
 ## Plot API
 
-`yuclid plot` can be used directly on your pyplot canvas, for example:
+`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpu` can be emulated in a more customizable script, e.g.:
 
 ```python
 import yuclid.plot
@@ -126,7 +126,14 @@ import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
 
-cli_args = "results.json -x size -z cpu".split() # just like the CLI
+# just like the CLI
+cli_args = [
+  "results.json",
+  "-x",
+  "size",
+  "-z",
+  "cpu"
+]
 df = yuclid.plot.draw(fig, ax, cli_args)
 plt.show()
 ```
