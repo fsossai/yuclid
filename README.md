@@ -116,6 +116,21 @@ yuclid run -s size=small,medium cpuid=3,0
 ```
 Check out `yuclid run -h` for more info.
 
+## Plot API
+
+`yuclid plot` can be used directly on your pyplot canvas, for example:
+
+```python
+import yuclid.plot
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+
+cli_args = "results.json -x size -z cpu".split() # just like the CLI
+df = yuclid.plot.draw(fig, ax, cli_args)
+plt.show()
+```
+
 ## Advanced Example
 
 

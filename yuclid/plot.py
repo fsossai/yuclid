@@ -205,19 +205,21 @@ def rescale(ctx):
 
 def draw(fig, ax, cli_args):
     ctx = dict()
-    parser = yuclid.cli.get_parser()
-    args = parser.parse_args(["plot"] + cli_args)
+    args = yuclid.cli.get_parser().parse_args(["plot"] + cli_args)
     ctx["args"] = args
     ctx["fig"] = fig
     ctx["ax_plot"] = ax
     yuclid.log.init(ignore_errors=args.ignore_errors)
-    validate_files(ctx)
-    locate_files(ctx)
-    set_axes_style(ctx)
-    generate_dataframe(ctx)
-    validate_args(ctx)
-    generate_space(ctx)
-    update_plot(ctx)
+    yuclid.plot.validate_files(ctx)
+    yuclid.plot.locate_files(ctx)
+    yuclid.plot.generate_dataframe(ctx)
+    yuclid.plot.reorder_and_numericize(ctx)
+    yuclid.plot.validate_args(ctx)
+    yuclid.plot.generate_space(ctx)
+    yuclid.plot.compute_ylimits(ctx)
+    yuclid.plot.generate_space(ctx)
+    yuclid.plot.update_plot(ctx)
+    return ctx["df"]
 
 
 def generate_space(ctx):
@@ -837,6 +839,7 @@ def validate_args(ctx):
                     f"invalid key '{k}'",
                     hint="available keys: {}".format(", ".join(df.columns)),
                 )
+            v = df[k].dtype.type(v)
             if v not in df[k].values:
                 report(
                     LogLevel.FATAL,
