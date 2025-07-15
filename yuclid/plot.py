@@ -21,6 +21,7 @@ def get_current_config(ctx):
     for d in free_dims:
         k = domains[d][position[d]]
         config[d] = k
+    config.update(ctx["lock_dims"])
     return config
 
 
@@ -223,7 +224,7 @@ def generate_space(ctx):
     args = ctx["args"]
     df = ctx["df"]
     z_size = df[args.z].nunique()
-    free_dims = list(df.columns.difference([args.x, args.z] + args.y))
+    free_dims = list(df.columns.difference([args.x, args.z] + args.y + args.lock_dims))
     selected_index = 0 if len(free_dims) > 0 else None
     domains = dict()
     position = dict()
@@ -233,16 +234,13 @@ def generate_space(ctx):
         position[d] = 0
 
     z_dom = df[args.z].unique()
-    ctx.update(
-        {
-            "z_size": z_size,
-            "free_dims": free_dims,
-            "selected_index": selected_index,
-            "domains": domains,
-            "position": position,
-            "z_dom": z_dom,
-        }
-    )
+
+    ctx["z_size"] = z_size
+    ctx["free_dims"] = free_dims
+    ctx["selected_index"] = selected_index
+    ctx["domains"] = domains
+    ctx["position"] = position
+    ctx["z_dom"] = z_dom
 
 
 def update_table(ctx):
@@ -260,16 +258,25 @@ def update_table(ctx):
     fields = []
     values = []
     arrows = []
-    for i, d in enumerate(free_dims, start=1):
-        value = domains[d][position[d]]
-        if d == free_dims[selected_index]:
-            fields.append(rf"$\mathbf{{{d}}}$")
-            values.append(f"{value}")
-            arrows.append(f"{arrow_up}{arrow_down}")
+    for i, dim in enumerate(free_dims, start=1):
+        value = domains[dim][position[dim]]
+        if dim in ctx["lock_dims"]:
+            fields.append(rf"$\mathbf{{{dim}}}$ (locked)")
+            if dim == free_dims[selected_index]:
+                values.append(f"{value}")
+                arrows.append(f"{arrow_up}{arrow_down}")
+            else:
+                values.append(value)
+                arrows.append("")
         else:
-            fields.append(rf"$\mathbf{{{d}}}$")
-            values.append(value)
-            arrows.append("")
+            fields.append(rf"$\mathbf{{{dim}}}$")
+            if dim == free_dims[selected_index]:
+                values.append(f"{value}")
+                arrows.append(f"{arrow_up}{arrow_down}")
+            else:
+                values.append(value)
+                arrows.append("")
+
     ax_table.table(
         cellText=[fields, values, arrows], cellLoc="center", edges="open", loc="center"
     )
@@ -673,6 +680,8 @@ def on_key(event, ctx):
         if selected_index is None:
             return
         selected_dim = free_dims[selected_index]
+        if selected_dim in ctx["lock_dims"]:
+            return
         cur_pos = position[selected_dim]
         new_pos = (cur_pos + x) % domains[selected_dim].size
         position[selected_dim] = new_pos
@@ -802,43 +811,43 @@ def validate_args(ctx):
     # geomean and lines
     if args.geomean and args.lines:
         report(LogLevel.FATAL, "--geomean and --lines cannot be used together")
-    for d in df.columns.difference(args.y):
-        n = df[d].nunique()
-        if n > 100 and pd.api.types.is_numeric_dtype(df[d]):
+    for k in df.columns.difference(args.y):
+        n = df[k].nunique()
+        if n > 100 and pd.api.types.is_numeric_dtype(df[k]):
             report(
                 LogLevel.WARNING,
-                f"'{d}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
+                f"'{k}' seems to have many ({n}) numeric values. Are you sure this is not supposed to be the Y-axis?",
             )
 
-    # normalization
-    def validate_normalization_pairs(norm_args):
-        if len(norm_args) == 0:
+    def validate_data_pairs(dargs):
+        if len(dargs) == 0:
             report(LogLevel.WARNING, "no normalization arguments provided")
             return {}
-        for arg in norm_args:
+        for arg in dargs:
             if "=" not in arg:
                 report(
                     LogLevel.FATAL,
-                    f"invalid normalization argument '{arg}', expected format 'key=value'",
+                    f"invalid argument '{arg}', expected format 'key=value'",
                 )
-        pairs = {pair.split("=")[0]: pair.split("=")[1] for pair in norm_args}
+        pairs = {pair.split("=")[0]: pair.split("=")[1] for pair in dargs}
         for k, v in pairs.items():
             if k not in df.columns:
                 report(
                     LogLevel.FATAL,
-                    f"invalid normalization key '{k}'",
+                    f"invalid key '{k}'",
                     hint="available keys: {}".format(", ".join(df.columns)),
                 )
             if v not in df[k].values:
                 report(
                     LogLevel.FATAL,
-                    f"invalid value '{v}' for normalization key '{k}'",
+                    f"invalid value '{v}' for key '{k}'",
                     hint="available values for '{}': {}".format(
                         k, ", ".join(map(str, df[k].unique()))
                     ),
                 )
         return pairs
 
+    # normalization
     if (
         (args.x_norm and args.z_norm)
         or (args.x_norm and args.ref_norm)
@@ -849,7 +858,7 @@ def validate_args(ctx):
             "only one normalization method can be used at a time: --x-norm, --z-norm, or --ref-norm",
         )
     if args.ref_norm is not None:
-        keys = validate_normalization_pairs(args.ref_norm).keys()
+        keys = validate_data_pairs(args.ref_norm).keys()
         if args.x not in keys or args.z not in keys:
             hint = "try adding '{}=<value>' or '{}=<value>' to --ref-norm".format(
                 args.x, args.z
@@ -860,7 +869,7 @@ def validate_args(ctx):
                 hint=hint,
             )
     elif args.x_norm is not None:
-        keys = validate_normalization_pairs(args.x_norm).keys()
+        keys = validate_data_pairs(args.x_norm).keys()
         if args.z not in keys:
             hint = "try adding '{}=<value>' to --x-norm".format(args.z)
             report(
@@ -876,7 +885,7 @@ def validate_args(ctx):
                 hint=hint,
             )
     elif args.z_norm is not None:
-        keys = validate_normalization_pairs(args.z_norm).keys()
+        keys = validate_data_pairs(args.z_norm).keys()
         if args.x not in keys:
             hint = "try adding '{}=<value>' to --z-norm".format(args.x)
             report(
@@ -896,6 +905,28 @@ def validate_args(ctx):
             LogLevel.WARNING,
             "--norm-reverse is ignored because no normalization is applied",
         )
+
+    # free/locked dimensions
+    if len(args.lock_dims) > 0:
+        pairs = validate_data_pairs(args.lock_dims)
+        for k in pairs.keys():
+            if k not in df.columns:
+                report(
+                    LogLevel.FATAL,
+                    f"invalid lock dimension '{k}'",
+                    hint="available dimensions: {}".format(", ".join(df.columns)),
+                )
+        free_dims = df.columns.difference(args.y + [args.x, args.z])
+        for k in pairs.keys():
+            if k not in free_dims:
+                report(
+                    LogLevel.FATAL,
+                    f"cannot lock dimension '{k}' because it is not a free dimension",
+                    hint="free dimensions: {}".format(", ".join(free_dims)),
+                )
+        ctx["lock_dims"] = pairs
+    else:
+        ctx["lock_dims"] = dict()
 
     if args.spread_measure != "none":
         if not spread.assert_validity(args.spread_measure):

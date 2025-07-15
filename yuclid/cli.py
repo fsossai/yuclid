@@ -199,6 +199,13 @@ def get_parser():
         help="Treat each input file separately instead of merging them (default: merged). "
         "A new index column 'file' will be created for each input file.",
     )
+    plot_parser.add_argument(
+        "-L",
+        "--lock-dims",
+        nargs="*",
+        default=[],
+        help="Lock a free dimension with explicit values. E.g. -L a=1 b=value",
+    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
