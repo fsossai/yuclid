@@ -210,15 +210,16 @@ def draw(fig, ax, cli_args):
     ctx["fig"] = fig
     ctx["ax_plot"] = ax
     yuclid.log.init(ignore_errors=args.ignore_errors)
-    yuclid.plot.validate_files(ctx)
-    yuclid.plot.locate_files(ctx)
-    yuclid.plot.generate_dataframe(ctx)
-    yuclid.plot.reorder_and_numericize(ctx)
-    yuclid.plot.validate_args(ctx)
-    yuclid.plot.generate_space(ctx)
-    yuclid.plot.compute_ylimits(ctx)
-    yuclid.plot.generate_space(ctx)
-    yuclid.plot.update_plot(ctx)
+    validate_files(ctx)
+    locate_files(ctx)
+    generate_dataframe(ctx)
+    generate_derived_metrics(ctx)
+    validate_args(ctx)
+    reorder_and_numericize(ctx)
+    rescale(ctx)
+    generate_space(ctx)
+    compute_ylimits(ctx)
+    update_plot(ctx)
     return ctx["df"]
 
 
