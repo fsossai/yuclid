@@ -261,8 +261,8 @@ def update_table(ctx):
     values = []
     arrows = []
     for i, dim in enumerate(free_dims, start=1):
-        value = domains[dim][position[dim]]
         if dim in ctx["lock_dims"]:
+            value = ctx["lock_dims"][dim]
             fields.append(rf"$\mathbf{{{dim}}}$ (locked)")
             if dim == free_dims[selected_index]:
                 values.append(f"{value}")
@@ -271,6 +271,7 @@ def update_table(ctx):
                 values.append(value)
                 arrows.append("")
         else:
+            value = domains[dim][position[dim]]
             fields.append(rf"$\mathbf{{{dim}}}$")
             if dim == free_dims[selected_index]:
                 values.append(f"{value}")
@@ -1031,6 +1032,10 @@ def reorder_and_numericize(ctx):
         except (ValueError, TypeError):
             pass
     df.sort_values(by=list(df.columns), inplace=True)
+
+    # converting types of lock_dims
+    for k in ctx["lock_dims"].keys():
+        ctx["lock_dims"][k] = df[k].dtype.type(ctx["lock_dims"][k])
 
 
 def launch(args):
