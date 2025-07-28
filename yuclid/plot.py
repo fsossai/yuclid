@@ -374,6 +374,8 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
             for x in x_domain:
                 x_adjust[z][x] = next(x_flat_gen)
 
+    annotation_format = f"{{:.{args.digits}f}}" if args.digits else "{:.2f}"
+
     for z in z_domain:
         annotation_kwargs_z = annotation_kwargs.copy()
         annotation_kwargs_z["color"] = palette[z]
@@ -383,7 +385,7 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
             xa = x_adjust[z][x]
             ya = y_adjust[z][x]
             ax_plot.annotate(
-                f"{y:.2f}",
+                annotation_format.format(y),
                 (xa, ya),
                 **annotation_kwargs_z,
             )
@@ -393,7 +395,7 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
             xa = x_adjust[z][x]
             ya = y_adjust[z][x]
             ax_plot.annotate(
-                f"{y:.2f}",
+                annotation_format.format(y),
                 (xa, ya),
                 **annotation_kwargs_z,
             )
@@ -402,7 +404,7 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
                 xa = x_adjust[z][x]
                 ya = y_adjust[z][x]
                 ax_plot.annotate(
-                    f"{y:.2f}",
+                    annotation_format.format(y),
                     (xa, ya),
                     **annotation_kwargs_z,
                 )

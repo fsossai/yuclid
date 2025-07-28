@@ -156,6 +156,12 @@ def get_parser():
         help="Unit of measurement for the Y-axis",
     )
     plot_parser.add_argument(
+        "-d",
+        "--digits",
+        default=1,
+        help="Number of digits to display on annotations",
+    )
+    plot_parser.add_argument(
         "--colorblind",
         action="store_true",
         default=False,
