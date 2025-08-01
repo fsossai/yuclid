@@ -158,7 +158,7 @@ def get_parser():
     plot_parser.add_argument(
         "-d",
         "--digits",
-        default=1,
+        default=2,
         help="Number of digits to display on annotations",
     )
     plot_parser.add_argument(
