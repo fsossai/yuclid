@@ -1,1 +1,1 @@
-- [ ] Add description to `pyproject.toml`
+- [ ] Fix bug: exception when a point setup command uses refers to a dimension that has conditions involving dimensions outside of `on`
