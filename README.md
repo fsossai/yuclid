@@ -108,13 +108,17 @@ Here's a minimal example that you can immediately run on your linux terminal.
   ]
 }
 ```
-The same configuration can be executed on slices of the space (i.e. subspaces):
+To run the experiments, copy the configuration above into `yuclid.json` and from the same directory run
 ```
-yuclid run              # full experiment
+yuclid run
+```
+You can also run a subspace using the selector `-s`
+```
 yuclid run -s size=medium
 yuclid run -s cpuid=0,1,2
 yuclid run -s size=small,medium cpuid=3,0
 ```
+
 The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
 
 ```json
@@ -144,11 +148,12 @@ The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a J
 {"size": "large", "cpuid": "3", "compression": "highest", "time.real": 1.59, "time.sys": 0.27}
 ```
 
-These results can be displayed with `yuclid plot`, e.g.:
+These above results can be displayed with `yuclid plot`, e.g.:
 ```
 yuclid plot results.json -x compression
 yuclid plot results.json -x size -z cpuid
 ```
+Interact with the plot using arrow keys to move around dimensions and number keys to change the metric!
 
 ## Advanced Example
 
