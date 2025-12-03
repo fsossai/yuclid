@@ -2,6 +2,8 @@
 
 *Combinatorially explode your experiments*
 
+<p><img src="space.png" align="right" width="350" height="298"/></p>
+
 Yuclid is a tool for orchestrating experiments with a combinatorially large number of parameters.
 It collects custom metrics in a single JSON file for easy post-processing.
 Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
