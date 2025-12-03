@@ -18,12 +18,12 @@ Since programs' outputs are often verbose and the target metric is contained in 
 metrics can be arbitrarily defined in terms of other commands, e.g., regular expressions (see example).
 
 Here's a list of use-case ideas:
-- Measuring the impact of different optimization levels of different **compilers** on different programs
-- Counting cache misses under different **memory allocators** on different inputs
-- Measuring strong scaling **parallel programs** given different thread affinities
-- Evaluating different compression algorithms on different inputs with different compression levels
-- Organizing **perf** counters alongside custom metrics e.g., max RSS, in a self-contained JSON file
-- Creating reproducible artifacts for **research** software
+- Measure the impact of different optimization levels of different **compilers** on different programs
+- Count cache misses under different **memory allocators** on different inputs
+- Measure strong scaling **parallel programs** given different thread affinities
+- Evaluate different compression algorithms on different inputs with different compression levels
+- Organize **perf** counters alongside custom metrics e.g., max RSS, in a self-contained JSON file
+- Create reproducible artifacts for **research** software
 - All of the above combined!
 
 ## Installation
