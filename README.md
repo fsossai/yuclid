@@ -2,7 +2,15 @@
 
 *Combinatorially explode your experiments*
 
+Yuclid is an experiment orchestration tool for running experiments with a combinatorially large number of parameters and collecting custom metrics in a single JSON file for easy post-processing.
+Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
+It also provides a unique way of plotting data (`yuclid plot`) interactively, browsing slices of the results using the arrow keys.
+
+The **geometrical metaphor** is that each experiment is a point in a multidimensional discrete space formed by all combinations of user-defined parameters.
+
 ## Installation
+
+Requires python >= 3.8
 
 Current status:
 ```
@@ -33,7 +41,9 @@ Use `${yuclid.x}` to reference dimension values in commands, and `${yuclid.@}` f
 
 ## Minimal Example
 
-Yuclid uses a `yuclid.json` configuration file to define experiment parameters and execution settings.
+Suppose you want to time a few different hash commands on different input sizes and also measure the variance in execution time in different cores.
+The dimensions of this experiment, i.e., the space, would be the _size_ of the input, _hash_ command to use and _cpuid_.
+Yuclid uses a `yuclid.json` configuration file to define the space and other experiment parameters.
 Here's a minimal example that you can immediately run on your linux terminal.
 
 ```json
@@ -74,6 +84,7 @@ Here's a minimal example that you can immediately run on your linux terminal.
   ]
 }
 ```
+
 The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
 ```json
 {"size": "medium", "hash": "md5sum", "cpuid": "0", "time.real": 1.35, "time.sys": 1.19}
@@ -116,30 +127,10 @@ yuclid run -s size=small,medium cpuid=3,0
 ```
 Check out `yuclid run -h` for more info.
 
-## Plot API
-
-`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpu` can be emulated in a more customizable script, e.g.:
-
-```python
-import yuclid.plot
-import matplotlib.pyplot as plt
-
-fig, ax = plt.subplots()
-
-# just like the CLI
-cli_args = [
-  "results.json",
-  "-x",
-  "size",
-  "-z",
-  "cpu"
-]
-df = yuclid.plot.draw(fig, ax, cli_args)
-plt.show()
-```
-
 ## Advanced Example
 
+This next example shows how you _could_ track more than one metric of a program compiled with different compilers, a different number of threads and
+customize which input is used based on how many threads are used.
 
 ```json
 {
@@ -213,3 +204,24 @@ plt.show()
 }
 ```
 
+## Plot API
+
+`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpu` can be emulated in a more customizable script, e.g.:
+
+```python
+import yuclid.plot
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+
+# just like the CLI
+cli_args = [
+  "results.json",
+  "-x",
+  "size",
+  "-z",
+  "cpu"
+]
+df = yuclid.plot.draw(fig, ax, cli_args)
+plt.show()
+```
