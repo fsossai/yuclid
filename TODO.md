@@ -1,1 +1,2 @@
 - [ ] Fix bug: exception when a point setup command uses refers to a dimension that has conditions involving dimensions outside of `on`
+- [ ] Fix bug: contitions can alter the expected order of the experiments

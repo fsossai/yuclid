@@ -2,47 +2,63 @@
 
 *Combinatorially explode your experiments*
 
-Yuclid is an experiment orchestration tool for running experiments with a combinatorially large number of parameters and collecting custom metrics in a single JSON file for easy post-processing.
+Yuclid is a tool for orchestrating experiments with a combinatorially large number of parameters.
+It collects custom metrics in a single JSON file for easy post-processing.
 Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
 It also provides a unique way of plotting data (`yuclid plot`) interactively, browsing slices of the results using the arrow keys.
 
 The **geometrical metaphor** is that each experiment is a point in a multidimensional discrete space formed by all combinations of user-defined parameters.
 
+## What kind of experiments?
+
+Anything that can be expressed in a single (pipelined) command that generates one or more numbers.
+Since programs' outputs are often verbose and the target metric is contained in a single line,
+metrics can be arbitrarily defined in terms of other commands, e.g., regular expressions (see example).
+
+Here's a list of use-case ideas:
+- Measuring the impact of different optimization levels of different **compilers** on different programs
+- Counting cache misses under different **memory allocators** on different inputs
+- Measuring strong scaling **parallel programs** given different thread affinities
+- Evaluating different compression algorithms on different inputs with different compression levels
+- Organizing **perf** counters alongside custom metrics e.g., max RSS, in a self-contained JSON file
+- Creating reproducible artifacts for **research** software
+- All of the above combined!
+
 ## Installation
 
 Requires python >= 3.8
 
-Current status:
+Development head:
 ```
 pip install git+https://github.com/fsossai/yuclid.git
 ```
 
-Latest release:
+Stable release:
 ```
 pip install yuclid
 ```
 
-- **`yuclid run`**: Run experiments with with all combination of registered parameters.
+- **`yuclid run`**: Run experiments with all combinations of the defined parameters.
 - **`yuclid plot`**: Interactively visualizes the results produced by `yuclid run`.
 
 ## Configuration for `yuclid run`
 
-Key sections:
+Key sections of `yuclid.json`:
 - **`env`**: Environment variables and constants
 - **`setup`**: Commands to run before experiments (`global`) or for specific parameter combinations (`point`)
 - **`trials`**: The actual experiment commands that generate metrics to collect
-- **`metrics`**: How to extract a give metric from the data collected by the trials
+- **`metrics`**: How to extract a given metric from the data collected by the trials
 - **`space`**: Dimension definitions - all combinations will be explored
 - **`order`**: Execution order of parameter combinations
 
 Parameters can be simple lists or objects with `name`/`value` pairs.
-Use `${yuclid.x}` to reference dimension values in commands, and `${yuclid.@}` for unique output filenames.
+Use `${yuclid.x}` in a command to reference the value of dimension `x`, and `${yuclid.@}` for a unique output filename.
 `${yuclid.x}` is an alias for `${yuclid.x.value}`.
 
 ## Minimal Example
 
-Suppose you want to time a few different hash commands on different input sizes and also measure the variance in execution time in different cores.
-The dimensions of this experiment, i.e., the space, would be the _size_ of the input, _hash_ command to use and _cpuid_.
+Suppose you want to time a compression algorithm on different input sizes and also measure the execution time variance across cores.
+The dimensions of this experiment, i.e., the space, would be the _size_ of the input, the _compression_ level and the _cpuid_.
 Yuclid uses a `yuclid.json` configuration file to define the space and other experiment parameters.
 Here's a minimal example that you can immediately run on your linux terminal.
 
@@ -52,25 +68,31 @@ Here's a minimal example that you can immediately run on your linux terminal.
     "size": [
       {
         "name": "small",
-        "value": 100000
+        "value": "10M"
       },
       {
         "name": "medium",
-        "value": 1000000
+        "value": "20M"
       },
       {
         "name": "large",
-        "value": 10000000
+        "value": "50M"
       }
     ],
-    "hash": [
-      "md5sum",
-      "sha256sum"
-    ],
-    "cpuid": [0, 1, 2, 3]
+    "cpuid": [0, 1, 2, 3],
+    "compression": [
+      {
+        "name": "lowest",
+        "value": 1
+      },
+      {
+        "name": "highest",
+        "value": 9
+      }
+    ]
   },
   "trials": [
-    "time -p taskset -c ${yuclid.cpuid} head -${yuclid.size} /dev/urandom | ${yuclid.hash}"
+    "time -p taskset -c ${yuclid.cpuid} head -c ${yuclid.size} /dev/urandom | gzip -${yuclid.compression} >/dev/null"
   ],
   "metrics": [
     {
@@ -84,53 +106,51 @@ Here's a minimal example that you can immediately run on your linux terminal.
   ]
 }
 ```
-
-The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
-```json
-{"size": "medium", "hash": "md5sum", "cpuid": "0", "time.real": 1.35, "time.sys": 1.19}
-{"size": "medium", "hash": "md5sum", "cpuid": "1", "time.real": 1.36, "time.sys": 1.2}
-{"size": "medium", "hash": "md5sum", "cpuid": "2", "time.real": 1.35, "time.sys": 1.2}
-{"size": "medium", "hash": "md5sum", "cpuid": "3", "time.real": 1.33, "time.sys": 1.18}
-{"size": "medium", "hash": "sha256sum", "cpuid": "0", "time.real": 1.37, "time.sys": 1.19}
-{"size": "medium", "hash": "sha256sum", "cpuid": "1", "time.real": 1.36, "time.sys": 1.19}
-{"size": "medium", "hash": "sha256sum", "cpuid": "2", "time.real": 1.39, "time.sys": 1.2}
-{"size": "medium", "hash": "sha256sum", "cpuid": "3", "time.real": 1.37, "time.sys": 1.19}
-{"size": "small", "hash": "md5sum", "cpuid": "0", "time.real": 0.13, "time.sys": 0.12}
-{"size": "small", "hash": "md5sum", "cpuid": "1", "time.real": 0.13, "time.sys": 0.12}
-{"size": "small", "hash": "md5sum", "cpuid": "2", "time.real": 0.13, "time.sys": 0.12}
-{"size": "small", "hash": "md5sum", "cpuid": "3", "time.real": 0.13, "time.sys": 0.12}
-{"size": "small", "hash": "sha256sum", "cpuid": "0", "time.real": 0.14, "time.sys": 0.12}
-{"size": "small", "hash": "sha256sum", "cpuid": "1", "time.real": 0.14, "time.sys": 0.12}
-{"size": "small", "hash": "sha256sum", "cpuid": "2", "time.real": 0.14, "time.sys": 0.12}
-{"size": "small", "hash": "sha256sum", "cpuid": "3", "time.real": 0.14, "time.sys": 0.12}
-{"size": "large", "hash": "md5sum", "cpuid": "0", "time.real": 13.29, "time.sys": 11.74}
-{"size": "large", "hash": "md5sum", "cpuid": "1", "time.real": 13.34, "time.sys": 11.82}
-{"size": "large", "hash": "md5sum", "cpuid": "2", "time.real": 13.38, "time.sys": 11.81}
-{"size": "large", "hash": "md5sum", "cpuid": "3", "time.real": 13.31, "time.sys": 11.74}
-{"size": "large", "hash": "sha256sum", "cpuid": "0", "time.real": 13.61, "time.sys": 11.81}
-{"size": "large", "hash": "sha256sum", "cpuid": "1", "time.real": 13.66, "time.sys": 11.88}
-{"size": "large", "hash": "sha256sum", "cpuid": "2", "time.real": 13.84, "time.sys": 12.02}
-{"size": "large", "hash": "sha256sum", "cpuid": "3", "time.real": 13.62, "time.sys": 11.82}
-
-```
-These results can be displayed with `yuclid plot`, e.g.:
-```
-yuclid plot results.json -x size
-yuclid plot results.json -x hash
-yuclid plot results.json -x size -z cpuid
-```
 The same configuration can be executed on slices of the space (i.e. subspaces):
 ```
+yuclid run              # full experiment
 yuclid run -s size=medium
 yuclid run -s cpuid=0,1,2
 yuclid run -s size=small,medium cpuid=3,0
 ```
-Check out `yuclid run -h` for more info.
+The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
+
+```json
+{"size": "small", "cpuid": "0", "compression": "lowest", "time.real": 0.37, "time.sys": 0.05}
+{"size": "small", "cpuid": "0", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
+{"size": "small", "cpuid": "1", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
+{"size": "small", "cpuid": "1", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
+{"size": "small", "cpuid": "2", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
+{"size": "small", "cpuid": "2", "compression": "highest", "time.real": 0.32, "time.sys": 0.05}
+{"size": "small", "cpuid": "3", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
+{"size": "small", "cpuid": "3", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
+{"size": "medium", "cpuid": "0", "compression": "lowest", "time.real": 0.62, "time.sys": 0.11}
+{"size": "medium", "cpuid": "0", "compression": "highest", "time.real": 0.66, "time.sys": 0.1}
+{"size": "medium", "cpuid": "1", "compression": "lowest", "time.real": 0.62, "time.sys": 0.11}
+{"size": "medium", "cpuid": "1", "compression": "highest", "time.real": 0.66, "time.sys": 0.1}
+{"size": "medium", "cpuid": "2", "compression": "lowest", "time.real": 0.64, "time.sys": 0.11}
+{"size": "medium", "cpuid": "2", "compression": "highest", "time.real": 0.65, "time.sys": 0.1}
+{"size": "medium", "cpuid": "3", "compression": "lowest", "time.real": 0.67, "time.sys": 0.11}
+{"size": "medium", "cpuid": "3", "compression": "highest", "time.real": 0.67, "time.sys": 0.11}
+{"size": "large", "cpuid": "0", "compression": "lowest", "time.real": 1.59, "time.sys": 0.27}
+{"size": "large", "cpuid": "0", "compression": "highest", "time.real": 1.58, "time.sys": 0.26}
+{"size": "large", "cpuid": "1", "compression": "lowest", "time.real": 1.59, "time.sys": 0.28}
+{"size": "large", "cpuid": "1", "compression": "highest", "time.real": 1.6, "time.sys": 0.27}
+{"size": "large", "cpuid": "2", "compression": "lowest", "time.real": 1.54, "time.sys": 0.38}
+{"size": "large", "cpuid": "2", "compression": "highest", "time.real": 1.69, "time.sys": 0.26}
+{"size": "large", "cpuid": "3", "compression": "lowest", "time.real": 1.54, "time.sys": 0.27}
+{"size": "large", "cpuid": "3", "compression": "highest", "time.real": 1.59, "time.sys": 0.27}
+```
+
+These results can be displayed with `yuclid plot`, e.g.:
+```
+yuclid plot results.json -x compression
+yuclid plot results.json -x size -z cpuid
+```
 
 ## Advanced Example
 
-This next example shows how you _could_ track more than one metric of a program compiled with different compilers, a different number of threads and
-customize which input is used based on how many threads are used.
+The following is a template showing how to track metrics of a program compiled with different compilers, running with a different number of threads and customize the input based on how many threads are used.
 
 ```json
 {
@@ -206,7 +226,7 @@ customize which input is used based on how many threads are used.
 
 ## Plot API
 
-`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpu` can be emulated in a more customizable script, e.g.:
+`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpuid` can be emulated in a more customizable script, e.g.:
 
 ```python
 import yuclid.plot
@@ -220,7 +240,7 @@ cli_args = [
   "-x",
   "size",
   "-z",
-  "cpu"
+  "cpuid"
 ]
 df = yuclid.plot.draw(fig, ax, cli_args)
 plt.show()
