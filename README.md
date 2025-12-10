@@ -4,12 +4,13 @@
 
 <p><img src="space.png" align="right" width="350" height="298"/></p>
 
-Yuclid is a tool for orchestrating experiments with a combinatorially large number of parameters.
+Yuclid is a tool for orchestrating experiments in N-dimensional irregular spaces of parameters.
 It collects custom metrics in a single JSON file for easy post-processing.
 Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
 It also provides a unique way of plotting data (`yuclid plot`) interactively, browsing slices of the results using the arrow keys.
 
 The **geometrical metaphor** is that each experiment is a point in a multidimensional discrete space formed by all combinations of user-defined parameters.
+By specifying extra conditions (see advanced example), some hyper regions can be carved out of the original space.
 
 ## What kind of experiments?
 
