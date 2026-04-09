@@ -79,6 +79,12 @@ def get_parser():
         help="Show experiment that would run",
     )
     run_parser.add_argument(
+        "--parallel-trials",
+        default=False,
+        action="store_true",
+        help="Run all trials in the subspace in parallel",
+    )
+    run_parser.add_argument(
         "-m",
         "--metrics",
         nargs="*",

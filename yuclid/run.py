@@ -1,6 +1,7 @@
 from yuclid.log import LogLevel, report
 from datetime import datetime
 import concurrent.futures
+import threading
 import pandas as pd
 import subprocess
 import itertools
@@ -703,7 +704,7 @@ def get_progress(i, subspace_size):
     return "[{}/{}]".format(i, subspace_size)
 
 
-def run_point_trials(settings, data, execution, f, i, point):
+def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
     os.makedirs(
         os.path.join(settings["temp_dir"], settings["now"]),
         exist_ok=True,
@@ -832,13 +833,20 @@ def run_point_trials(settings, data, execution, f, i, point):
             )
 
     result = {k: x["name"] for k, x in point_map.items()}
-    if settings["fold"]:
-        result.update(metric_values_df.to_dict(orient="list"))
-        f.write(json.dumps(result) + "\n")
-    else:
-        for record in metric_values_df.to_dict(orient="records"):
-            result.update(record)
+    if file_lock is not None:
+        file_lock.acquire()
+    try:
+        if settings["fold"]:
+            result.update(metric_values_df.to_dict(orient="list"))
             f.write(json.dumps(result) + "\n")
+        else:
+            for record in metric_values_df.to_dict(orient="records"):
+                result.update(record)
+                f.write(json.dumps(result) + "\n")
+        f.flush()
+    finally:
+        if file_lock is not None:
+            file_lock.release()
 
     report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
     for metric_name, values in collected_metrics.items():
@@ -861,7 +869,6 @@ def run_point_trials(settings, data, execution, f, i, point):
         point_to_string(point),
         "completed",
     )
-    f.flush()
 
 
 def valid_conditions(point, order):
@@ -957,9 +964,43 @@ def run_subspace_trials(settings, data, execution):
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         with open(settings["output"], "a") as f:
-            for i, point in enumerate(execution["subspace_points"], start=1):
-                run_point_trials(settings, data, execution, f, i, point)
-                f.flush()
+            if settings["parallel_trials"]:
+                max_workers = min(
+                    execution["subspace_size"], os.cpu_count() or 1
+                )
+                report(
+                    LogLevel.INFO,
+                    f"running trials in parallel with {max_workers} workers",
+                )
+                file_lock = threading.Lock()
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max_workers
+                ) as executor:
+                    futures = []
+                    for i, point in enumerate(
+                        execution["subspace_points"], start=1
+                    ):
+                        future = executor.submit(
+                            run_point_trials,
+                            settings,
+                            data,
+                            execution,
+                            f,
+                            i,
+                            point,
+                            file_lock,
+                        )
+                        futures.append(future)
+                    for future in concurrent.futures.as_completed(futures):
+                        exc = future.exception()
+                        if exc is not None:
+                            report(LogLevel.ERROR, "trial failed", str(exc))
+            else:
+                for i, point in enumerate(
+                    execution["subspace_points"], start=1
+                ):
+                    run_point_trials(settings, data, execution, f, i, point)
+                    f.flush()
 
 
 def validate_dimensions(subspace):
