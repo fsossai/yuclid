@@ -80,9 +80,13 @@ def get_parser():
     )
     run_parser.add_argument(
         "--parallel-trials",
-        default=False,
-        action="store_true",
-        help="Run all trials in the subspace in parallel",
+        type=int,
+        default=0,
+        nargs="?",
+        const=-1,
+        metavar="N",
+        help="Run trials in the subspace in parallel. "
+        "Optionally specify the max number of parallel workers (default: number of CPUs)",
     )
     run_parser.add_argument(
         "-m",

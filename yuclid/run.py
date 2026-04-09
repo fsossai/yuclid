@@ -964,10 +964,11 @@ def run_subspace_trials(settings, data, execution):
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
         with open(settings["output"], "a") as f:
-            if settings["parallel_trials"]:
-                max_workers = min(
-                    execution["subspace_size"], os.cpu_count() or 1
-                )
+            if settings["parallel_trials"] != 0:
+                if settings["parallel_trials"] < 0:
+                    max_workers = execution["subspace_size"]
+                else:
+                    max_workers = settings["parallel_trials"]
                 report(
                     LogLevel.INFO,
                     f"running trials in parallel with {max_workers} workers",
