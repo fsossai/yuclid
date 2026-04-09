@@ -222,6 +222,13 @@ def get_parser():
         default=[],
         help="Lock a free dimension with explicit values. E.g. -L a=1 b=value",
     )
+    plot_parser.add_argument(
+        "--array-reduce",
+        default=None,
+        choices=["mean", "median", "min", "max", "sum"],
+        help="Reduce array-valued metrics to a scalar using the given function. "
+        "If not set, array elements are exploded into separate rows (samples).",
+    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 

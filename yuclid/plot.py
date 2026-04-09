@@ -201,6 +201,26 @@ def generate_dataframe(ctx):
     ctx["df"] = df
 
 
+def explode_array_metrics(ctx):
+    df = ctx["df"]
+    args = ctx["args"]
+    list_cols = [col for col in df.columns if df[col].apply(lambda x: isinstance(x, list)).any()]
+    if not list_cols:
+        return
+    reducer = args.array_reduce
+    if reducer is not None:
+        func = {"mean": np.mean, "median": np.median, "min": np.min, "max": np.max, "sum": np.sum}[reducer]
+        for col in list_cols:
+            df[col] = df[col].apply(lambda x: func(x) if isinstance(x, list) else x)
+    else:
+        for col in list_cols:
+            df[col] = df[col].apply(lambda x: x if isinstance(x, list) else [x])
+        df = df.explode(list_cols, ignore_index=True)
+    for col in list_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    ctx["df"] = df
+
+
 def rescale(ctx):
     df = ctx["df"]
     args = ctx["args"]
@@ -219,6 +239,7 @@ def draw(fig, ax, cli_args):
     locate_files(ctx)
     generate_dataframe(ctx)
     generate_derived_metrics(ctx)
+    explode_array_metrics(ctx)
     validate_args(ctx)
     reorder_and_numericize(ctx)
     rescale(ctx)
@@ -1052,6 +1073,7 @@ def launch(args):
     locate_files(ctx)
     generate_dataframe(ctx)
     generate_derived_metrics(ctx)
+    explode_array_metrics(ctx)
     validate_args(ctx)
     reorder_and_numericize(ctx)
     rescale(ctx)
