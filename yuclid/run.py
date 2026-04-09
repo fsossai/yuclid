@@ -750,6 +750,7 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
             env=execution["env"],
             universal_newlines=True,
             capture_output=True,
+            cwd=settings["cwd"],
         )
 
         with open(f"{point_id}.out", "w") as output_file:
@@ -780,6 +781,7 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
             universal_newlines=True,
             capture_output=True,
             env=execution["env"],
+            cwd=settings["cwd"],
         )
         text = command_output.stdout.strip()
 
@@ -1123,7 +1125,8 @@ def build_settings(args):
     else:
         settings["output"] = args.output
 
-    report(LogLevel.INFO, "working directory", os.getcwd())
+    settings["cwd"] = os.getcwd()
+    report(LogLevel.INFO, "working directory", settings["cwd"])
     report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
     report(LogLevel.INFO, "output data", settings["output"])
     report(
