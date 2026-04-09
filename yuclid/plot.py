@@ -159,7 +159,7 @@ def generate_dataframe(ctx):
     for file in local_files:
         file = pathlib.Path(file)
         try:
-            if file.suffix == ".json":
+            if file.suffix in (".json", ".jsonl"):
                 dfs[file.stem] = pd.read_json(file, lines=True, dtype=False)
             elif file.suffix == ".csv":
                 dfs[file.stem] = pd.read_csv(file)
