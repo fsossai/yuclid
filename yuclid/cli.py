@@ -223,6 +223,14 @@ def get_parser():
         help="Lock a free dimension with explicit values. E.g. -L a=1 b=value",
     )
     plot_parser.add_argument(
+        "-C",
+        "--combine",
+        nargs="*",
+        default=[],
+        help="Combine dimensions into a single one via cartesian product. "
+        "E.g. -C a,b c,d will create two new dimensions 'a_b' and 'c_d'.",
+    )
+    plot_parser.add_argument(
         "--array-reduce",
         default=None,
         choices=["mean", "median", "min", "max", "sum"],

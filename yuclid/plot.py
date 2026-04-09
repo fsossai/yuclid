@@ -221,6 +221,21 @@ def explode_array_metrics(ctx):
     ctx["df"] = df
 
 
+def combine_dimensions(ctx):
+    df = ctx["df"]
+    args = ctx["args"]
+    for spec in args.combine:
+        dims = [d.strip() for d in spec.split(",")]
+        for d in dims:
+            if d not in df.columns:
+                report(LogLevel.FATAL, f"column '{d}' not found for --combine",
+                       hint="available columns: {}".format(", ".join(df.columns)))
+        new_name = "_".join(dims)
+        df[new_name] = df[dims].astype(str).agg("_".join, axis=1)
+        df.drop(columns=dims, inplace=True)
+    ctx["df"] = df
+
+
 def rescale(ctx):
     df = ctx["df"]
     args = ctx["args"]
@@ -238,6 +253,7 @@ def draw(fig, ax, cli_args):
     validate_files(ctx)
     locate_files(ctx)
     generate_dataframe(ctx)
+    combine_dimensions(ctx)
     generate_derived_metrics(ctx)
     explode_array_metrics(ctx)
     validate_args(ctx)
@@ -1077,6 +1093,7 @@ def launch(args):
     validate_files(ctx)
     locate_files(ctx)
     generate_dataframe(ctx)
+    combine_dimensions(ctx)
     generate_derived_metrics(ctx)
     explode_array_metrics(ctx)
     validate_args(ctx)
