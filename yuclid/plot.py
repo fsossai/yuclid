@@ -768,8 +768,13 @@ def validate_args(ctx):
     validate_dimensions(ctx, [args.x])
 
     # Y-axis
+    exclude = [args.x] + ([args.z] if args.z else [])
+    for norm in (args.ref_norm, args.x_norm, args.z_norm):
+        for item in norm or []:
+            exclude.append(item.split("=")[0])
+    exclude = [c for c in exclude if c in df.columns]
     numeric_cols = (
-        df.drop(columns=[args.x]).select_dtypes(include=[np.number]).columns.tolist()
+        df.drop(columns=exclude).select_dtypes(include=[np.number]).columns.tolist()
     )
     if len(args.y) == 0:
         # find the floating point numeric columns
