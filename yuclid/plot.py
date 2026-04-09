@@ -12,6 +12,11 @@ import pathlib
 import math
 
 
+def _esc(text):
+    """Escape underscores for matplotlib mathtext."""
+    return str(text).replace("_", r"\_")
+
+
 def get_current_config(ctx):
     df = ctx["df"]
     domains = ctx["domains"]
@@ -264,7 +269,7 @@ def update_table(ctx):
     for i, dim in enumerate(free_dims, start=1):
         if dim in ctx["lock_dims"]:
             value = ctx["lock_dims"][dim]
-            fields.append(rf"$\mathbf{{{dim}}}$ (locked)")
+            fields.append(rf"$\mathbf{{{_esc(dim)}}}$ (locked)")
             if dim == free_dims[selected_index]:
                 values.append(f"{value}")
                 arrows.append(f"{arrow_up}{arrow_down}")
@@ -273,7 +278,7 @@ def update_table(ctx):
                 arrows.append("")
         else:
             value = domains[dim][position[dim]]
-            fields.append(rf"$\mathbf{{{dim}}}$")
+            fields.append(rf"$\mathbf{{{_esc(dim)}}}$")
             if dim == free_dims[selected_index]:
                 values.append(f"{value}")
                 arrows.append(f"{arrow_up}{arrow_down}")
@@ -484,7 +489,7 @@ def update_plot(ctx, padding_factor=1.05):
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         if y == y_axis:
-            title_parts.append(rf"{i}: $\mathbf{{{y}}}$")
+            title_parts.append(rf"{i}: $\mathbf{{{_esc(y)}}}$")
         else:
             title_parts.append(f"{i}: {y}")
     title = " | ".join(title_parts) + "\n" + y_range
@@ -655,15 +660,15 @@ def save_to_file(ctx, outfile=None):
     s = "gain" if args.norm_reverse else "normalized"
     if args.ref_norm:
         wrt = " | ".join(args.ref_norm)
-        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
+        title = rf"$\mathbf{{{_esc(name)}}}$ ({s} w.r.t {wrt})"
     elif args.x_norm:
         wrt = " | ".join(args.x_norm)
-        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
+        title = rf"$\mathbf{{{_esc(name)}}}$ ({s} w.r.t {wrt})"
     elif args.z_norm:
         wrt = " | ".join(args.z_norm)
-        title = rf"$\mathbf{{{name}}}$ ({s} w.r.t {wrt})"
+        title = rf"$\mathbf{{{_esc(name)}}}$ ({s} w.r.t {wrt})"
     else:
-        title = rf"$\mathbf{{{name}}}$"
+        title = rf"$\mathbf{{{_esc(name)}}}$"
 
     title += "\n" + get_status_description(ctx)
     ctx["fig"].suptitle(title)
