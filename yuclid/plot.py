@@ -103,7 +103,7 @@ def ref_normalization(df, config, args, y_axis):
 def validate_files(ctx):
     args = ctx["args"]
     valid_files = []
-    valid_formats = [".json", ".csv"]
+    valid_formats = [".json", ".jsonl", ".csv"]
     for file in args.files:
         if pathlib.Path(file).suffix in valid_formats:
             valid_files.append(file)
