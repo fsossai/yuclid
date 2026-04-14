@@ -96,6 +96,12 @@ def get_parser():
         help="Specify a list of metrics to compute among the registered ones. "
         "If empty, all metrics will be computed.",
     )
+    run_parser.add_argument(
+        "--no-setup",
+        default=False,
+        action="store_true",
+        help="Skip the setup phase and run trials directly",
+    )
 
     # plot subcommand
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")

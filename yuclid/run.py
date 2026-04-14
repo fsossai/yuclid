@@ -1271,7 +1271,10 @@ def run_experiments(settings, data, order, env, preset_name=None):
         subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"]
     )
     validate_execution(execution, data)
-    run_setup(settings, data, execution)
+    if not settings["no_setup"]:
+        run_setup(settings, data, execution)
+    else:
+        report(LogLevel.INFO, "skipping setup phase")
     run_subspace_trials(settings, data, execution)
 
 
