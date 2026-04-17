@@ -1,6 +1,7 @@
 from yuclid import __version__
 import yuclid.spread
 import yuclid.plot
+import yuclid.tplot
 import yuclid.run
 import yuclid.log
 import argparse
@@ -103,40 +104,55 @@ def get_parser():
         help="Skip the setup phase and run trials directly",
     )
 
-    # plot subcommand
+    # plot subcommand — GUI
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
-    plot_parser.add_argument(
+    _add_plot_args(plot_parser)
+
+    # tplot subcommand — terminal version of plot
+    tplot_parser = subparsers.add_parser(
+        "tplot", help="Plot data interactively in the terminal"
+    )
+    _add_plot_args(tplot_parser)
+
+    parser.add_argument("--version", action="version", version="yuclid " + __version__)
+
+    return parser
+
+
+def _add_plot_args(p):
+    """Register the shared argument set used by both `plot` and `tplot`."""
+    p.add_argument(
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
     )
-    plot_parser.add_argument("-x", required=True, help="X-axis column name")
-    plot_parser.add_argument("-y", nargs="*", default=[], help="Y-axis column names")
-    plot_parser.add_argument("-z", help="Grouping column name")
-    plot_parser.add_argument(
+    p.add_argument("-x", required=True, help="X-axis column name")
+    p.add_argument("-y", nargs="*", default=[], help="Y-axis column names")
+    p.add_argument("-z", help="Grouping column name")
+    p.add_argument(
         "-X",
         "--x-norm",
         nargs="*",
         help="Normalize each x-group w.r.t. a value per group",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-Z",
         "--z-norm",
         nargs="*",
         help="Normalize each z-group w.r.t. a value per group",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-R",
         "--ref-norm",
         nargs="*",
         help="Normalize all values w.r.t. a single reference",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-r",
         "--norm-reverse",
         action="store_true",
         default=False,
         help="Reverse normalization. E.g. a/x instead of x/a",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-m",
         "--spread-measure",
         default="pi,95",
@@ -144,91 +160,91 @@ def get_parser():
             " - ".join(yuclid.spread.available)
         ),
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-l",
         "--lines",
         action="store_true",
         default=False,
         help="Plot with lines instead of bars",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-g",
         "--geomean",
         action="store_true",
         default=False,
         help="Include a geomean summary",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-f",
         "--filter",
         nargs="*",
         default=None,
         help="Filter dimension with explicit values. E.g. -f a=1 b=value",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-u",
         "--unit",
         default=None,
         help="Unit of measurement for the Y-axis",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-d",
         "--digits",
         default=2,
         help="Number of digits to display on annotations",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--colorblind",
         action="store_true",
         default=False,
         help="Enable colorblind palette",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--show-missing",
         action="store_true",
         default=False,
         help="Show missing experiments if any",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--rescale",
         type=float,
         default=1.0,
         help="Rescale Y-axis values by multiplying by this number",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-A",
         "--annotate",
         action="store_true",
         default=False,
         help="Annotate Y values on each bar or point in the plot",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--annotate-max",
         action="store_true",
         default=False,
         help="Annotate only the maximum Y value in each group",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--annotate-min",
         action="store_true",
         default=False,
         help="Annotate only the minimum Y value in each group",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--no-merge-inputs",
         action="store_true",
         default=False,
         help="Treat each input file separately instead of merging them (default: merged). "
         "A new index column 'file' will be created for each input file.",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-L",
         "--lock-dims",
         nargs="*",
         default=[],
         help="Lock a free dimension with explicit values. E.g. -L a=1 b=value",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "-C",
         "--combine",
         nargs="*",
@@ -236,17 +252,13 @@ def get_parser():
         help="Combine dimensions into a single one via cartesian product. "
         "E.g. -C a,b c,d will create two new dimensions 'a_b' and 'c_d'.",
     )
-    plot_parser.add_argument(
+    p.add_argument(
         "--array-reduce",
         default=None,
         choices=["mean", "median", "min", "max", "sum"],
         help="Reduce array-valued metrics to a scalar using the given function. "
         "If not set, array elements are exploded into separate rows (samples).",
     )
-
-    parser.add_argument("--version", action="version", version="yuclid " + __version__)
-
-    return parser
 
 
 def main():
@@ -258,6 +270,8 @@ def main():
         yuclid.run.launch(args)
     elif args.command == "plot":
         yuclid.plot.launch(args)
+    elif args.command == "tplot":
+        yuclid.tplot.launch(args)
 
 
 if __name__ == "__main__":
