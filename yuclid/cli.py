@@ -114,6 +114,22 @@ def get_parser():
     )
     _add_plot_args(tplot_parser)
 
+    panorama_parser = subparsers.add_parser(
+        "panorama", help="Use a local LLM to suggest meaningful visualizations"
+    )
+    panorama_parser.add_argument(
+        "files", metavar="FILES", type=str, nargs="+",
+        help="JSON Lines or CSV result file(s)"
+    )
+    panorama_parser.add_argument(
+        "--model", default=None,
+        help="Ollama model name (default: auto-select from available models)"
+    )
+    panorama_parser.add_argument(
+        "--ollama-url", default="http://localhost:11434",
+        help="Base URL for the Ollama REST API (default: http://localhost:11434)"
+    )
+
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
     return parser
@@ -272,6 +288,9 @@ def main():
         yuclid.plot.launch(args)
     elif args.command == "tplot":
         yuclid.tplot.launch(args)
+    elif args.command == "panorama":
+        from yuclid import panorama as _panorama
+        _panorama.launch(args)
 
 
 if __name__ == "__main__":
