@@ -132,6 +132,31 @@ def _render(ctx):
     _draw_status(ctx)
 
 
+def _place_legend(sub_df, x_order, x_indices, y_axis, z_dom, colors, args, estimator):
+    """Place a manual legend, choosing upper-left or upper-right to avoid tall bars."""
+    if not len(z_dom):
+        return
+    n = len(x_order)
+    half = max(1, n // 2)
+    def _side_avg(xs):
+        vals = sub_df[sub_df[args.x].isin(xs)][y_axis]
+        return float(vals.median()) if len(vals) > 0 else 0.0
+    left_avg = _side_avg(x_order[:half])
+    right_avg = _side_avg(x_order[n - half:])
+    use_right = left_avg > right_avg
+
+    y_vals = sub_df[y_axis].dropna()
+    y_max = float(y_vals.max()) if len(y_vals) else 1.0
+    y_min = float(y_vals.min()) if len(y_vals) else 0.0
+    y_step = max((y_max - y_min) * 0.07, abs(y_max) * 0.05, 0.01)
+
+    x_pos = x_indices[-1] if use_right else x_indices[0]
+    alignment = "right" if use_right else "left"
+    for s, (z_val, color) in enumerate(zip(z_dom, colors)):
+        label = f"██ {z_val}"
+        ptx.text(label, x_pos, y_max - s * y_step, color=color, alignment=alignment)
+
+
 def _draw_chart(ctx, width=None, height=None):
     args = ctx["args"]
     df = ctx["df"]
@@ -180,7 +205,7 @@ def _draw_chart(ctx, width=None, height=None):
                 .apply(estimator)
                 .reindex(x_order)
             )
-            ptx.plot(x_indices, y_at_x.tolist(), label=str(z_val), color=colors[i])
+            ptx.plot(x_indices, y_at_x.tolist(), color=colors[i])
         ptx.xticks(x_indices, x_labels)
     else:
         all_ys = []
@@ -194,9 +219,9 @@ def _draw_chart(ctx, width=None, height=None):
             all_ys.append(y_at_x.fillna(0).tolist())
 
         if len(z_dom) == 1:
-            ptx.bar(x_labels, all_ys[0], label=str(z_dom[0]), color=colors[0])
+            ptx.bar(x_labels, all_ys[0], color=colors[0])
         else:
-            ptx.multiple_bar(x_labels, all_ys, labels=[str(z) for z in z_dom], color=colors)
+            ptx.multiple_bar(x_labels, all_ys, color=colors)
 
     ptx.xlabel(str(args.x))
 
@@ -214,10 +239,13 @@ def _draw_chart(ctx, width=None, height=None):
         title_parts.append(f"{marker} {y}")
     ptx.title(" | ".join(title_parts))
 
-    _annotate(args, sub_df, x_order, estimator, y_axis, z_dom)
+    _place_legend(sub_df, x_order, x_indices, y_axis, z_dom, colors, args, estimator)
+
+    if not ctx.get("_build"):
+        _annotate(args, sub_df, x_order, estimator, y_axis, z_dom)
 
     if ctx.get("_build"):
-        return ptx.build()
+        return ptx.build(), sub_df, x_order, estimator
     ptx.show()
 
 
@@ -383,8 +411,39 @@ def _save(ctx):
         except OSError:
             width, chart_height = 120, 35
         chart_height = max(chart_height, 10)
-        text = _draw_chart(ctx, width=width, height=chart_height)
+        text, sub_df, x_order, estimator = _draw_chart(ctx, width=width, height=chart_height)
+        # Replace colored bar blocks with per-group ASCII chars before stripping ANSI.
+        _fill_chars = ["#", "@", "*", "%", "o", "x", "=", "~", "&", "^"]
+        for i, color in enumerate(ctx.get("colors", [])):
+            r, g, b = color
+            ansi_color = re.escape(f"\x1b[38;2;{r};{g};{b}m")
+            fill = _fill_chars[i % len(_fill_chars)]
+            text = re.sub(ansi_color + "(█+)", lambda m, f=fill: f * len(m.group(1)), text)
         text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+        args = ctx["args"]
+        y_axis = ctx["y_axis"]
+        z_dom = ctx["z_dom"]
+        if args.annotate or args.annotate_max or args.annotate_min:
+            fmt = f"{{:.{args.digits}f}}"
+            col_w = max(len(str(v)) for v in x_order) + 2
+            val_w = args.digits + 4
+            header = " " * (val_w + 2) + "".join(str(x).ljust(col_w) for x in x_order)
+            text += "\n" + header + "\n"
+            for z_val in z_dom:
+                group = sub_df[sub_df[args.z] == z_val]
+                y_at_x = (
+                    group.groupby(args.x)[y_axis]
+                    .apply(estimator)
+                    .reindex(x_order)
+                )
+                if args.annotate_max:
+                    display = {x: (fmt.format(y_at_x[x]) if x == y_at_x.idxmax() else "-") for x in x_order}
+                elif args.annotate_min:
+                    display = {x: (fmt.format(y_at_x[x]) if x == y_at_x.idxmin() else "-") for x in x_order}
+                else:
+                    display = {x: fmt.format(y_at_x[x]) if not pd.isna(y_at_x[x]) else "-" for x in x_order}
+                row = str(z_val).ljust(val_w + 2) + "".join(display[x].ljust(col_w) for x in x_order)
+                text += row + "\n"
         config = get_current_config(ctx)
         if config:
             footer = "  ".join(f"{k}={v}" for k, v in config.items())

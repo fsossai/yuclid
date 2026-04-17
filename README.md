@@ -156,6 +156,37 @@ yuclid plot results.json -x size -z cpuid
 ```
 Interact with the plot using arrow keys to move around dimensions and number keys to change the metric!
 
+Or entirely in the terminal with `yuclid tplot`:
+```
+yuclid tplot results.jsonl -x size -z compression -y time.real -A
+```
+```
+                                    [1] time.real                               
+    ┌──────────────────────────────────────────────────────────────────────────┐
+1.59┤###########  @@@@@@@@@@@                             ## highest           │
+    │###########  @@@@@@@@@@@                              @@ lowest           │
+    │###########  @@@@@@@@@@@                                                  │
+1.33┤###########  @@@@@@@@@@@                                                  │
+    │###########  @@@@@@@@@@@                                                  │
+1.06┤###########  @@@@@@@@@@@                                                  │
+    │###########  @@@@@@@@@@@                                                  │
+    │###########  @@@@@@@@@@@                                                  │
+0.80┤###########  @@@@@@@@@@@ ###########                                      │
+    │###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@                         │
+0.53┤###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@                         │
+    │###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@              @@@@@@@@@@@│
+0.27┤###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@│
+    │###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@│
+0.00┤###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@ ###########  @@@@@@@@@@@│
+    └───────────┬─────────────────────────┬────────────────────────┬───────────┘
+              large                    medium                    small          
+time.real                               size
+
+        large   medium  small
+highest 1.58    0.66    0.33
+lowest  1.59    0.62    0.37
+```
+
 ## Advanced Example
 
 The following is a template showing how to track metrics of a program compiled with different compilers, running with a different number of threads and customize the input based on how many threads are used.
