@@ -19,7 +19,7 @@ import os
 import pandas as pd
 
 
-_SYSTEM_PROMPT = """\
+_SUGGEST_SYSTEM_PROMPT = """\
 You are a data visualization assistant for the yuclid benchmarking tool.
 You will be given a description of an experiment dataset and the plotting capabilities of yuclid.
 Your task is to suggest 3 to 5 meaningful and distinct visualizations.
@@ -42,8 +42,37 @@ Example of valid output:
     "args": ["-x", "compression", "-y", "time.real", "-z", "size"]
   },
   {
-    "description": "Show time.real as a line plot across size, grouped by compression",
-    "args": ["-x", "size", "-y", "time.real", "-z", "compression", "--lines"]
+    "description": "Show time.real as a line plot across nthreads, grouped by impl",
+    "args": ["-x", "nthreads", "-y", "time.real", "-z", "impl", "--lines"]
+  },
+  {
+    "description": "Relative speedup over baseline impl, normalized per x-group",
+    "args": ["-x", "size", "-y", "time.real", "-z", "impl", "--z-norm", "impl=ref", "--geomean"]
+  }
+]
+"""
+
+_TRANSLATE_SYSTEM_PROMPT = """\
+You are a data visualization assistant for the yuclid benchmarking tool.
+The user will describe in natural language what they want to visualize.
+Your task is to translate their request into exactly ONE valid yuclid plot command.
+
+IMPORTANT RULES:
+- Only use dimension names and metric names EXACTLY as they appear in the schema.
+- Only use flags and values that are valid per the capability description.
+- The result must be a valid yuclid plot/tplot command argument list.
+- Do NOT invent new columns or flag names.
+- Respond ONLY with a JSON array containing exactly one element. No explanation text outside the JSON.
+
+The single element must be a JSON object with these fields:
+  "description": <one-sentence human-readable summary of what the plot shows>,
+  "args": <array of CLI argument strings, as if passed after the filename>
+
+Example of valid output:
+[
+  {
+    "description": "Relative speedup over baseline impl, normalized per x-group",
+    "args": ["-x", "size", "-y", "time.real", "-z", "impl", "--z-norm", "impl=ref", "--geomean"]
   }
 ]
 """
@@ -141,17 +170,46 @@ def build_capability_description(info):
         "  -z <dim>      Grouping/legend dimension (must differ from -x)",
         "",
         "Optional flags:",
-        "  --lines                    line plot instead of bar chart (good for ordered x-axis)",
-        "  --x-norm <dim>=<val>       normalize relative to a specific x-group value",
-        "  --z-norm <dim>=<val>       normalize relative to a specific z-group value",
-        "  --ref-norm <d>=<v> <d>=<v> normalize to a single reference point",
-        "  --geomean                  append geometric mean bar (bar charts only)",
-        "  -f <dim>=<val>             filter rows to a specific dimension value",
+        "  --lines",
+        "      Line plot instead of bar chart. Best when x-axis is numeric or ordered.",
+        "      Example: -x nthreads -y time -z impl --lines",
+        "",
+        "  --x-norm <x-dim>=<val>",
+        "      Normalize all y-values relative to a baseline x-group value.",
+        "      The dim in <x-dim>=<val> MUST match the value given to -x.",
+        "      Use to show relative speedup/slowdown across the x-axis.",
+        "      Example: -x size -y time -z compression --x-norm size=small",
+        "      (every bar is divided by the value at size=small within its z-group)",
+        "",
+        "  --z-norm <z-dim>=<val>",
+        "      Normalize all y-values relative to a baseline z-group value.",
+        "      The dim in <z-dim>=<val> MUST match the value given to -z.",
+        "      Use to compare groups relative to a reference group.",
+        "      Example: -x nthreads -y time -z impl --z-norm impl=ref",
+        "      (every bar is divided by the value of impl=ref at the same x)",
+        "",
+        "  --ref-norm <x-dim>=<val> <z-dim>=<val>",
+        "      Normalize all y-values relative to a single fixed reference point.",
+        "      Requires exactly two key=val pairs: one for the x dimension and one for the z dimension.",
+        "      The dims MUST match the values given to -x and -z respectively.",
+        "      Example: -x size -y time -z impl --ref-norm size=small impl=ref",
+        "      (all bars divided by the single value at size=small, impl=ref)",
+        "",
+        "  --geomean",
+        "      Append a geometric mean summary bar at the end (bar charts only).",
+        "      Most useful when combined with a normalization flag.",
+        "      Example: -x size -y time -z impl --z-norm impl=ref --geomean",
+        "",
+        "  -f <dim>=<val>",
+        "      Filter rows to a specific dimension value before plotting.",
+        "      Use when the data has many dimensions and you want to focus on one slice.",
+        "      Example: -x nthreads -y time -z malloc -f program=bc",
         "",
         "Constraints:",
         "  -x and -z must be different dimensions",
         "  --x-norm, --z-norm, --ref-norm are mutually exclusive",
         "  --geomean and --lines cannot be combined",
+        "  The value used in --x-norm / --z-norm / --ref-norm must exist in the data",
     ]
     return "\n".join(lines)
 
@@ -265,13 +323,12 @@ def _arrow_menu(title, items, detail_fn=None):
 
 def prompt_user(file_path, suggestions):
     labels = [s["description"] for s in suggestions]
-    detail = lambda i: " ".join(suggestions[i]["args"])
 
     idx = _arrow_menu("Suggested Visualizations  (↑↓ navigate, Enter select, q quit)",
-                      labels, detail_fn=detail)
+                      labels)
     chosen = suggestions[idx]
 
-    renderer_idx = _arrow_menu("Renderer", ["plot  (GUI)", "tplot  (terminal)"])
+    renderer_idx = _arrow_menu("", ["plot  (GUI)", "tplot  (terminal)"])
     renderer = "tplot" if renderer_idx == 1 else "plot"
 
     cmd = f"yuclid {renderer} {file_path} " + " ".join(chosen["args"])
@@ -298,6 +355,36 @@ def execute_suggestion(file_path, suggestion, renderer):
         yuclid.tplot.launch(args)
 
 
+def _ask_llm(model, base_url, system_prompt, description, user_prompt):
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content":
+            "Here is the data and capability description:\n\n"
+            + description + "\n\n" + user_prompt},
+    ]
+    report(LogLevel.INFO, "generating parameters...")
+    try:
+        return chat(model, messages, base_url)
+    except urllib.error.URLError as e:
+        report(LogLevel.FATAL, f"Ollama request failed: {e}")
+
+
+def _get_valid_suggestions(raw, info):
+    suggestions = parse_suggestions(raw)
+    valid = []
+    for s in suggestions:
+        warns = validate_suggestion(s, info)
+        if warns:
+            for w in warns:
+                report(LogLevel.WARNING, f"skipping '{s['description']}': {w}")
+        else:
+            valid.append(s)
+    if not valid:
+        report(LogLevel.FATAL, "all LLM suggestions referred to invalid columns",
+               hint="try a more capable model with --model")
+    return valid
+
+
 def launch(args):
     base_url = args.ollama_url
     file_path = args.files[0]
@@ -317,33 +404,28 @@ def launch(args):
            f"found {len(info['dimensions'])} dimensions and {len(info['metrics'])} metrics")
 
     description = build_capability_description(info)
-    messages = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content":
-            "Here is the data and capability description:\n\n"
-            + description
-            + "\n\nPropose 3–5 visualizations."},
-    ]
 
-    report(LogLevel.INFO, "asking LLM for visualization suggestions...")
-    try:
-        raw = chat(model, messages, base_url)
-    except urllib.error.URLError as e:
-        report(LogLevel.FATAL, f"Ollama request failed: {e}")
+    mode = _arrow_menu("How do you want to explore the data?",
+                       ["Suggest automatically", "Describe what you want"])
 
-    suggestions = parse_suggestions(raw)
-    valid = []
-    for s in suggestions:
-        warns = validate_suggestion(s, info)
-        if warns:
-            for w in warns:
-                report(LogLevel.WARNING, f"skipping '{s['description']}': {w}")
-        else:
-            valid.append(s)
+    if mode == 0:
+        raw = _ask_llm(model, base_url, _SUGGEST_SYSTEM_PROMPT,
+                       description, "Propose 3–5 visualizations.")
+        valid = _get_valid_suggestions(raw, info)
+        chosen, renderer = prompt_user(file_path, valid)
+    else:
+        print(f"\n{_BOLD}Describe what you want to see:{_RESET} ", end="", flush=True)
+        user_prompt = input().strip()
+        if not user_prompt:
+            report(LogLevel.FATAL, "no prompt provided")
+        raw = _ask_llm(model, base_url, _TRANSLATE_SYSTEM_PROMPT,
+                       description, f"User request: {user_prompt}")
+        valid = _get_valid_suggestions(raw, info)
+        chosen = valid[0]
+        print(f"\n{_DIM}{' '.join(chosen['args'])}{_RESET}")
+        renderer_idx = _arrow_menu("", ["plot  (GUI)", "tplot  (terminal)"])
+        renderer = "tplot" if renderer_idx == 1 else "plot"
+        cmd = f"yuclid {renderer} {file_path} " + " ".join(chosen["args"])
+        print(f"\n{_BOLD}Command:{_RESET} {_CYAN}{cmd}{_RESET}\n")
 
-    if not valid:
-        report(LogLevel.FATAL, "all LLM suggestions referred to invalid columns",
-               hint="try a more capable model with --model")
-
-    chosen, renderer = prompt_user(file_path, valid)
     execute_suggestion(file_path, chosen, renderer)
