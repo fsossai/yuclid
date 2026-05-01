@@ -121,6 +121,12 @@ def get_parser():
     )
     _add_plot_args(tplot_parser)
 
+    # stats subcommand
+    stats_parser = subparsers.add_parser(
+        "stats", help="Plot the distribution of a metric"
+    )
+    _add_stats_args(stats_parser)
+
     panorama_parser = subparsers.add_parser(
         "panorama", help="Use a local LLM to suggest meaningful visualizations"
     )
@@ -284,6 +290,79 @@ def _add_plot_args(p):
     )
 
 
+def _add_stats_args(p):
+    p.add_argument(
+        "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
+    )
+    p.add_argument("-y", nargs="*", default=[], help="Metric column(s) to analyze (auto-detected if omitted)")
+    p.add_argument("-z", help="Grouping column — one distribution per value")
+    p.add_argument(
+        "-m",
+        "--distribution",
+        default="normal",
+        choices=["none", "normal", "lognormal", "exponential", "gamma", "beta"],
+        help="Statistical distribution to fit and overlay (default: normal)",
+    )
+    p.add_argument(
+        "-f",
+        "--filter",
+        nargs="*",
+        default=None,
+        help="Filter rows by dimension values. E.g. -f a=1 b=value",
+    )
+    p.add_argument(
+        "--no-merge-inputs",
+        action="store_true",
+        default=False,
+        help="Treat each input file separately instead of merging them",
+    )
+    p.add_argument(
+        "-C",
+        "--combine",
+        nargs="*",
+        default=[],
+        help="Combine dimensions into a single one via cartesian product",
+    )
+    p.add_argument(
+        "-L",
+        "--lock-dims",
+        nargs="*",
+        default=[],
+        help="Lock a free dimension with explicit values. E.g. -L a=1 b=value",
+    )
+    p.add_argument(
+        "--colorblind",
+        action="store_true",
+        default=False,
+        help="Enable colorblind palette",
+    )
+    p.add_argument(
+        "--bins",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of histogram bins (default: auto)",
+    )
+    p.add_argument(
+        "-u",
+        "--unit",
+        default=None,
+        help="Unit of measurement for the x-axis",
+    )
+    p.add_argument(
+        "--mean",
+        action="store_true",
+        default=False,
+        help="Show a vertical line at the mean of each group",
+    )
+    p.add_argument(
+        "--median",
+        action="store_true",
+        default=False,
+        help="Show a vertical line at the median of each group",
+    )
+
+
 def main():
     parser = get_parser()
     args = parser.parse_args()
@@ -295,6 +374,9 @@ def main():
         yuclid.plot.launch(args)
     elif args.command == "tplot":
         yuclid.tplot.launch(args)
+    elif args.command == "stats":
+        from yuclid import stats as _stats
+        _stats.launch(args)
     elif args.command == "panorama":
         from yuclid import panorama as _panorama
         _panorama.launch(args)
