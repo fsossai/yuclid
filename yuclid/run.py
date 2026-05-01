@@ -734,137 +734,142 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
         )
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
+    repeat = settings["repeat"]
 
-    for j, trial in enumerate(compatible_trials):
-        point_id = os.path.join(
-            settings["temp_dir"],
-            settings["now"],
-            f"{i_padded}." + point_to_string(point) + f"_trial{j}",
-        )
+    for rep in range(repeat):
+        rep_suffix = f"_rep{rep}" if repeat > 1 else ""
 
-        command = substitute_global_yvars(trial["command"], execution["subspace"])
-        command = substitute_point_yvars(command, point_map, point_id)
-        command_output = subprocess.run(
-            command,
-            shell=True,
-            env=execution["env"],
-            universal_newlines=True,
-            capture_output=True,
-            cwd=settings["cwd"],
-        )
-
-        with open(f"{point_id}.out", "w") as output_file:
-            if command_output.stdout:
-                output_file.write(command_output.stdout)
-
-        with open(f"{point_id}.err", "w") as error_file:
-            if command_output.stderr:
-                error_file.write(command_output.stderr)
-
-        if command_output.returncode != 0:
-            hint = "check the following files for more details:\n"
-            hint += f"{point_id}.out\n{point_id}.err"
-            report(
-                LogLevel.ERROR,
-                point_to_string(point),
-                f"failed trial command '{command}' (code {command_output.returncode})",
-                hint=hint,
+        for j, trial in enumerate(compatible_trials):
+            point_id = os.path.join(
+                settings["temp_dir"],
+                settings["now"],
+                f"{i_padded}." + point_to_string(point) + f"{rep_suffix}_trial{j}",
             )
 
-    collected_metrics = dict()
-    for metric in compatible_metrics:
-        command = substitute_global_yvars(metric["command"], execution["subspace"])
-        command = substitute_point_yvars(command, point_map, point_id)
-        command_output = subprocess.run(
-            command,
-            shell=True,
-            universal_newlines=True,
-            capture_output=True,
-            env=execution["env"],
-            cwd=settings["cwd"],
-        )
-        text = command_output.stdout.strip()
-
-        if command_output.returncode != 0:
-            hint = "check the following files for more details:\n"
-            hint += f"{point_id}.out\n{point_id}.err\n"
-            report(
-                LogLevel.ERROR,
-                point_to_string(point),
-                "metric {} failed with return code {}".format(
-                    metric["name"], command_output.returncode
-                ),
+            command = substitute_global_yvars(trial["command"], execution["subspace"])
+            command = substitute_point_yvars(command, point_map, point_id)
+            command_output = subprocess.run(
+                command,
+                shell=True,
+                env=execution["env"],
+                universal_newlines=True,
+                capture_output=True,
+                cwd=settings["cwd"],
             )
-        elif text == "":
-            report(
-                LogLevel.ERROR,
-                point_to_string(point),
-                "metric {} generated an empty string".format(metric["name"]),
-            )
-        else:
-            output_elements = re.split("[\n|\r| ]+", text)
 
-            def int_or_float(x):
-                try:
-                    return int(x)
-                except ValueError:
+            with open(f"{point_id}.out", "w") as output_file:
+                if command_output.stdout:
+                    output_file.write(command_output.stdout)
+
+            with open(f"{point_id}.err", "w") as error_file:
+                if command_output.stderr:
+                    error_file.write(command_output.stderr)
+
+            if command_output.returncode != 0:
+                hint = "check the following files for more details:\n"
+                hint += f"{point_id}.out\n{point_id}.err"
+                report(
+                    LogLevel.ERROR,
+                    point_to_string(point),
+                    f"failed trial command '{command}' (code {command_output.returncode})",
+                    hint=hint,
+                )
+
+        collected_metrics = dict()
+        for metric in compatible_metrics:
+            command = substitute_global_yvars(metric["command"], execution["subspace"])
+            command = substitute_point_yvars(command, point_map, point_id)
+            command_output = subprocess.run(
+                command,
+                shell=True,
+                universal_newlines=True,
+                capture_output=True,
+                env=execution["env"],
+                cwd=settings["cwd"],
+            )
+            text = command_output.stdout.strip()
+
+            if command_output.returncode != 0:
+                hint = "check the following files for more details:\n"
+                hint += f"{point_id}.out\n{point_id}.err\n"
+                report(
+                    LogLevel.ERROR,
+                    point_to_string(point),
+                    "metric {} failed with return code {}".format(
+                        metric["name"], command_output.returncode
+                    ),
+                )
+            elif text == "":
+                report(
+                    LogLevel.ERROR,
+                    point_to_string(point),
+                    "metric {} generated an empty string".format(metric["name"]),
+                )
+            else:
+                output_elements = re.split("[\n|\r| ]+", text)
+
+                def int_or_float(x):
                     try:
-                        return float(x)
+                        return int(x)
                     except ValueError:
-                        hint = "the command generated '{}'".format(text)
-                        report(
-                            LogLevel.ERROR,
-                            "cannot parse result of metric {}".format(metric["name"]),
-                            text,
-                        )
+                        try:
+                            return float(x)
+                        except ValueError:
+                            hint = "the command generated '{}'".format(text)
+                            report(
+                                LogLevel.ERROR,
+                                "cannot parse result of metric {}".format(metric["name"]),
+                                text,
+                            )
 
-            collected_metrics[metric["name"]] = [
-                int_or_float(line) for line in output_elements
-            ]
+                collected_metrics[metric["name"]] = [
+                    int_or_float(line) for line in output_elements
+                ]
 
-    metric_values_df = pd.DataFrame.from_dict(
-        collected_metrics, orient="index"
-    ).transpose()
-    if not settings["fold"]:
-        NaNs = metric_values_df.columns[metric_values_df.isnull().any()]
-        if len(NaNs) > 0:
-            report(
-                LogLevel.WARNING,
-                "the following metrics generated some NaNs",
-                " ".join(list(NaNs)),
-            )
+        metric_values_df = pd.DataFrame.from_dict(
+            collected_metrics, orient="index"
+        ).transpose()
+        if not settings["fold"]:
+            NaNs = metric_values_df.columns[metric_values_df.isnull().any()]
+            if len(NaNs) > 0:
+                report(
+                    LogLevel.WARNING,
+                    "the following metrics generated some NaNs",
+                    " ".join(list(NaNs)),
+                )
 
-    result = {k: x["name"] for k, x in point_map.items()}
-    if file_lock is not None:
-        file_lock.acquire()
-    try:
-        if settings["fold"]:
-            result.update(metric_values_df.to_dict(orient="list"))
-            f.write(json.dumps(result) + "\n")
-        else:
-            for record in metric_values_df.to_dict(orient="records"):
-                result.update(record)
-                f.write(json.dumps(result) + "\n")
-        f.flush()
-    finally:
+        result = {k: x["name"] for k, x in point_map.items()}
         if file_lock is not None:
-            file_lock.release()
+            file_lock.acquire()
+        try:
+            if settings["fold"]:
+                result.update(metric_values_df.to_dict(orient="list"))
+                f.write(json.dumps(result) + "\n")
+            else:
+                for record in metric_values_df.to_dict(orient="records"):
+                    result.update(record)
+                    f.write(json.dumps(result) + "\n")
+            f.flush()
+        finally:
+            if file_lock is not None:
+                file_lock.release()
 
-    report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
-    for metric_name, values in collected_metrics.items():
-        if len(values) > 1:
-            report(
-                LogLevel.INFO,
-                "median",
-                metric_name,
-                f"{pd.Series(values).median():.3f}",
-            )
-            report(
-                LogLevel.INFO,
-                "stddev",
-                metric_name,
-                f"{pd.Series(values).std():.3f}",
-            )
+        report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
+        for metric_name, values in collected_metrics.items():
+            if len(values) > 1:
+                report(
+                    LogLevel.INFO,
+                    "median",
+                    metric_name,
+                    f"{pd.Series(values).median():.3f}",
+                )
+                report(
+                    LogLevel.INFO,
+                    "stddev",
+                    metric_name,
+                    f"{pd.Series(values).std():.3f}",
+                )
+
     report(
         LogLevel.INFO,
         get_progress(i, execution["subspace_size"]),
@@ -1014,7 +1019,7 @@ def validate_dimensions(subspace):
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
 
 
-def prepare_subspace_execution(subspace, order, env, metrics, dry_run):
+def prepare_subspace_execution(subspace, order, env, metrics, dry_run, repeat=1):
     ordered_subspace = [subspace[x] for x in order]
 
     execution = dict()
@@ -1268,7 +1273,8 @@ def run_experiments(settings, data, order, env, preset_name=None):
     validate_dimensions(subspace)
     print_subspace(subspace)
     execution = prepare_subspace_execution(
-        subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"]
+        subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"],
+        repeat=settings["repeat"],
     )
     validate_execution(execution, data)
     if not settings["no_setup"]:

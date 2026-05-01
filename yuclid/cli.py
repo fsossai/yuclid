@@ -29,7 +29,6 @@ def get_parser():
         "Objects and lists will be joined",
     )
     run_parser.add_argument(
-        "-r",
         "--order",
         default=[],
         nargs="*",
@@ -102,6 +101,14 @@ def get_parser():
         default=False,
         action="store_true",
         help="Skip the setup phase and run trials directly",
+    )
+    run_parser.add_argument(
+        "-r",
+        "--repeat",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Run each point configuration N times (default: 1)",
     )
 
     # plot subcommand — GUI
