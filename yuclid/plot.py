@@ -501,7 +501,12 @@ def get_palette(values, colorblind=False):
             "#6cc551",
             "#dabef9",
         ]
-        color_gen = iter(preferred_colors)
+        import random
+        extra = [
+            "#{:06x}".format(random.randint(0, 0xFFFFFF))
+            for _ in range(max(0, len(values) - len(preferred_colors)))
+        ]
+        color_gen = iter(preferred_colors + extra)
         return {v: next(color_gen) for v in values}
 
 
