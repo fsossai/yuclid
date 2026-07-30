@@ -2,6 +2,10 @@
 .DS_Store
 *.json
 
+# Agents
+.claude
+.codex
+
 # Python
 *.pyc
 *.pyo
