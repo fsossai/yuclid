@@ -1119,7 +1119,7 @@ def build_settings(args):
 
     # output
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
-    filename = "results.{}.json".format(settings["now"])
+    filename = "yuclid.results.{}.jsonl".format(settings["now"])
     if args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:
