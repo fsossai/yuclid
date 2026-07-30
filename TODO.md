@@ -33,3 +33,4 @@
 - [ ] cut python dependencies
 - [ ] feat: modernize or remove `panorama`
 - [ ] feat: web viewer
+- [ ] add examples for real benchmark suites or programs (e.g., GAPBS)
