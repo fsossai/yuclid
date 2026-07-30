@@ -25,7 +25,11 @@
 - [ ] feat: non-shell trials (invoke a Python callable) → captures the Hydra/Optuna sweep audience
 - [ ] feat: notebook path — `yuclid.load() -> DataFrame` plus an ipywidgets slicer
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
-- [ ] feat: remote/cluster dispatch (SSH, Slurm); replaces the vestigial `user@host:` syntax
 - [ ] feat: Parquet export / `yuclid export`
 - [ ] feat: derived dimensions — a dimension whose value is computed per-point from other dimensions
 - [ ] refactor: extract a **view model** (X/Z/Y, free dimensions, positions, normalization, estimator) from the **renderers** (matplotlib, plotext, notebook, web)
+- [ ] feat: yaml configuration
+- [ ] add extensive tests
+- [ ] cut python dependencies
+- [ ] feat: modernize or remove `panorama`
+- [ ] feat: web viewer
