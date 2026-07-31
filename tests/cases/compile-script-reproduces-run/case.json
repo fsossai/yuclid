@@ -1,15 +1,41 @@
 {
   "description": "the compiled script produces exactly the records yuclid would have",
   "runs": [
-    ["run", "--compile", "compiled.sh", "-o", "results.yuclid.jsonl"],
+    [
+      "run",
+      "--compile",
+      "compiled.sh",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
     "sh compiled.sh"
   ],
   "output_flag": false,
   "records": [
-    {"a": "1", "b": "p", "scaled": 3, "letters": 1},
-    {"a": "1", "b": "q", "scaled": 3, "letters": 1},
-    {"a": "2", "b": "p", "scaled": 6, "letters": 1},
-    {"a": "2", "b": "q", "scaled": 6, "letters": 1}
+    {
+      "a": "1",
+      "b": "p",
+      "scaled": 3,
+      "letters": 1
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "scaled": 3,
+      "letters": 1
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "scaled": 6,
+      "letters": 1
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "scaled": 6,
+      "letters": 1
+    }
   ],
   "file_contains": {
     "compiled.sh": [
@@ -18,7 +44,13 @@
       "export FACTOR=\"3\"",
       "mkdir -p work",
       "echo 1 > work/1.txt",
-      "echo 2 > work/2.txt"
+      "echo 2 > work/2.txt",
+      "\\033[1myuclid\\033[0m"
     ]
-  }
+  },
+  "stdout_contains": [
+    "[1/4]",
+    "global setup",
+    "written to"
+  ]
 }
