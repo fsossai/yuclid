@@ -47,12 +47,12 @@ expected records are therefore written out literally.
 | `description` | what the case pins down (shown by `--list`) |
 | `args` | argv after `yuclid` (default `["run"]`) |
 | `runs` | several steps in sequence, instead of `args`: a list is yuclid's argv, a string is a shell command (e.g. running a compiled script) |
-| `output_flag` | set `false` to stop the runner appending `-o yuclid.results.jsonl` |
+| `output_flag` | set `false` to stop the runner appending `-o results.yuclid.jsonl` |
 | `exit_code` / `exit_codes` | expected status of the last run / of each run |
 | `records` | the exact dataset, in order |
 | `records_unordered` | the exact dataset, as a set |
 | `record_count` | how many records |
-| `results_file` | read the dataset from this name instead of `yuclid.results.jsonl`; a `.csv` name is parsed as CSV |
+| `results_file` | read the dataset from this name instead of `results.yuclid.jsonl`; a `.csv` name is parsed as CSV |
 | `no_results_file` | no dataset may be written |
 | `stdout_contains` / `stdout_not_contains` | substrings of the diagnostics |
 | `files_exist` / `files_not_exist` | globs, relative to the working directory |

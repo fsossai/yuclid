@@ -27,11 +27,11 @@ Needs a C++17 compiler as `c++`.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick -r 5  # this will produce a file like yuclid.results.20260731-120000.jsonl
+yuclid run -p quick -r 5  # this will produce a file like 20260731-120000.yuclid.jsonl
 
-yuclid tplot yuclid.results.20260731-120000.jsonl -x workers -z schedule -y tested_per_second \
+yuclid tplot 20260731-120000.yuclid.jsonl -x workers -z schedule -y tested_per_second \
   -f segment_kib=64KiB
-yuclid tplot yuclid.results.20260731-120000.jsonl -x segment_kib -z workers -y peak_rss_kib \
+yuclid tplot 20260731-120000.yuclid.jsonl -x segment_kib -z workers -y peak_rss_kib \
   -f schedule=dynamic
 ```
 

@@ -1,7 +1,7 @@
 {
   "description": "conditions are resolved while compiling: the carved-out points are simply absent",
   "runs": [
-    ["run", "--compile", "compiled.sh", "-o", "yuclid.results.jsonl"],
+    ["run", "--compile", "compiled.sh", "-o", "results.yuclid.jsonl"],
     "sh compiled.sh"
   ],
   "output_flag": false,

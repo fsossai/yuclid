@@ -1,7 +1,7 @@
 {
   "description": "the compiled script produces exactly the records yuclid would have",
   "runs": [
-    ["run", "--compile", "compiled.sh", "-o", "yuclid.results.jsonl"],
+    ["run", "--compile", "compiled.sh", "-o", "results.yuclid.jsonl"],
     "sh compiled.sh"
   ],
   "output_flag": false,

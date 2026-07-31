@@ -1,8 +1,8 @@
 {
   "description": "a point recorded fewer times than -r asks for is run for the missing repetitions only",
   "runs": [
-    ["run", "-s", "a=1", "--fold", "-o", "yuclid.results.jsonl"],
-    ["run", "-s", "a=1", "--fold", "-r", "3", "--resume", "yuclid.results.jsonl"]
+    ["run", "-s", "a=1", "--fold", "-o", "results.yuclid.jsonl"],
+    ["run", "-s", "a=1", "--fold", "-r", "3", "--resume", "results.yuclid.jsonl"]
   ],
   "output_flag": false,
   "records": [

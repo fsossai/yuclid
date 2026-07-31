@@ -1,11 +1,11 @@
 {
   "description": "every column of the header is present in every row, empty where a metric does not apply",
-  "args": ["run", "--format", "csv", "-o", "yuclid.results.csv"],
+  "args": ["run", "--format", "csv", "-o", "results.yuclid.csv"],
   "output_flag": false,
-  "results_file": "yuclid.results.csv",
+  "results_file": "results.yuclid.csv",
   "records": [
     {"a": "1", "always": "1", "first_only": "9"},
     {"a": "2", "always": "2", "first_only": ""}
   ],
-  "file_contains": { "yuclid.results.csv": ["a,always,first_only\n", "2,2,\n"] }
+  "file_contains": { "results.yuclid.csv": ["a,always,first_only\n", "2,2,\n"] }
 }

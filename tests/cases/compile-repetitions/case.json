@@ -1,7 +1,7 @@
 {
   "description": "-r unrolls each repetition into its own block",
   "runs": [
-    ["run", "--compile", "compiled.sh", "-r", "2", "-s", "a=1", "-o", "yuclid.results.jsonl"],
+    ["run", "--compile", "compiled.sh", "-r", "2", "-s", "a=1", "-o", "results.yuclid.jsonl"],
     "sh compiled.sh"
   ],
   "output_flag": false,

@@ -25,10 +25,10 @@ value is its own name.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick  # this will produce a file like yuclid.results.20260731-120000.jsonl
+yuclid run -p quick  # this will produce a file like 20260731-120000.yuclid.jsonl
 
-yuclid tplot yuclid.results.20260731-120000.jsonl -x level -z codec -y compression_seconds -f kind=text
-yuclid tplot yuclid.results.20260731-120000.jsonl -x codec -z kind -y ratio -f level=6
+yuclid tplot 20260731-120000.yuclid.jsonl -x level -z codec -y compression_seconds -f kind=text
+yuclid tplot 20260731-120000.yuclid.jsonl -x codec -z kind -y ratio -f level=6
 ```
 
 The number keys switch between metrics inside the viewer.

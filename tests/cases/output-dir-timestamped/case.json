@@ -8,6 +8,6 @@
   "output_flag": false,
   "no_results_file": true,
   "files_exist": [
-    "out/yuclid.results.*.jsonl"
+    "out/*.yuclid.jsonl"
   ]
 }

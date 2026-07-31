@@ -1,8 +1,8 @@
 {
   "description": "--resume without a file resumes the one named by --output, which is not ignored",
   "runs": [
-    ["run", "-s", "a=1,2", "-o", "yuclid.results.jsonl"],
-    ["run", "-o", "yuclid.results.jsonl", "--resume"]
+    ["run", "-s", "a=1,2", "-o", "results.yuclid.jsonl"],
+    ["run", "-o", "results.yuclid.jsonl", "--resume"]
   ],
   "output_flag": false,
   "records": [
@@ -11,7 +11,7 @@
     {"a": "3", "n": 3}
   ],
   "stdout_contains": [
-    "resuming from: yuclid.results.jsonl: 2 points already recorded",
+    "resuming from: results.yuclid.jsonl: 2 points already recorded",
     "[3/3]: 3: completed"
   ],
   "stdout_not_contains": ["ignoring --output"]

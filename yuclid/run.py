@@ -1683,7 +1683,7 @@ def build_settings(args):
         )
 
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
-    filename = "yuclid.results.{}.{}".format(settings["now"], settings["format"])
+    filename = "{}.yuclid.{}".format(settings["now"], settings["format"])
     if settings["resume"] is not None:
         # --output is not ignored when it is the very file being resumed
         overridden = []

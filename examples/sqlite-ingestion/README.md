@@ -28,11 +28,11 @@ three metrics reading the same trial output.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick  # this will produce a file like yuclid.results.20260731-120000.jsonl
+yuclid run -p quick  # this will produce a file like 20260731-120000.yuclid.jsonl
 
-yuclid tplot yuclid.results.20260731-120000.jsonl -C strategy,batch -x strategy_batch -z journal \
+yuclid tplot 20260731-120000.yuclid.jsonl -C strategy,batch -x strategy_batch -z journal \
   -y rows_per_second
-yuclid tplot yuclid.results.20260731-120000.jsonl -C strategy,batch -x records -z strategy_batch \
+yuclid tplot 20260731-120000.yuclid.jsonl -C strategy,batch -x records -z strategy_batch \
   -y peak_rss_kib -f journal=WAL
 ```
 
