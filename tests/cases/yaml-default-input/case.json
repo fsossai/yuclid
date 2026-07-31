@@ -1,0 +1,6 @@
+{
+  "description": "with no --inputs, yuclid.yaml is found just like yuclid.json",
+  "needs_module": "yaml",
+  "record_count": 4,
+  "stdout_contains": ["input configurations: yuclid.yaml"]
+}

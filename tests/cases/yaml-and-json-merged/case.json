@@ -1,0 +1,9 @@
+{
+  "description": "JSON and YAML documents merge into one configuration",
+  "needs_module": "yaml",
+  "args": ["run", "-i", "base.json", "extra.yaml"],
+  "records": [
+    {"a": "1", "b": "3", "ab": 13},
+    {"a": "2", "b": "3", "ab": 23}
+  ]
+}

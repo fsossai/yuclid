@@ -1,0 +1,11 @@
+{
+  "description": "a YAML configuration describes the same space as its JSON form",
+  "needs_module": "yaml",
+  "args": ["run", "-i", "yuclid.yaml"],
+  "records": [
+    {"a": "1", "size": "small", "n": 10},
+    {"a": "1", "size": "big", "n": 20},
+    {"a": "2", "size": "small", "n": 20},
+    {"a": "2", "size": "big", "n": 40}
+  ]
+}

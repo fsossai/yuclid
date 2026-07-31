@@ -1,7 +1,8 @@
 # Examples
 
-Each directory is a self-contained experiment: a `yuclid.json`, the workload it
-measures, and no third-party dependencies.
+Each directory is a self-contained experiment: a `yuclid.json` with an
+equivalent `yuclid.yaml` beside it, the workload it measures, and no
+third-party dependencies.
 
 | Example | Goal |
 |---|---|
@@ -14,6 +15,7 @@ measures, and no third-party dependencies.
 ```sh
 cd examples/<example>
 yuclid run --dry-run              # every command that would run, run nothing
+yuclid run -i yuclid.yaml -p quick   # the YAML twin, same experiment
 yuclid run -p quick -o results.jsonl
 yuclid tplot results.jsonl -x <dimension> -z <dimension> -y <metric>
 ```

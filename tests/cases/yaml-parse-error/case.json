@@ -1,0 +1,8 @@
+{
+  "description": "a malformed YAML configuration is fatal and names the position",
+  "needs_module": "yaml",
+  "args": ["run", "-i", "yuclid.yaml"],
+  "exit_code": 2,
+  "stdout_contains": ["failed to parse YAML", "yuclid.yaml", "line 3"],
+  "no_results_file": true
+}

@@ -1,0 +1,54 @@
+env:
+  CFLAGS: -O3 -std=c11 -Wall -Wextra -pedantic
+  MATRIX_SEED: '20260730'
+space:
+  size:
+    - name: 64x64
+      value: 64
+    - name: 128x128
+      value: 128
+    - name: 256x256
+      value: 256
+    - name: 512x512
+      value: 512
+  variant: [dot, rows, columns, tiled]
+  tile:
+    - name: none
+      value: 0
+      condition: yuclid.variant != 'tiled'
+    - name: 16x16
+      value: 16
+      condition: yuclid.variant == 'tiled'
+    - name: 32x32
+      value: 32
+      condition: yuclid.variant == 'tiled'
+    - name: 64x64
+      value: 64
+      condition: yuclid.variant == 'tiled'
+setup:
+  global:
+    - mkdir -p build data
+    - cc $CFLAGS matmul.c -o build/matmul
+  point:
+    - command:
+        - python3 generate.py
+        - --size ${yuclid.size}
+        - --seed $MATRIX_SEED
+        - --output data/n${yuclid.size}.bin
+      'on': [size]
+      parallel: true
+trials:
+  - ./build/matmul ${yuclid.variant} data/n${yuclid.size}.bin ${yuclid.tile}
+metrics:
+  - name: seconds
+    command: awk '{print $1}' ${yuclid.@}.out
+  - name: checksum
+    command: awk '{print $2}' ${yuclid.@}.out
+  - name: peak_rss_kib
+    command: awk '{print $3}' ${yuclid.@}.out
+presets:
+  quick:
+    size: [64x64, 128x128]
+  large:
+    size: [256x256, 512x512]
+order: [size, variant, tile]

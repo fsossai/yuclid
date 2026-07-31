@@ -1,0 +1,63 @@
+env:
+  EVENT_SEED: '314159'
+space:
+  records:
+    - name: 1k
+      value: 1000
+    - name: 10k
+      value: 10000
+    - name: 100k
+      value: 100000
+      condition: yuclid.strategy != 'autocommit'
+  strategy: [autocommit, transaction, executemany]
+  journal: [DELETE, WAL, 'OFF']
+  batch:
+    - name: none
+      value: 1
+      condition: yuclid.strategy != 'executemany'
+    - name: '100'
+      value: 100
+      condition: yuclid.strategy == 'executemany'
+    - name: '1000'
+      value: 1000
+      condition: yuclid.strategy == 'executemany'
+setup:
+  global: [mkdir -p data]
+  point:
+    - command:
+        - python3 generate.py
+        - --records ${yuclid.records}
+        - --seed $EVENT_SEED
+        - --output data/events-${yuclid.records}.csv
+      'on': [records]
+      parallel: true
+trials:
+  - command:
+      - python3 benchmark.py
+      - --input data/events-${yuclid.records}.csv
+      - --database ${yuclid.@}.sqlite
+      - --strategy ${yuclid.strategy}
+      - --journal ${yuclid.journal}
+      - --batch ${yuclid.batch}
+metrics:
+  - name: insert_seconds
+    command: awk '{print $1}' ${yuclid.@}.out
+  - name: index_seconds
+    command: awk '{print $2}' ${yuclid.@}.out
+  - name: query_seconds
+    command: awk '{print $3}' ${yuclid.@}.out
+  - name: rows_per_second
+    command: awk '{print $4}' ${yuclid.@}.out
+  - name: database_bytes
+    command: awk '{print $5}' ${yuclid.@}.out
+  - name: peak_rss_kib
+    command: awk '{print $6}' ${yuclid.@}.out
+  - name: query_checksum
+    command: awk '{print $7}' ${yuclid.@}.out
+presets:
+  quick:
+    records: [1k]
+  scaling:
+    records: [10k, 100k]
+    journal: [WAL, 'OFF']
+order: [records, journal, strategy, batch]

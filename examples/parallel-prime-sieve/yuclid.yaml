@@ -1,0 +1,44 @@
+env:
+  CXXFLAGS: -O3 -std=c++17 -Wall -Wextra -pedantic -pthread
+space:
+  limit:
+    - name: 1M
+      value: 1000000
+    - name: 5M
+      value: 5000000
+    - name: 20M
+      value: 20000000
+  workers: [1, 2, 4, 8]
+  schedule: [static, dynamic]
+  segment_kib:
+    - name: 64KiB
+      value: 64
+    - name: 256KiB
+      value: 256
+setup:
+  global:
+    - mkdir -p build
+    - c++ $CXXFLAGS prime_sieve.cpp -o build/prime_sieve
+trials:
+  - command:
+      - ./build/prime_sieve
+      - ${yuclid.limit}
+      - ${yuclid.workers}
+      - ${yuclid.schedule}
+      - ${yuclid.segment_kib}
+metrics:
+  - name: seconds
+    command: awk '{print $1}' ${yuclid.@}.out
+  - name: tested_per_second
+    command: awk '{print $2}' ${yuclid.@}.out
+  - name: peak_rss_kib
+    command: awk '{print $3}' ${yuclid.@}.out
+  - name: prime_count
+    command: awk '{print $4}' ${yuclid.@}.out
+presets:
+  quick:
+    limit: [1M]
+    workers: [1, 2, 4]
+  scaling:
+    limit: [5M, 20M]
+order: [limit, segment_kib, schedule, workers]

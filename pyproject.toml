@@ -12,6 +12,9 @@ requires-python = ">=3.10"
 dependencies = ["pandas", "numpy", "matplotlib", "seaborn", "scipy", "plotext"]
 
 
+[project.optional-dependencies]
+yaml = ["pyyaml"]
+
 [tool.setuptools]
 packages = ["yuclid"]
 

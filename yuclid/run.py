@@ -91,6 +91,9 @@ def validate_yvars_in_trials(space, trials):
         command = validate_point_yvars(space, trial["command"])
 
 
+DEFAULT_INPUTS = ["yuclid.json", "yuclid.yaml", "yuclid.yml"]
+
+
 def load_json(f):
     try:
         return json.load(f)
@@ -101,6 +104,53 @@ def load_json(f):
             f.name,
             f"at line {e.lineno}, column {e.colno}: {e.msg}",
         )
+
+
+def load_yaml(f):
+    try:
+        import yaml
+    except ImportError:
+        report(
+            LogLevel.FATAL,
+            "reading a YAML configuration requires PyYAML",
+            f.name,
+            hint="install it with `pip install pyyaml`, or write the "
+            "configuration in JSON",
+        )
+    try:
+        return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        where = ""
+        if mark is not None:
+            where = "at line {}, column {}: ".format(mark.line + 1, mark.column + 1)
+        report(
+            LogLevel.FATAL,
+            "failed to parse YAML",
+            f.name,
+            where + str(getattr(e, "problem", None) or e),
+        )
+
+
+def load_config(path):
+    """Read one configuration document. JSON and YAML are interchangeable."""
+    with open(path, "r") as f:
+        if path.lower().endswith((".yaml", ".yml")):
+            data = load_yaml(f)
+        else:
+            data = load_json(f)
+    if data is None:
+        # an empty document contributes nothing
+        return dict()
+    if not isinstance(data, dict):
+        report(
+            LogLevel.FATAL,
+            "a configuration must be a mapping of sections",
+            path,
+            hint="available sections: env, setup, space, trials, metrics, "
+            "presets, order",
+        )
+    return data
 
 
 def aggregate_input_data(settings):
@@ -115,23 +165,19 @@ def aggregate_input_data(settings):
     }
 
     for file in settings["inputs"]:
-        with open(file, "r") as f:
-            current = normalize_data(load_json(f))
-            for key, val in current.items():
-                if key in ["env", "space", "presets"]:
-                    data[key].update(val)
-                elif key in ["trials", "metrics", "order"]:
-                    data[key].extend(val)
-                elif key == "setup":
-                    for subkey, subval in val.items():
-                        if data[key].get(subkey) is None:
-                            # undefined dimensions are overridden
-                            data[key][subkey] = subval
-                        else:
-                            data[key].setdefault(subkey, []).extend(subval)
-                elif key == "setup":
-                    data[key]["setup"]["global"] += val["setup"]["global"]
-                    data[key]["setup"]["point"] += val["setup"]["point"]
+        current = normalize_data(load_config(file))
+        for key, val in current.items():
+            if key in ["env", "space", "presets"]:
+                data[key].update(val)
+            elif key in ["trials", "metrics", "order"]:
+                data[key].extend(val)
+            elif key == "setup":
+                for subkey, subval in val.items():
+                    if data[key].get(subkey) is None:
+                        # undefined dimensions are overridden
+                        data[key][subkey] = subval
+                    else:
+                        data[key].setdefault(subkey, []).extend(subval)
 
     data["order"] = remove_duplicates(data["order"])
 
@@ -1258,8 +1304,20 @@ def build_settings(args):
     settings = dict(vars(args))
 
     # inputs
+    requested = args.inputs
+    if requested is None:
+        found = [name for name in DEFAULT_INPUTS if os.path.isfile(name)]
+        if len(found) > 1:
+            report(
+                LogLevel.WARNING,
+                "several default configurations found",
+                ", ".join(found),
+                hint="reading {}. Name the others with --inputs".format(found[0]),
+            )
+        requested = found[:1] or DEFAULT_INPUTS[:1]
+
     settings["inputs"] = []
-    for file in args.inputs:
+    for file in requested:
         if not os.path.isfile(file):
             report(LogLevel.ERROR, f"'{file}' does not exist")
         else:
@@ -1296,7 +1354,7 @@ def build_settings(args):
 
     settings["cwd"] = os.getcwd()
     report(LogLevel.INFO, "working directory", settings["cwd"])
-    report(LogLevel.INFO, "input configurations", ", ".join(args.inputs))
+    report(LogLevel.INFO, "input configurations", ", ".join(requested))
     report(LogLevel.INFO, "output data", settings["output"])
     report(
         LogLevel.INFO,

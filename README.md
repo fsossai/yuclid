@@ -29,7 +29,7 @@ Here's a list of use-case ideas:
 
 ## Installation
 
-Requires python >= 3.8
+Requires python >= 3.10
 
 Development head:
 ```
@@ -46,7 +46,12 @@ pip install yuclid
 
 ## Configuration for `yuclid run`
 
-Key sections of `yuclid.json`:
+The configuration may be written as JSON (`yuclid.json`) or as YAML
+(`yuclid.yaml`), whichever you prefer; `yuclid run` picks up either. The two
+forms are interchangeable, so everything below applies to both. YAML needs
+PyYAML: `pip install yuclid[yaml]`.
+
+Key sections:
 - **`env`**: Environment variables and constants
 - **`setup`**: Commands to run before experiments (`global`) or for specific parameter combinations (`point`)
 - **`trials`**: The actual experiment commands that generate metrics to collect

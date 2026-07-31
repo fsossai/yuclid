@@ -128,11 +128,22 @@ def find_python(explicit):
 
 
 PYTHON = sys.executable
+_modules = {}
 
 # the console script installed by pyproject.toml, reproduced verbatim.
 # `python -m yuclid.cli` is *not* equivalent: it dies on a circular import
 # between yuclid.cli, yuclid.plot and yuclid.tplot.
 ENTRY_POINT = "import sys; from yuclid.cli import main; sys.exit(main())"
+
+
+def has_module(name):
+    """Is an optional dependency importable by the interpreter under test?"""
+    if name not in _modules:
+        proc = subprocess.run(
+            [PYTHON, "-c", "import " + name], env=child_env(), capture_output=True
+        )
+        _modules[name] = proc.returncode == 0
+    return _modules[name]
 
 
 def invoke(argv, workdir, timeout):
@@ -219,6 +230,9 @@ def diff(actual, expected, how):
 def run_case(name, keep, timeout):
     src = os.path.join(CASES_DIR, name)
     case = load_case(src)
+    needed = case.get("needs_module")
+    if needed is not None and not has_module(needed):
+        return "skip", "needs the {} module".format(needed), "", ""
     workdir = tempfile.mkdtemp(prefix="yuclid-test-{}-".format(name))
     try:
         for entry in os.listdir(src):
@@ -277,7 +291,7 @@ def main():
     global PYTHON
     PYTHON = find_python(args.python)
 
-    tally = {"pass": 0, "fail": 0, "xfail": 0, "xpass": 0}
+    tally = {"pass": 0, "fail": 0, "xfail": 0, "xpass": 0, "skip": 0}
     failures = []
 
     # a case costs about a second and a half, nearly all of it spent importing
@@ -303,12 +317,15 @@ def main():
             done += 1
 
             mark = {
-                "pass": "PASS", "fail": "FAIL", "xfail": "XFAIL", "xpass": "XPASS"
+                "pass": "PASS", "fail": "FAIL", "xfail": "XFAIL",
+                "xpass": "XPASS", "skip": "SKIP",
             }[outcome]
             print("[{:>{w}}/{}] {:<5} {}".format(
                 done, len(names), mark, name, w=len(str(len(names)))
             ), flush=True)
             indent = " " * (len(str(len(names))) * 2 + 4)
+            if outcome == "skip":
+                print(indent + reason)
             if outcome == "xfail":
                 print(indent + "known defect: {}".format(xfail))
             if outcome == "xpass":
@@ -328,7 +345,8 @@ def main():
         "\nran in {:.1f}s".format(time.time() - started)
     )
     print(
-        "{pass} passed, {fail} failed, {xfail} known defects, {xpass} unexpectedly fixed".format(
+        "{pass} passed, {fail} failed, {skip} skipped, {xfail} known defects, "
+        "{xpass} unexpectedly fixed".format(
             **tally
         )
     )

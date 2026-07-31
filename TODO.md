@@ -22,11 +22,10 @@
 - [ ] feat: publish a JSON Schema (free editor autocomplete + validation)
 - [ ] feat: sum and subtract presets
 - [ ] feat: web viewer
-- [ ] feat: yaml configuration
-- [ ] feat: YAML/TOML config support
 - [ ] fix: circular import between `cli`, `plot` and `tplot` — `python -m yuclid.cli` cannot start
 - [ ] fix: conditions can alter the expected order of the experiments
 - [ ] fix: evaluation order of variables in `env`
 - [ ] refactor: extract a **view model** (X/Z/Y, free dimensions, positions, normalization, estimator) from the **renderers** (matplotlib, plotext, notebook, web)
 - [ ] refactor: replace bare `eval` in conditions / `:py` domains / derived metrics with a restricted evaluator
 - [ ] test: pipeline tests for plot data prep (`run` is covered by `tests/`)
+- [ ] feat: TOML config support, alongside JSON and YAML

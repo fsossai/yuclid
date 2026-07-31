@@ -1,0 +1,12 @@
+space:
+  a: [1, 2]
+  size:
+    - name: small
+      value: 10
+    - name: big
+      value: 20
+trials:
+  - echo $((${yuclid.a} * ${yuclid.size}))
+metrics:
+  - name: n
+    command: cat ${yuclid.@}.out

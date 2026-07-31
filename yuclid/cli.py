@@ -23,10 +23,11 @@ def get_parser():
     run_parser.add_argument(
         "-i",
         "--inputs",
-        default=["yuclid.json"],
+        default=None,
         nargs="*",
-        help="Specify one or more configuration files. Default is 'yuclid.json'. "
-        "Objects and lists will be joined",
+        help="Specify one or more configuration files, in JSON or YAML. "
+        "Defaults to whichever of yuclid.json, yuclid.yaml or yuclid.yml "
+        "exists. Objects and lists will be joined",
     )
     run_parser.add_argument(
         "--order",
