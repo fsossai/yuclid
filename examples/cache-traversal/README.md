@@ -30,16 +30,16 @@ Needs a C11 compiler as `cc`.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick -o yuclid.results.jsonl
+yuclid run -p quick
 
-yuclid tplot yuclid.results.jsonl -x mebibytes -z pattern -y seconds -f stride=none
-yuclid tplot yuclid.results.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
+yuclid tplot yuclid.results.20260731-120000.jsonl -x mebibytes -z pattern -y seconds -f stride=none
+yuclid tplot yuclid.results.20260731-120000.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
 ```
 
 With `-r 5` each point is run five times, and `yuclid stats` shows the
 distribution of the samples:
 
 ```sh
-yuclid run -p quick -r 5 -o yuclid.results.jsonl
-yuclid stats yuclid.results.jsonl -y seconds -z pattern
+yuclid run -p quick -r 5
+yuclid stats yuclid.results.20260731-120000.jsonl -y seconds -z pattern
 ```

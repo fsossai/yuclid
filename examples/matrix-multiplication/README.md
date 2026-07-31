@@ -31,11 +31,11 @@ Needs a C11 compiler as `cc`.
 
 ```sh
 yuclid run --dry-run              # print every command, run none of them
-yuclid run -p quick -o yuclid.results.jsonl
-yuclid run -o yuclid.results.jsonl
+yuclid run -p quick
+yuclid run
 
-yuclid tplot yuclid.results.jsonl -x variant -z tile -y seconds
-yuclid tplot yuclid.results.jsonl -x size -z variant -y seconds -f tile=none
+yuclid tplot yuclid.results.20260731-120000.jsonl -x variant -z tile -y seconds
+yuclid tplot yuclid.results.20260731-120000.jsonl -x size -z variant -y seconds -f tile=none
 ```
 
 The arrow keys move through the dimensions that are not on the plot.
