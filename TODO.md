@@ -2,7 +2,6 @@
 
 - [ ] add examples for real benchmark suites or programs (e.g., GAPBS)
 - [ ] build: lazy subcommand imports + install extras (`yuclid[plot]`, `[tui]`, `[llm]`) — makes `run` light on headless nodes and makes Windows work at all
-- [ ] build: single source of version truth; `requires-python >= 3.10`
 - [ ] ci: ruff + formatter
 - [ ] ci: run on Linux/macOS/Windows, starting with `python tests/run_tests.py`
 - [ ] cut unnecessary python dependencies

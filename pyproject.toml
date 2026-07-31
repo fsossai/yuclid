@@ -4,13 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yuclid"
-version = "0.2.5"
+dynamic = ["version"]
 description = "Run experiments and interactively plot results across combinations of user-specified dimensions"
 authors = [{ name = "Federico Sossai", email = "federico.sossai@gmail.com" }]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = ["pandas", "numpy", "matplotlib", "seaborn", "scipy", "plotext"]
 
+
+[tool.setuptools]
+packages = ["yuclid"]
+
+[tool.setuptools.dynamic]
+version = { attr = "yuclid.__version__" }
 
 [project.scripts]
 yuclid = "yuclid.cli:main"
