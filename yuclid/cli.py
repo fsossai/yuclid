@@ -221,8 +221,9 @@ def _add_plot_args(p):
     p.add_argument(
         "-d",
         "--digits",
+        type=int,
         default=2,
-        help="Number of digits to display on annotations",
+        help="Number of digits to display on annotations (default: %(default)s)",
     )
     p.add_argument(
         "--colorblind",
