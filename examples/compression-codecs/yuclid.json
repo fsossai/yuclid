@@ -1,0 +1,58 @@
+{
+  "env": {
+    "CORPUS_SEED": "8675309"
+  },
+  "space": {
+    "kind": ["text", "binary", "mixed"],
+    "mebibytes": [
+      { "name": "1MiB", "value": 1 },
+      { "name": "8MiB", "value": 8 },
+      { "name": "32MiB", "value": 32 }
+    ],
+    "codec": ["gzip", "bz2", "lzma"],
+    "level": [1, 6, 9]
+  },
+  "setup": {
+    "global": ["mkdir -p data"],
+    "point": [
+      {
+        "command": [
+          "python3 generate.py",
+          "--kind ${yuclid.kind}",
+          "--mib ${yuclid.mebibytes}",
+          "--seed $CORPUS_SEED",
+          "--output data/${yuclid.kind}-${yuclid.mebibytes}MiB.bin"
+        ],
+        "on": ["kind", "mebibytes"],
+        "parallel": true
+      }
+    ]
+  },
+  "trials": [
+    {
+      "command": [
+        "python3 benchmark.py",
+        "--input data/${yuclid.kind}-${yuclid.mebibytes}MiB.bin",
+        "--codec ${yuclid.codec}",
+        "--level ${yuclid.level}"
+      ]
+    }
+  ],
+  "metrics": [
+    { "name": "compression_seconds", "command": "awk '{print $1}' ${yuclid.@}.out" },
+    { "name": "decompression_seconds", "command": "awk '{print $2}' ${yuclid.@}.out" },
+    { "name": "ratio", "command": "awk '{print $3}' ${yuclid.@}.out" },
+    { "name": "compressed_bytes", "command": "awk '{print $4}' ${yuclid.@}.out" },
+    { "name": "peak_rss_kib", "command": "awk '{print $5}' ${yuclid.@}.out" },
+    { "name": "round_trip_ok", "command": "awk '{print $6}' ${yuclid.@}.out" }
+  ],
+  "presets": {
+    "quick": {
+      "mebibytes": ["1MiB"]
+    },
+    "larger": {
+      "mebibytes": ["8MiB", "32MiB"]
+    }
+  },
+  "order": ["kind", "mebibytes", "codec", "level"]
+}

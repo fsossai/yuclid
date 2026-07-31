@@ -1,0 +1,57 @@
+{
+  "env": {
+    "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic",
+    "CACHE_SEED": "12648430"
+  },
+  "space": {
+    "mebibytes": [
+      { "name": "8MiB", "value": 8 },
+      { "name": "32MiB", "value": 32 },
+      { "name": "128MiB", "value": 128 },
+      { "name": "512MiB", "value": 512 }
+    ],
+    "pattern": ["linear", "strided", "random", "pointer"],
+    "stride": [
+      { "name": "none", "value": 0, "condition": "yuclid.pattern != 'strided'" },
+      { "name": "64B", "value": 16, "condition": "yuclid.pattern == 'strided'" },
+      { "name": "4KiB", "value": 1024, "condition": "yuclid.pattern == 'strided'" }
+    ]
+  },
+  "setup": {
+    "global": [
+      "mkdir -p build",
+      "cc $CFLAGS cache_walk.c -o build/cache_walk"
+    ]
+  },
+  "trials": [
+    {
+      "command": [
+        "python3 measure.py",
+        "--program ./build/cache_walk",
+        "--mib ${yuclid.mebibytes}",
+        "--pattern ${yuclid.pattern}",
+        "--stride ${yuclid.stride}",
+        "--seed $CACHE_SEED"
+      ]
+    }
+  ],
+  "metrics": [
+    { "name": "seconds", "command": "awk '{print $1}' ${yuclid.@}.out" },
+    { "name": "peak_rss_kib", "command": "awk '{print $2}' ${yuclid.@}.out" },
+    { "name": "checksum", "command": "awk '{print $3}' ${yuclid.@}.out" },
+    { "name": "cycles", "command": "awk '{print $4}' ${yuclid.@}.out" },
+    { "name": "instructions", "command": "awk '{print $5}' ${yuclid.@}.out" },
+    { "name": "cache_misses", "command": "awk '{print $6}' ${yuclid.@}.out" },
+    { "name": "branch_misses", "command": "awk '{print $7}' ${yuclid.@}.out" },
+    { "name": "perf_available", "command": "awk '{print $8}' ${yuclid.@}.out" }
+  ],
+  "presets": {
+    "quick": {
+      "mebibytes": ["8MiB", "32MiB"]
+    },
+    "memory-pressure": {
+      "mebibytes": ["128MiB", "512MiB"]
+    }
+  },
+  "order": ["mebibytes", "pattern", "stride"]
+}

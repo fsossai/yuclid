@@ -1,0 +1,392 @@
+{
+  "env": {
+    "KMP_AFFINITY": "granularity=thread,balanced",
+    "graphs_dir": "$root/gapbs/benchmark/graphs"
+  },
+  "setup": {
+    "global": [],
+    "point": [
+      {
+        "on": [
+          "cxx"
+        ],
+        "command": "mkdir -p $root/.yuclid/bin/$machine/${yuclid.cxx}",
+        "parallel": true
+      },
+      {
+        "on": [
+          "cxx",
+          "program",
+          "impl"
+        ],
+        "command": "make ${yuclid.program}_${yuclid.impl} OUTDIR=$root/.yuclid/bin/$machine/${yuclid.cxx} CXX=${yuclid.cxx}",
+        "parallel": [
+          "cxx",
+          "program"
+        ]
+      }
+    ]
+  },
+  "trials": [
+    {
+      "command": [
+        "LD_PRELOAD=${yuclid.malloc}",
+        "MALLOC_ARENA_MAX=${yuclid.narenas}",
+        "MALLOC_CONF=\"narenas:${yuclid.narenas}\"",
+        "OMP_NUM_THREADS=${yuclid.nthreads}",
+        "burn_omp",
+        "/usr/bin/time -v",
+        "$root/.yuclid/bin/$machine/${yuclid.cxx}/${yuclid.program}_${yuclid.impl}.out",
+        "${yuclid.input}",
+        "2>&1"
+      ],
+      "condition": "yuclid.program in ['bc', 'bfs', 'cc', 'pr', 'sssp', 'tc']",
+      "metrics": [
+        "time",
+        "stopwatches",
+        "space"
+      ]
+    },
+    {
+      "command": [
+        "LD_PRELOAD=${yuclid.malloc}",
+        "MALLOC_ARENA_MAX=${yuclid.narenas}",
+        "MALLOC_CONF=\"narenas:${yuclid.narenas}\"",
+        "OMP_NUM_THREADS=${yuclid.nthreads}",
+        "burn_omp loop $nruns",
+        "/usr/bin/time -v",
+        "$root/.yuclid/bin/$machine/${yuclid.cxx}/${yuclid.program}_${yuclid.impl}.out",
+        "${yuclid.input}",
+        "2>&1"
+      ],
+      "condition": "yuclid.program in ['bodytrack', 'canneal', 'dedup', 'freqmine', 'streamcluster', 'kmeans', 'kdtree', 'xz']",
+      "metrics": [
+        "time",
+        "stopwatches",
+        "space"
+      ]
+    },
+    {
+      "command": [
+        "LD_PRELOAD=${yuclid.malloc}",
+        "MALLOC_ARENA_MAX=${yuclid.narenas}",
+        "MALLOC_CONF=\"narenas:${yuclid.narenas}\"",
+        "OMP_NUM_THREADS=${yuclid.nthreads}",
+        "loop $nruns",
+        "/usr/bin/time -v",
+        "burn_omp",
+        "$root/.yuclid/bin/$machine/${yuclid.cxx}/${yuclid.program}_${yuclid.impl}.out",
+        "${yuclid.input}"
+      ],
+      "metrics": [
+        "maxrss"
+      ]
+    },
+    {
+      "command": [
+        "LD_PRELOAD=$root/nmallocs/libnmallocs.so",
+        "MALLOC_ARENA_MAX=${yuclid.narenas}",
+        "MALLOC_CONF=\"narenas:${yuclid.narenas}\"",
+        "OMP_NUM_THREADS=${yuclid.nthreads}",
+        "$root/.yuclid/bin/$machine/${yuclid.cxx}/${yuclid.program}_${yuclid.impl}.out",
+        "${yuclid.input}"
+      ],
+      "metrics": [
+        "nmallocs"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "time",
+      "command": "cat ${yuclid.@}.out | grep 'Trial' | grep -oE '[0-9]+\\.[0-9]+'",
+      "condition": "yuclid.program in ['bc', 'bfs', 'cc', 'pr', 'sssp', 'tc']"
+    },
+    {
+      "name": "time",
+      "command": "cat ${yuclid.@}.out | egrep '\\[scoped_timer\\] Kernel: [0-9]+\\.[0-9]+' | awk '{ print $3 }'",
+      "condition": "yuclid.program in ['kdtree', 'kmeans', 'xz']"
+    },
+    {
+      "name": "time",
+      "command": "cat ${yuclid.@}.out | egrep '\\[parsec\\] Total time spent in ROI: ' | grep -oE '[0-9]+\\.[0-9]+'",
+      "condition": "yuclid.program in ['bodytrack', 'canneal', 'dedup', 'freqmine', 'streamcluster']"
+    },
+    {
+      "name": "maxrss",
+      "command": "cat ${yuclid.@}.err | grep 'Maximum resident set size (kbytes)' | grep -oE '[0-9]+'"
+    },
+    {
+      "name": "space",
+      "command": "cat ${yuclid.@}.out | grep 'Maximum resident set size (kbytes)' | grep -oE '[0-9]+'"
+    },
+    {
+      "name": "nmallocs",
+      "command": "cat ${yuclid.@}.err | grep 'nmallocs' | awk '{print $3}'"
+    },
+    {
+      "name": "stopwatches",
+      "command": "cat ${yuclid.@}.out | grep 'Trial' | grep -oE '[0-9]+\\.[0-9]+' ; cat ${yuclid.@}.out | grep stopwatch | grep 'loop.tag' | sort | awk '{print $3}'",
+      "condition": "yuclid.program in ['bc', 'bfs', 'cc', 'pr', 'sssp', 'tc']"
+    },
+    {
+      "name": "stopwatches",
+      "command": "cat ${yuclid.@}.out | egrep '\\[scoped_timer\\] Kernel: [0-9]+\\.[0-9]+' | awk '{ print $3 }' ; cat ${yuclid.@}.out | grep stopwatch | grep 'loop.tag' | sort | awk '{print $3}'",
+      "condition": "yuclid.program in ['kdtree', 'kmeans', 'xz']"
+    },
+    {
+      "name": "stopwatches",
+      "command": "cat ${yuclid.@}.out | egrep '\\[parsec\\] Total time spent in ROI: ' | grep -oE '[0-9]+\\.[0-9]+' ; cat ${yuclid.@}.out | grep stopwatch | grep 'loop.tag' | sort | awk '{print $3}'",
+      "condition": "yuclid.program in ['bodytrack', 'canneal', 'dedup', 'freqmine', 'streamcluster']"
+    }
+  ],
+  "space": {
+    "impl": null,
+    "nthreads": null,
+    "cxx": [
+      "clang++",
+      "g++"
+    ],
+    "program": [
+      "bc",
+      "bfs",
+      "bodytrack",
+      "canneal",
+      "cc",
+      "dedup",
+      "freqmine",
+      "kdtree",
+      "kmeans",
+      "pr",
+      "sssp",
+      "streamcluster",
+      "tc",
+      "xz"
+    ],
+    "malloc": [
+      {
+        "name": "glibc",
+        "value": ""
+      },
+      {
+        "name": "jemalloc",
+        "value": "libjemalloc.so"
+      },
+      {
+        "name": "tbbmalloc",
+        "value": "libtbbmalloc.so"
+      }
+    ],
+    "narenas": null,
+    "input": [
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/kron24.sg -n $nruns -r 12",
+        "condition": "yuclid.program in ['bc']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/twitter.sg -n $nruns -r 12",
+        "condition": "yuclid.program in ['bc']"
+      },
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/twitter.sg -n $nruns -r 53752216",
+        "condition": "yuclid.program in ['bfs']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/urand.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['bfs']"
+      },
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/twitter.sg -n $nruns -r 53752216",
+        "condition": "yuclid.program in ['cc']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/kron28.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['cc']"
+      },
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/kron24.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['pr']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/kron27.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['pr']"
+      },
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/twitter.wsg -n $nruns -r 53752216",
+        "condition": "yuclid.program in ['sssp']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/kron27.wsg -n $nruns -r 1",
+        "condition": "yuclid.program in ['sssp']"
+      },
+      {
+        "name": "medium",
+        "value": "-f $graphs_dir/kron22.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['tc']"
+      },
+      {
+        "name": "large",
+        "value": "-f $graphs_dir/kron24.sg -n $nruns -r 1",
+        "condition": "yuclid.program in ['tc']"
+      },
+      {
+        "name": "small",
+        "value": "\\$OMP_NUM_THREADS 30000 2000 $root/parsec/canneal/data/400000.nets 700",
+        "condition": "yuclid.program in ['canneal']"
+      },
+      {
+        "name": "medium",
+        "value": "\\$OMP_NUM_THREADS 60000 4000 $root/parsec/canneal/data/400000.nets 1000",
+        "condition": "yuclid.program in ['canneal']"
+      },
+      {
+        "name": "large",
+        "value": "\\$OMP_NUM_THREADS 15000 2000 $root/parsec/canneal/data/2500000.nets 6000",
+        "condition": "yuclid.program in ['canneal']"
+      },
+      {
+        "name": "small",
+        "value": "${root}/parsec/freqmine/data/kosarak_500k.dat 410",
+        "condition": "yuclid.program in ['freqmine']"
+      },
+      {
+        "name": "medium",
+        "value": "${root}/parsec/freqmine/data/kosarak_990k.dat 790",
+        "condition": "yuclid.program in ['freqmine']"
+      },
+      {
+        "name": "large",
+        "value": "${root}/parsec/freqmine/data/webdocs_250k.dat 11000",
+        "condition": "yuclid.program in ['freqmine']"
+      },
+      {
+        "name": "small",
+        "value": "10 20 128 16384 16384 1000 none output_a.txt \\$OMP_NUM_THREADS",
+        "condition": "yuclid.program in ['streamcluster']"
+      },
+      {
+        "name": "medium",
+        "value": "10 20 128 150000 20000 5000 none output_b.txt \\$OMP_NUM_THREADS",
+        "condition": "yuclid.program in ['streamcluster']"
+      },
+      {
+        "name": "large",
+        "value": "10 20 128 1000000 200000 5000 none output_b.txt \\$OMP_NUM_THREADS",
+        "condition": "yuclid.program in ['streamcluster']"
+      },
+      {
+        "name": "small",
+        "value": "${root}/parsec/bodytrack/data/sequenceB_2 4 2 2000 5 0 \\$OMP_NUM_THREADS 0",
+        "condition": "yuclid.program in ['bodytrack']"
+      },
+      {
+        "name": "medium",
+        "value": "${root}/parsec/bodytrack/data/sequenceB_4 4 4 4000 5 0 \\$OMP_NUM_THREADS 0",
+        "condition": "yuclid.program in ['bodytrack']"
+      },
+      {
+        "name": "large",
+        "value": "${root}/parsec/bodytrack/data/sequenceB_261 4 261 4000 5 0 \\$OMP_NUM_THREADS 0",
+        "condition": "yuclid.program in ['bodytrack']"
+      },
+      {
+        "name": "small",
+        "value": "-i $root/rodinia/kmeans/data/10000_128.bin -b 1 -k 16",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "medium",
+        "value": "-i $root/rodinia/kmeans/data/50000_128.bin -b 1 -k 16",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 16",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large16",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 16",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large32",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 32",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large64",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 64",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large128",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 128",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large256",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 256",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large512",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 512",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "large1024",
+        "value": "-i $root/rodinia/kmeans/data/100000_128.bin -b 1 -k 1024",
+        "condition": "yuclid.program in ['kmeans']"
+      },
+      {
+        "name": "medium",
+        "value": "${root}/spec/inputs/cld.tar.xz 50 19cf30ae51eddcbefda78dd06014b4b96281456e078ca7c13e1c0c9e6aaea8dff3efb4ad6b0456697718cede6bd5454852652806a657bb56e07d61128434b474 536995164 539938872 2",
+        "condition": "yuclid.program in ['xz']"
+      },
+      {
+        "name": "large",
+        "value": "${root}/spec/inputs/cld.tar.xz 1400 19cf30ae51eddcbefda78dd06014b4b96281456e078ca7c13e1c0c9e6aaea8dff3efb4ad6b0456697718cede6bd5454852652806a657bb56e07d61128434b474 536995164 539938872 2",
+        "condition": "yuclid.program in ['xz']"
+      },
+      {
+        "name": "medium",
+        "value": "50000 4 2",
+        "condition": "yuclid.program in ['kdtree']"
+      },
+      {
+        "name": "large",
+        "value": "200000 4 2",
+        "condition": "yuclid.program in ['kdtree']"
+      },
+      {
+        "name": "medium",
+        "value": "-c -p -v -t \\$OMP_NUM_THREADS -i ${root}/parsec/dedup/data/media_large.dat -o output.dat.ddp",
+        "condition": "yuclid.program in ['dedup']"
+      },
+      {
+        "name": "large",
+        "value": "-c -p -v -t \\$OMP_NUM_THREADS -i ${root}/parsec/dedup/data/FC-6-x86_64-disc1.iso -o output.dat.ddp",
+        "condition": "yuclid.program in ['dedup']"
+      }
+    ]
+  },
+  "order": [
+    "cxx",
+    "malloc",
+    "input",
+    "nthreads",
+    "program",
+    "impl"
+  ]
+}
