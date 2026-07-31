@@ -16,5 +16,10 @@
       "b": "q",
       "lines": 2
     }
+  ],
+  "stdout_contains": [
+    "cannot decide condition during point setup",
+    "yuclid.a == 2",
+    "it refers to dimensions outside 'on' (b)"
   ]
 }

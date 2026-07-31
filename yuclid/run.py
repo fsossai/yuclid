@@ -910,6 +910,9 @@ def valid_conditions(point, order):
     return all(eval(c, point_context) for c in conditions)
 
 
+_undecidable_conditions = set()
+
+
 def valid_subpoint_conditions(point, suborder):
     # A point setup runs on a sub-point: a point restricted to the 'on'
     # dimensions, standing for every full point that shares those coordinates.
@@ -924,6 +927,17 @@ def valid_subpoint_conditions(point, suborder):
             if not eval(condition, point_context):
                 return False
         except (AttributeError, NameError):
+            # not obvious, so say it out loud — but only once per condition
+            if condition not in _undecidable_conditions:
+                _undecidable_conditions.add(condition)
+                report(
+                    LogLevel.WARNING,
+                    "cannot decide condition during point setup",
+                    condition,
+                    hint="it refers to dimensions outside 'on' ({}), where it holds "
+                    "for some points and not for others. The setup command runs "
+                    "anyway".format(", ".join(suborder)),
+                )
             continue
     return True
 
