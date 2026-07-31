@@ -1,0 +1,9 @@
+{
+  "description": "--fold compiles to the same array-valued record, NaN padding included",
+  "runs": [
+    ["run", "--compile", "compiled.sh", "--fold", "-o", "results.jsonl"],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [{"a": "1", "many": [3, 4, 5], "one": [9, "NaN", "NaN"]}]
+}

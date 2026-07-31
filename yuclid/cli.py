@@ -106,6 +106,14 @@ def get_parser():
         help="Skip the setup phase and run trials directly",
     )
     run_parser.add_argument(
+        "--compile",
+        default=None,
+        metavar="FILE",
+        help="Write a shell script that reproduces this configuration instead "
+        "of running it. Every point is unrolled, so the script needs neither "
+        "yuclid nor the configuration to run",
+    )
+    run_parser.add_argument(
         "--resume",
         default=None,
         metavar="FILE",

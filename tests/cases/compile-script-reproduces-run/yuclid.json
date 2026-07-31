@@ -1,0 +1,15 @@
+{
+  "env": { "FACTOR": "3" },
+  "setup": {
+    "global": ["mkdir -p work"],
+    "point": [
+      { "on": ["a"], "command": "echo ${yuclid.a} > work/${yuclid.a}.txt" }
+    ]
+  },
+  "space": { "a": [1, 2], "b": ["p", "q"] },
+  "trials": ["printf '%s %s\\n' $(($(cat work/${yuclid.a}.txt) * FACTOR)) ${yuclid.b}"],
+  "metrics": [
+    { "name": "scaled", "command": "awk '{print $1}' ${yuclid.@}.out" },
+    { "name": "letters", "command": "awk '{print length($2)}' ${yuclid.@}.out" }
+  ]
+}

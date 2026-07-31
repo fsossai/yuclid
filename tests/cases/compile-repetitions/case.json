@@ -1,0 +1,13 @@
+{
+  "description": "-r unrolls each repetition into its own block",
+  "runs": [
+    ["run", "--compile", "compiled.sh", "-r", "2", "-s", "a=1", "-o", "results.jsonl"],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [
+    {"a": "1", "n": 1},
+    {"a": "1", "n": 1}
+  ],
+  "file_contains": { "compiled.sh": ["_rep0", "_rep1"] }
+}

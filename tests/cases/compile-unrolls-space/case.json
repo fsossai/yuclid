@@ -1,0 +1,11 @@
+{
+  "description": "the script is flat: one block per point, no loops and no branches",
+  "args": ["run", "--compile", "compiled.sh"],
+  "output_flag": false,
+  "file_contains": {
+    "compiled.sh": ["[1/3] 1", "[2/3] 2", "[3/3] 3"]
+  },
+  "file_not_contains": {
+    "compiled.sh": ["for ", "while ", "if [", "case ", "${yuclid."]
+  }
+}

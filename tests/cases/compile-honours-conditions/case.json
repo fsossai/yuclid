@@ -1,0 +1,14 @@
+{
+  "description": "conditions are resolved while compiling: the carved-out points are simply absent",
+  "runs": [
+    ["run", "--compile", "compiled.sh", "-o", "results.jsonl"],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [
+    {"a": "1", "b": "x", "n": 1},
+    {"a": "2", "b": "x", "n": 2},
+    {"a": "2", "b": "y", "n": 2}
+  ],
+  "file_not_contains": { "compiled.sh": ["1.y"] }
+}

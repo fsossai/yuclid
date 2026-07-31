@@ -278,6 +278,25 @@ What the template is showing:
   newlines. `${yuclid.@}.out` and `${yuclid.@}.err` are that trial's captured
   output.
 
+## Reproducible scripts
+
+`yuclid run --compile experiment.sh` writes a shell script instead of running
+anything. Every point of the space is unrolled, so the script contains no loops
+and no branches — just the commands, in the order yuclid would have run them:
+
+```sh
+yuclid run -p quick --compile experiment.sh
+sh experiment.sh                    # no yuclid, no configuration needed
+```
+
+It reproduces the same JSON Lines, appended to the same place, and captures
+each trial's output the same way. `YUCLID_OUTPUT` and `YUCLID_WORK` override
+the two destinations. Selectors, presets, conditions and `--repeat` are all
+resolved while compiling, so the script is a record of exactly one experiment.
+
+Numbers keep the formatting the measured program printed, rather than being
+re-serialized.
+
 ## Plot API
 
 `yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpuid` can be emulated in a more customizable script, e.g.:

@@ -1,4 +1,5 @@
 from yuclid.log import LogLevel, report
+from yuclid import __version__
 from datetime import datetime
 import concurrent.futures
 import threading
@@ -92,6 +93,53 @@ def validate_yvars_in_trials(space, trials):
 
 
 DEFAULT_INPUTS = ["yuclid.json", "yuclid.yaml", "yuclid.yml"]
+
+
+def sh_quote(text):
+    """Quote a string so a POSIX shell reads it back verbatim."""
+    return "'" + str(text).replace("'", "'\\''") + "'"
+
+
+def sh_in_quotes(text):
+    """Escape a string for use inside a double-quoted shell word."""
+    for char in ["\\", '"', "$", "`"]:
+        text = text.replace(char, "\\" + char)
+    return text
+
+
+class ScriptWriter:
+    """Collects the shell script produced by --compile.
+
+    The script is a flat sequence of commands: every point of the space, every
+    repetition and every trial is unrolled at compile time, so nothing is left
+    to decide while it runs.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.lines = []
+
+    def blank(self):
+        if len(self.lines) > 0 and self.lines[-1] != "":
+            self.lines.append("")
+
+    def comment(self, text=""):
+        self.lines.append(("# " + text).rstrip())
+
+    def section(self, title):
+        self.blank()
+        self.comment("--- {} ".format(title).ljust(72, "-"))
+
+    def command(self, text):
+        self.lines.append(text)
+
+    def save(self):
+        directory = os.path.dirname(self.path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(self.path, "w") as f:
+            f.write("\n".join(self.lines) + "\n")
+        os.chmod(self.path, 0o755)
 
 
 def load_json(f):
@@ -580,7 +628,9 @@ def run_point_command(command, execution, point, on_dims):
     if not valid_subpoint_conditions(point, suborder):
         return
 
-    if execution["dry_run"]:
+    if execution["script"] is not None:
+        execution["script"].command(pcommand)
+    elif execution["dry_run"]:
         report(
             LogLevel.INFO,
             "dry run",
@@ -679,14 +729,19 @@ def run_point_setup(data, execution):
                 item,
             )
         else:
-            if execution["dry_run"]:
+            if execution["script"] is not None:
+                execution["script"].section("point setup")
+                report(LogLevel.INFO, "compiling point setup")
+            elif execution["dry_run"]:
                 report(LogLevel.INFO, "starting dry point setup")
             else:
                 report(LogLevel.INFO, "starting point setup")
 
             run_point_setup_item(item, execution)
 
-            if execution["dry_run"]:
+            if execution["script"] is not None:
+                pass
+            elif execution["dry_run"]:
                 report(LogLevel.INFO, "dry point setup completed")
             else:
                 report(LogLevel.INFO, "point setup completed")
@@ -704,14 +759,22 @@ def run_global_setup(data, execution):
                 for cmd in value["setup"]:
                     setup_commands.append(cmd)
 
-    if execution["dry_run"]:
+    if execution["script"] is not None:
+        if len(setup_commands) > 0:
+            execution["script"].section("global setup")
+        report(LogLevel.INFO, "compiling global setup")
+    elif execution["dry_run"]:
         report(LogLevel.INFO, "starting dry global setup")
     else:
         report(LogLevel.INFO, "starting global setup")
 
     errors = False
     for command in setup_commands:
-        if execution["dry_run"]:
+        if execution["script"] is not None:
+            execution["script"].command(
+                substitute_global_yvars(command, subspace)
+            )
+        elif execution["dry_run"]:
             report(LogLevel.INFO, "dry run", command)
         else:
             command = substitute_global_yvars(command, subspace)
@@ -733,7 +796,9 @@ def run_global_setup(data, execution):
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
         report(LogLevel.INFO, "setup failed")
-    if execution["dry_run"]:
+    if execution["script"] is not None:
+        pass
+    elif execution["dry_run"]:
         report(LogLevel.INFO, "dry setup completed")
     else:
         report(LogLevel.INFO, "setup completed")
@@ -1108,6 +1173,110 @@ def load_recorded_points(path, order, metric_names):
     return recorded
 
 
+def compile_record(script, coordinates, metric_names, folded):
+    """Emit the commands that turn a point's metric files into records.
+
+    Exploded mode zips the per-metric sample files row by row, which is what
+    `paste` does, and pads the short ones with NaN. Folded mode joins each
+    file into one array.
+    """
+    if len(metric_names) == 0:
+        script.comment("no metric applies here: nothing to record")
+        return
+
+    files = ['"$R".m{}'.format(k) for k in range(len(metric_names))]
+    prefix = ", ".join(
+        '{}: {}'.format(json.dumps(str(dim)), json.dumps(str(name)))
+        for dim, name in coordinates
+    )
+
+    # paste zips the files and pads the short ones with empty fields, which is
+    # where the NaNs come from. The awk program is unrolled over the metrics,
+    # so it holds no loop either.
+    if folded:
+        fields = ", ".join(
+            "{}: [%s]".format(json.dumps(name)) for name in metric_names
+        )
+        collect = " ".join(
+            's{0} = s{0} sep (${0}=="" ? "NaN" : ${0});'.format(k + 1)
+            for k in range(len(metric_names))
+        )
+        values = ", ".join("s{}".format(k + 1) for k in range(len(metric_names)))
+        program = (
+            'BEGIN {{ FS="\\t" }} '
+            '{{ {} sep = ", " }} '
+            'END {{ printf "{{{}, {}}}\\n", {} }}'
+        ).format(
+            collect,
+            prefix.replace('"', '\\"'),
+            fields.replace('"', '\\"'),
+            values,
+        )
+    else:
+        fields = ", ".join(
+            "{}: %s".format(json.dumps(name)) for name in metric_names
+        )
+        values = ", ".join(
+            '(${0}=="" ? "NaN" : ${0})'.format(k + 1)
+            for k in range(len(metric_names))
+        )
+        program = 'BEGIN {{ FS="\\t" }} {{ printf "{{{}, {}}}\\n", {} }}'.format(
+            prefix.replace('"', '\\"'), fields.replace('"', '\\"'), values
+        )
+
+    script.command(
+        "paste {} | awk {} >> \"$OUTPUT\"".format(" ".join(files), sh_quote(program))
+    )
+
+
+def compile_point_trials(settings, data, execution, i, point, script):
+    point_map = {key: x for key, x in zip(execution["order"], point)}
+    compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
+        data, point, execution
+    )
+    coordinates = [(key, x["name"]) for key, x in point_map.items()]
+
+    i_padded = str(i).zfill(len(str(execution["subspace_size"])))
+    repeat = settings["repeat"]
+
+    for rep in range(repeat):
+        rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
+        script.section(
+            "{} {}{}".format(
+                get_progress(i, execution["subspace_size"]),
+                point_to_string(point),
+                rep_suffix,
+            )
+        )
+        base = "{}.{}{}".format(i_padded, point_to_string(point), rep_suffix)
+        script.command('R="$WORK/{}"'.format(sh_in_quotes(base)))
+
+        metric_slots = dict()
+        for j, trial in enumerate(compatible_trials):
+            for metric in compatible_metrics:
+                if trial["metrics"] is None or metric["name"] in trial["metrics"]:
+                    metric_slots[metric["name"]] = j
+            command = substitute_global_yvars(trial["command"], execution["subspace"])
+            command = substitute_point_yvars(command, point_map, '"$P{}"'.format(j))
+            script.command('P{0}="${{R}}_trial{0}"'.format(j))
+            script.command(
+                '{} > "$P{}".out 2> "$P{}".err'.format(command, j, j)
+            )
+
+        names = [m["name"] for m in compatible_metrics]
+        for k, metric in enumerate(compatible_metrics):
+            point_id = '"$P{}"'.format(metric_slots[metric["name"]])
+            command = substitute_global_yvars(metric["command"], execution["subspace"])
+            command = substitute_point_yvars(command, point_map, point_id)
+            # one sample per line, exactly how yuclid splits a metric's output
+            script.command(
+                "{} | tr -s '[:space:]' '\\n' | sed '/^$/d' > \"$R\".m{}".format(
+                    command, k
+                )
+            )
+        compile_record(script, coordinates, names, settings["fold"])
+
+
 def report_skipped(execution, i, point):
     report(
         LogLevel.INFO,
@@ -1126,7 +1295,12 @@ def remaining_repetitions(settings, execution, point):
 
 
 def run_subspace_trials(settings, data, execution):
-    if settings["dry_run"]:
+    if execution["script"] is not None:
+        for i, point in enumerate(execution["subspace_points"], start=1):
+            compile_point_trials(
+                settings, data, execution, i, point, execution["script"]
+            )
+    elif settings["dry_run"]:
         for i, point in enumerate(execution["subspace_points"], start=1):
             point_map = {key: x for key, x in zip(execution["order"], point)}
             if valid_conditions(point, execution["order"]):
@@ -1212,7 +1386,7 @@ def validate_dimensions(subspace):
 
 
 def prepare_subspace_execution(
-    subspace, order, env, metrics, dry_run, repeat=1, recorded=None
+    subspace, order, env, metrics, dry_run, repeat=1, recorded=None, script=None
 ):
     ordered_subspace = [subspace[x] for x in order]
 
@@ -1235,6 +1409,7 @@ def prepare_subspace_execution(
     execution["dry_run"] = dry_run
     execution["metrics"] = metrics
     execution["recorded"] = recorded
+    execution["script"] = script
 
     if execution["subspace_size"] == 0:
         report(LogLevel.WARNING, "empty subspace")
@@ -1322,7 +1497,9 @@ def build_settings(args):
             report(LogLevel.ERROR, f"'{file}' does not exist")
         else:
             settings["inputs"].append(file)
-    os.makedirs(args.temp_dir, exist_ok=True)
+    if args.compile is None:
+        # compiling touches nothing but the script it writes
+        os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
@@ -1351,6 +1528,24 @@ def build_settings(args):
         settings["output"] = os.path.join(args.output_dir, filename)
     else:
         settings["output"] = args.output
+
+    if args.compile is not None:
+        ignored = [
+            name
+            for name, active in [
+                ("--dry-run", args.dry_run),
+                ("--parallel-trials", args.parallel_trials != 0),
+                ("--resume", args.resume is not None),
+            ]
+            if active
+        ]
+        if len(ignored) > 0:
+            report(
+                LogLevel.WARNING,
+                "ignoring {}".format(", ".join(ignored)),
+                hint="--compile only writes a script: it runs nothing, and the "
+                "script it writes is sequential",
+            )
 
     settings["cwd"] = os.getcwd()
     report(LogLevel.INFO, "working directory", settings["cwd"])
@@ -1484,7 +1679,9 @@ def print_subspace(subspace):
         report(LogLevel.INFO, "subspace.{}: {}".format(dim, ", ".join(names)))
 
 
-def run_experiments(settings, data, order, env, preset_name=None, recorded=None):
+def run_experiments(
+    settings, data, order, env, preset_name=None, recorded=None, script=None
+):
     if preset_name is None:
         subspace = data["space"].copy()
     else:
@@ -1495,7 +1692,7 @@ def run_experiments(settings, data, order, env, preset_name=None, recorded=None)
     print_subspace(subspace)
     execution = prepare_subspace_execution(
         subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"],
-        repeat=settings["repeat"], recorded=recorded,
+        repeat=settings["repeat"], recorded=recorded, script=script,
     )
     validate_execution(execution, data)
     if not settings["no_setup"]:
@@ -1529,6 +1726,62 @@ def format_duration(seconds):
     return f"{seconds}s"
 
 
+def compile_preamble(script, settings, data):
+    script.command("#!/bin/sh")
+    script.comment("Generated by yuclid {} on {:%Y-%m-%d %H:%M:%S}".format(
+        __version__, datetime.now()
+    ))
+    script.comment("from {}".format(", ".join(settings["inputs"])))
+    script.comment()
+    script.comment("Every point of the space is unrolled, in the order yuclid")
+    script.comment("would have run them. Neither yuclid nor the configuration is")
+    script.comment("needed to run this script.")
+    script.comment()
+    script.comment("Override the destinations with the environment:")
+    script.comment("  YUCLID_OUTPUT  where the records are appended")
+    script.comment("  YUCLID_WORK    where each trial's output is captured")
+    script.blank()
+    if settings["ignore_errors"]:
+        script.command("set -u")
+    else:
+        # the default error policy: stop at the first failing command
+        script.command("set -eu")
+    script.blank()
+    script.command('OUTPUT="${{YUCLID_OUTPUT:-{}}}"'.format(
+        sh_in_quotes(settings["output"])
+    ))
+    script.command('WORK="${{YUCLID_WORK:-{}}}"'.format(
+        sh_in_quotes(os.path.join(settings["temp_dir"], settings["now"]))
+    ))
+    script.command('mkdir -p "$WORK"')
+
+    if len(data["env"]) > 0:
+        script.section("environment")
+        for key, value in data["env"].items():
+            script.command('export {}="{}"'.format(key, value))
+
+
+def compile_experiments(settings, data, order, env):
+    script = ScriptWriter(settings["compile"])
+    compile_preamble(script, settings, data)
+
+    if len(settings["presets"]) > 0:
+        for preset_name in settings["presets"]:
+            report(LogLevel.INFO, "compiling preset", preset_name)
+            script.section("preset {}".format(preset_name))
+            run_experiments(settings, data, order, env, preset_name, script=script)
+    else:
+        run_experiments(settings, data, order, env, script=script)
+
+    script.save()
+    report(
+        LogLevel.INFO,
+        "compiled",
+        script.path,
+        hint="run it with `sh {}`, no yuclid needed".format(script.path),
+    )
+
+
 def launch(args):
     started = time.monotonic()
     settings = build_settings(args)
@@ -1541,6 +1794,13 @@ def launch(args):
     validate_yvars_in_trials(data["space"], data["trials"])
 
     validate_presets(settings, data)
+
+    if settings["compile"] is not None:
+        compile_experiments(settings, data, order, env)
+        report(
+            LogLevel.INFO, "finished in", format_duration(time.monotonic() - started)
+        )
+        return
 
     recorded = None
     if settings["resume"] is not None:

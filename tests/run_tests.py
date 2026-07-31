@@ -163,6 +163,23 @@ def invoke(argv, workdir, timeout):
     return proc.returncode, proc.stdout + proc.stderr
 
 
+def invoke_shell(command, workdir, timeout):
+    try:
+        proc = subprocess.run(
+            command,
+            shell=True,
+            cwd=workdir,
+            env=child_env(),
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        raise Failure("timed out after {}s: {}".format(timeout, command))
+    return proc.returncode, proc.stdout + proc.stderr
+
+
 def check(case, workdir, codes, output):
     expected_codes = case.get("exit_codes")
     if expected_codes is None:
@@ -183,6 +200,19 @@ def check(case, workdir, codes, output):
     for pattern in case.get("files_not_exist", []):
         if glob.glob(os.path.join(workdir, pattern)):
             raise Failure("a file unexpectedly matches {!r}".format(pattern))
+
+    for path, needles in case.get("file_contains", {}).items():
+        with open(os.path.join(workdir, path)) as f:
+            content = f.read()
+        for needle in needles:
+            if needle not in content:
+                raise Failure("{} does not contain {!r}".format(path, needle))
+    for path, needles in case.get("file_not_contains", {}).items():
+        with open(os.path.join(workdir, path)) as f:
+            content = f.read()
+        for needle in needles:
+            if needle in content:
+                raise Failure("{} unexpectedly contains {!r}".format(path, needle))
 
     records = read_records(workdir, case)
 
@@ -244,10 +274,14 @@ def run_case(name, keep, timeout):
         codes, output = [], ""
         try:
             for argv in runs:
-                argv = list(argv)
-                if case.get("output_flag", True):
-                    argv += ["-o", RESULTS]
-                code, out = invoke(argv, workdir, timeout)
+                if isinstance(argv, str):
+                    # a plain shell command, e.g. running a compiled script
+                    code, out = invoke_shell(argv, workdir, timeout)
+                else:
+                    argv = list(argv)
+                    if case.get("output_flag", True):
+                        argv += ["-o", RESULTS]
+                    code, out = invoke(argv, workdir, timeout)
                 codes.append(code)
                 output += out
             check(case, workdir, codes, output)

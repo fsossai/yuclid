@@ -46,7 +46,7 @@ expected records are therefore written out literally.
 |---|---|
 | `description` | what the case pins down (shown by `--list`) |
 | `args` | argv after `yuclid` (default `["run"]`) |
-| `runs` | several invocations in sequence, instead of `args` |
+| `runs` | several steps in sequence, instead of `args`: a list is yuclid's argv, a string is a shell command (e.g. running a compiled script) |
 | `output_flag` | set `false` to stop the runner appending `-o results.jsonl` |
 | `exit_code` / `exit_codes` | expected status of the last run / of each run |
 | `records` | the exact dataset, in order |
@@ -55,6 +55,8 @@ expected records are therefore written out literally.
 | `no_results_file` | no dataset may be written |
 | `stdout_contains` / `stdout_not_contains` | substrings of the diagnostics |
 | `files_exist` / `files_not_exist` | globs, relative to the working directory |
+| `file_contains` / `file_not_contains` | `{path: [substrings]}` |
+| `needs_module` | skip the case unless this module is importable (e.g. `yaml`) |
 | `xfail` | why this case is expected to fail today |
 
 Numbers are compared strictly: an expected `3` does not match an actual `3.0`.

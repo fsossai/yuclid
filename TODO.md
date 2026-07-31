@@ -10,7 +10,6 @@
 - [ ] docs: examples — benchmarking different types of matrix multiplication
 - [ ] docs: README should lead with the interactive slicer on **any** CSV; add an asciinema/GIF
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
-- [ ] feat: compile standalone bash script
 - [ ] feat: declarative metric extraction — named-capture regex, and JSON/CSV field selection, alongside shell pipelines
 - [ ] feat: derived dimensions — a dimension whose value is computed per-point from other dimensions
 - [ ] feat: metric fallback value when extraction finds nothing, instead of erroring (cf. JUBE's `<pattern default=...>`)
