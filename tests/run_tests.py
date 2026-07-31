@@ -283,35 +283,46 @@ def main():
     # a case costs about a second and a half, nearly all of it spent importing
     # the plotting stack that `yuclid.cli` pulls in, so run them concurrently:
     # every case owns its working directory and shares nothing with the others.
+    # each one is reported the moment it lands, so the order below is the order
+    # they finished in, not the order they were listed in.
     started = time.time()
+    done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        outcomes = list(
-            pool.map(lambda n: run_case(n, args.keep, args.timeout), names)
-        )
+        pending = {
+            pool.submit(run_case, name, args.keep, args.timeout): name
+            for name in names
+        }
+        for future in concurrent.futures.as_completed(pending):
+            name = pending[future]
+            outcome, reason, output, workdir = future.result()
+            case = load_case(os.path.join(CASES_DIR, name))
+            xfail = case.get("xfail")
+            if xfail:
+                outcome = "xfail" if outcome == "fail" else "xpass"
+            tally[outcome] += 1
+            done += 1
 
-    for name, (outcome, reason, output, workdir) in zip(names, outcomes):
-        case = load_case(os.path.join(CASES_DIR, name))
-        xfail = case.get("xfail")
-        if xfail:
-            outcome = "xfail" if outcome == "fail" else "xpass"
-        tally[outcome] += 1
-
-        mark = {"pass": "PASS", "fail": "FAIL", "xfail": "XFAIL", "xpass": "XPASS"}[outcome]
-        print("{:<5} {}".format(mark, name))
-        if outcome == "xfail":
-            print("      known defect: {}".format(xfail))
-        if outcome == "xpass":
-            print("      the defect seems fixed — drop 'xfail' from case.json")
-            print("      it was: {}".format(xfail))
-        if outcome == "fail":
-            for line in reason.splitlines():
-                print("      " + line)
-            failures.append(name)
-        if args.keep:
-            print("      workdir: {}".format(workdir))
-        if args.verbose and outcome in ("fail", "xfail"):
-            for line in output.splitlines():
-                print("      | " + line)
+            mark = {
+                "pass": "PASS", "fail": "FAIL", "xfail": "XFAIL", "xpass": "XPASS"
+            }[outcome]
+            print("[{:>{w}}/{}] {:<5} {}".format(
+                done, len(names), mark, name, w=len(str(len(names)))
+            ), flush=True)
+            indent = " " * (len(str(len(names))) * 2 + 4)
+            if outcome == "xfail":
+                print(indent + "known defect: {}".format(xfail))
+            if outcome == "xpass":
+                print(indent + "the defect seems fixed — drop 'xfail' from case.json")
+                print(indent + "it was: {}".format(xfail))
+            if outcome == "fail":
+                for line in reason.splitlines():
+                    print(indent + line)
+                failures.append(name)
+            if args.keep:
+                print(indent + "workdir: {}".format(workdir))
+            if args.verbose and outcome in ("fail", "xfail"):
+                for line in output.splitlines():
+                    print(indent + "| " + line)
 
     print(
         "\nran in {:.1f}s".format(time.time() - started)
@@ -322,7 +333,7 @@ def main():
         )
     )
     if failures:
-        print("failed: " + ", ".join(failures))
+        print("failed: " + ", ".join(sorted(failures)))
     return 1 if tally["fail"] or tally["xpass"] else 0
 
 

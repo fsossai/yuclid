@@ -284,3 +284,14 @@ cli_args = [
 df = yuclid.plot.draw(fig, ax, cli_args)
 plt.show()
 ```
+
+## Tests
+
+`yuclid run` has a black-box test suite. No dependencies beyond the standard library:
+
+```
+python tests/run_tests.py            # run everything
+python tests/run_tests.py -k preset  # only cases whose name contains "preset"
+```
+
+See [tests/README.md](tests/README.md) for how to add a case.
