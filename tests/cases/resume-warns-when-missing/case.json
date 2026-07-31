@@ -1,0 +1,25 @@
+{
+  "description": "resuming a file that does not exist yet warns, and runs everything",
+  "args": [
+    "run",
+    "-s",
+    "a=1,2",
+    "-o",
+    "results.yuclid.jsonl",
+    "--resume"
+  ],
+  "output_flag": false,
+  "stdout_contains": [
+    "nothing to resume: the file does not exist yet"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "2",
+      "n": 2
+    }
+  ]
+}

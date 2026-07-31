@@ -4,8 +4,9 @@
     "run",
     "-s",
     "a=1,2",
-    "--resume",
-    "existing.jsonl"
+    "-o",
+    "existing.jsonl",
+    "--resume"
   ],
   "output_flag": false,
   "stdout_contains": [

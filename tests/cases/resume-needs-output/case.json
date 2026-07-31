@@ -1,0 +1,14 @@
+{
+  "description": "--resume without --output has no file to continue",
+  "args": [
+    "run",
+    "--resume"
+  ],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": [
+    "--resume needs --output",
+    "--resume continues the file given to --output"
+  ],
+  "no_results_file": true
+}

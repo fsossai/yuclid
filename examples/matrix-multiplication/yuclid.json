@@ -4,11 +4,7 @@
     "MATRIX_SEED": "20260730"
   },
   "space": {
-    "size": [
-      { "name": "512x512", "value": 512 },
-      { "name": "1024x1024", "value": 1024 },
-      { "name": "1536x1536", "value": 1536 }
-    ],
+    "size": [512,1024,1536],
     "variant": ["dot", "rows", "columns"],
     "tile": [
       { "name": "none", "value": 0 },

@@ -1,16 +1,45 @@
 {
   "description": "--resume reads a CSV dataset and appends to it without a second header",
   "runs": [
-    ["run", "-s", "a=1", "-o", "results.yuclid.csv"],
-    ["run", "--resume", "results.yuclid.csv"]
+    [
+      "run",
+      "-s",
+      "a=1",
+      "-o",
+      "results.yuclid.csv"
+    ],
+    [
+      "run",
+      "-o",
+      "results.yuclid.csv",
+      "--resume"
+    ]
   ],
   "output_flag": false,
   "results_file": "results.yuclid.csv",
   "records": [
-    {"a": "1", "b": "p", "n": "1"},
-    {"a": "1", "b": "q", "n": "1"},
-    {"a": "2", "b": "p", "n": "2"},
-    {"a": "2", "b": "q", "n": "2"}
+    {
+      "a": "1",
+      "b": "p",
+      "n": "1"
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "n": "1"
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "n": "2"
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "n": "2"
+    }
   ],
-  "stdout_contains": ["resuming from: results.yuclid.csv: 2 points already recorded"]
+  "stdout_contains": [
+    "resuming from: results.yuclid.csv: 2 points already recorded"
+  ]
 }

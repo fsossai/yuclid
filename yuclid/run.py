@@ -1206,12 +1206,11 @@ def load_recorded_points(path, order, metric_names, fmt):
         report(LogLevel.FATAL, "--resume needs a file, not a directory", path)
     if not os.path.isfile(path):
         report(
-            LogLevel.FATAL,
-            "the file given to --resume does not exist",
+            LogLevel.WARNING,
+            "nothing to resume: the file does not exist yet",
             path,
-            hint="--resume continues a dataset that already exists. "
-            "Run without it to start one",
         )
+        return recorded
 
     dimensions = set(order)
     foreign, unreadable = 0, 0
@@ -1655,22 +1654,22 @@ def build_settings(args):
         os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
-    # `--resume` without a file resumes whatever --output names
-    settings["resume"] = args.resume
-    if args.resume == "":
+    # `--resume` continues the file named by --output
+    settings["resume"] = None
+    if args.resume:
         if args.output is None:
             report(
                 LogLevel.FATAL,
-                "--resume was given no file, and neither was --output",
-                hint="name the file to resume, as --resume FILE, or the one to "
-                "write, as --output FILE",
+                "--resume needs --output",
+                hint="--resume continues the file given to --output, so there "
+                "has to be one",
             )
         settings["resume"] = args.output
 
     settings["format"] = args.format
     if settings["format"] is None:
         # the extension of a name the user chose decides, jsonl otherwise
-        named = settings["resume"] or args.output
+        named = args.output
         is_csv = named is not None and named.lower().endswith(".csv")
         settings["format"] = "csv" if is_csv else "jsonl"
 
@@ -1684,23 +1683,7 @@ def build_settings(args):
 
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
     filename = "{}.yuclid.{}".format(settings["now"], settings["format"])
-    if settings["resume"] is not None:
-        # --output is not ignored when it is the very file being resumed
-        overridden = []
-        if args.resume != "":
-            overridden.append(("--output", args.output))
-        overridden.append(("--output-dir", args.output_dir))
-        ignored = [name for name, value in overridden if value is not None]
-        if len(ignored) > 0:
-            report(
-                LogLevel.WARNING,
-                "ignoring {}".format(" and ".join(ignored)),
-                hint="--resume writes to the file it resumes from: {}".format(
-                    settings["resume"]
-                ),
-            )
-        settings["output"] = settings["resume"]
-    elif args.output is None and args.output_dir is None:
+    if args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:
         report(LogLevel.FATAL, "either --output or --output-dir must be specified")

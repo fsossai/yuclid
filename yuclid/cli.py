@@ -122,13 +122,10 @@ def get_parser():
     )
     run_parser.add_argument(
         "--resume",
-        nargs="?",
-        const="",
-        default=None,
-        metavar="FILE",
-        help="Append to an existing result file, skipping the points it "
-        "already holds. FILE becomes the output: --output and --output-dir are "
-        "ignored. Without FILE, the file given to --output is resumed",
+        default=False,
+        action="store_true",
+        help="Skip the points the file given to --output already holds, and "
+        "append the others to it. Requires --output",
     )
     run_parser.add_argument(
         "-r",
