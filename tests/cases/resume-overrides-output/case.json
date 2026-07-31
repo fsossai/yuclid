@@ -1,6 +1,9 @@
 {
   "description": "--resume is the output: --output and --output-dir are ignored with a warning",
-  "args": ["run", "-s", "a=1", "--resume", "resumed.jsonl", "-o", "elsewhere.jsonl", "--output-dir", "somewhere"],
+  "runs": [
+    ["run", "-s", "a=1", "-o", "resumed.jsonl"],
+    ["run", "-s", "a=1", "--resume", "resumed.jsonl", "-o", "elsewhere.jsonl", "--output-dir", "somewhere"]
+  ],
   "output_flag": false,
   "stdout_contains": [
     "ignoring --output and --output-dir",

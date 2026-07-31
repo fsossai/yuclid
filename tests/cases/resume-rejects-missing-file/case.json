@@ -1,0 +1,11 @@
+{
+  "description": "resuming from a file that does not exist is refused",
+  "args": ["run", "-s", "a=1,2", "--resume", "nowhere.jsonl"],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": [
+    "the file given to --resume does not exist",
+    "Run without it to start one"
+  ],
+  "no_results_file": true
+}

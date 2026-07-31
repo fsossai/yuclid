@@ -1205,8 +1205,13 @@ def load_recorded_points(path, order, metric_names, fmt):
     if os.path.isdir(path):
         report(LogLevel.FATAL, "--resume needs a file, not a directory", path)
     if not os.path.isfile(path):
-        report(LogLevel.INFO, "nothing to resume from", path)
-        return recorded
+        report(
+            LogLevel.FATAL,
+            "the file given to --resume does not exist",
+            path,
+            hint="--resume continues a dataset that already exists. "
+            "Run without it to start one",
+        )
 
     dimensions = set(order)
     foreign, unreadable = 0, 0
