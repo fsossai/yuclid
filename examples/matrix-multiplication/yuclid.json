@@ -7,8 +7,7 @@
     "size": [
       { "name": "512x512", "value": 512 },
       { "name": "1024x1024", "value": 1024 },
-      { "name": "1536x1536", "value": 1536 },
-      { "name": "2048x2048", "value": 2048 }
+      { "name": "1536x1536", "value": 1536 }
     ],
     "variant": ["dot", "rows", "columns", "tiled"],
     "tile": [
@@ -47,10 +46,10 @@
   ],
   "presets": {
     "quick": {
-      "size": ["512x512", "1024x1024"]
+      "size": ["512x512"]
     },
     "large": {
-      "size": ["1536x1536", "2048x2048"]
+      "size": ["1024x1024", "1536x1536"]
     }
   },
   "order": ["size", "variant", "tile"]
