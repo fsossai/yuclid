@@ -818,8 +818,20 @@ def metrics_to_string(metric_values):
     return " ".join([f"{m}={v}" for m, v in metric_values.items()])
 
 
-def get_progress(i, subspace_size):
-    return "[{}/{}]".format(i, subspace_size)
+def get_progress(unit, total):
+    """Where a run has got to, counted in repetitions rather than points.
+
+    With -r N every point is N units of work, so the counter and its total
+    describe the whole experiment: a point already recorded by a previous run
+    consumes its share of the count without being executed again.
+    """
+    return "[{}/{}]".format(unit, total)
+
+
+def progress_units(settings, execution, i):
+    """The total number of units, and the ones before point `i`."""
+    repeat = settings["repeat"]
+    return execution["subspace_size"] * repeat, (i - 1) * repeat
 
 
 def run_point_trials(
@@ -831,9 +843,11 @@ def run_point_trials(
     )
 
     point_map = {key: x for key, x in zip(execution["order"], point)}
+    total, base = progress_units(settings, execution, i)
+    done = settings["repeat"] - (repeat if repeat is not None else settings["repeat"])
     report(
         LogLevel.INFO,
-        get_progress(i, execution["subspace_size"]),
+        get_progress(base + done + 1, total),
         point_to_string(point),
         "started",
     )
@@ -997,11 +1011,9 @@ def run_point_trials(
                 file_lock.release()
 
         completion = [
-            get_progress(i, execution["subspace_size"]),
+            get_progress(base + rep + 1, total),
             point_to_string(point),
-            "completed"
-            if requested == 1
-            else "completed rep {}/{}".format(rep + 1, requested),
+            "completed",
         ]
         if len(collected_metrics) > 0:
             completion.append(metrics_to_string(collected_metrics))
@@ -1223,10 +1235,11 @@ def load_recorded_points(path, order, metric_names, fmt):
     return recorded
 
 
-def report_skipped(execution, i, point):
+def report_skipped(settings, execution, i, point):
+    total, base = progress_units(settings, execution, i)
     report(
         LogLevel.INFO,
-        get_progress(i, execution["subspace_size"]),
+        get_progress(base + settings["repeat"], total),
         point_to_string(point),
         "already recorded. Skipping",
     )
@@ -1252,17 +1265,18 @@ def run_subspace_trials(settings, data, execution):
                 compatible_trials, compatible_metrics = (
                     get_compatible_trials_and_metrics(data, point, execution)
                 )
+                total, base = progress_units(settings, execution, i)
                 if remaining_repetitions(settings, execution, point) == 0:
                     report(
                         LogLevel.INFO,
-                        get_progress(i, execution["subspace_size"]),
+                        get_progress(base + settings["repeat"], total),
                         point_to_string(point),
                         "already recorded. Skipping",
                     )
                     continue
                 report(
                     LogLevel.INFO,
-                    get_progress(i, execution["subspace_size"]),
+                    get_progress(base + settings["repeat"], total),
                     "dry run",
                     point_to_string(point),
                 )
@@ -1300,7 +1314,7 @@ def run_subspace_trials(settings, data, execution):
                     ):
                         repeat = remaining_repetitions(settings, execution, point)
                         if repeat == 0:
-                            report_skipped(execution, i, point)
+                            report_skipped(settings, execution, i, point)
                             continue
                         future = executor.submit(
                             run_point_trials,
@@ -1324,7 +1338,7 @@ def run_subspace_trials(settings, data, execution):
                 ):
                     repeat = remaining_repetitions(settings, execution, point)
                     if repeat == 0:
-                        report_skipped(execution, i, point)
+                        report_skipped(settings, execution, i, point)
                         continue
                     run_point_trials(
                         settings, data, execution, writer, i, point, repeat=repeat

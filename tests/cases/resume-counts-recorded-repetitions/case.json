@@ -1,0 +1,15 @@
+{
+  "description": "repetitions already recorded consume their share of the count, so the total is the whole experiment",
+  "runs": [
+    ["run", "-r", "1", "-o", "results.yuclid.jsonl"],
+    ["run", "-r", "3", "-o", "results.yuclid.jsonl", "--resume"]
+  ],
+  "output_flag": false,
+  "record_count": 6,
+  "stdout_contains": [
+    "[2/6]: 1: started",
+    "[3/6]: 1: completed",
+    "[5/6]: 2: started",
+    "[6/6]: 2: completed"
+  ]
+}

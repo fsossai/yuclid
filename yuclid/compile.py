@@ -179,24 +179,19 @@ def compile_point_trials(settings, data, execution, i, point, script):
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
     repeat = settings["repeat"]
+    total, base = run.progress_units(settings, execution, i)
 
     for rep in range(repeat):
         rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
-        progress = "{} {}{}".format(
-            run.get_progress(i, execution["subspace_size"]),
-            run.point_to_string(point),
-            rep_suffix,
-        )
-        script.section(progress)
+        counter = run.get_progress(base + rep + 1, total)
+        script.section("{} {}{}".format(counter, run.point_to_string(point), rep_suffix))
         script.progress(
-            "{}{}{} %s".format(BLUE, run.get_progress(
-                i, execution["subspace_size"]
-            ), PLAIN),
-            argument=run.point_to_string(point) + rep_suffix,
+            "{}{}{} %s".format(BLUE, counter, PLAIN),
+            argument=run.point_to_string(point),
         )
 
-        base = "{}.{}{}".format(i_padded, run.point_to_string(point), rep_suffix)
-        script.command('R="$WORK/{}"'.format(sh_in_quotes(base)))
+        stem = "{}.{}{}".format(i_padded, run.point_to_string(point), rep_suffix)
+        script.command('R="$WORK/{}"'.format(sh_in_quotes(stem)))
 
         metric_slots = dict()
         for j, trial in enumerate(compatible_trials):
