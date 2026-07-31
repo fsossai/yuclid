@@ -30,7 +30,7 @@ Needs a C11 compiler as `cc`.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick  # this will produce yuclid.results.20260731-120000.jsonl
+yuclid run -p quick  # this will produce a file like yuclid.results.20260731-120000.jsonl
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -x mebibytes -z pattern -y seconds -f stride=none
 yuclid tplot yuclid.results.20260731-120000.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
