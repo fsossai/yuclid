@@ -24,11 +24,9 @@ yuclid run -p quick -o yuclid.results.jsonl
 yuclid tplot yuclid.results.jsonl -x <dimension> -z <dimension> -y <metric>
 ```
 
-Start with `--dry-run`. It resolves the whole configuration and prints the
-commands without executing any of them, which is where most mistakes show up.
-Then use the `quick` preset, which every example defines as a small corner of
-its space. When the configuration is right, drop the preset and run the whole
-thing.
+`--dry-run` resolves the whole configuration and prints the commands without
+executing any of them. Every example defines a `quick` preset covering a small
+part of its space; dropping `-p quick` runs the whole space.
 
 `-i yuclid.yaml` runs the YAML twin instead, `-r 5` repeats each point five
 times, and `--compile run.sh` writes the experiment out as a plain shell

@@ -5,29 +5,25 @@ fastest. There are three loop orders to try, each of them with and without
 cache blocking, on matrices of several sizes. That is one program run per
 combination, and a number to collect from each.
 
-This is what yuclid is for. The configuration declares the three things that
-vary, and yuclid runs the rest.
-
 ## What to look at in `yuclid.json`
 
 **The space.** Three dimensions: `size`, `variant` and `tile`. Every
-combination of the three is a point, so the whole grid comes from nine lines
-of configuration.
+combination of the three is a point, and yuclid runs the trial once per point.
 
-**Names against values.** `size` is written as `name`/`value` pairs: the
-command receives `512`, while the results say `512x512`. The same for `tile`,
-where the value `0` is called `none`.
+**Names against values.** `size` is written as `name`/`value` pairs. The
+command receives the value `512`, and the results record the name `512x512`.
+The same applies to `tile`, whose value `0` is named `none`.
 
-**Point setup.** Each matrix file has to exist before the trials can use it,
-but it depends on `size` alone. The `on: ["size"]` list says so, and the file
-is generated once per size instead of once per run. `parallel: true` lets those
-generations happen at the same time.
+**Point setup.** The matrix file has to exist before the trials can use it, and
+it depends on `size` alone. The `on: ["size"]` list says so, and the file is
+generated once per size rather than once per point. `parallel: true` allows
+those generations to run at the same time.
 
-**Presets.** `quick` restricts `size` to the smallest one. Use it while you are
-still writing the configuration, then run the whole space when you mean it.
+**Presets.** `quick` restricts `size` to the smallest one; `large` selects the
+other two. A preset is a named subspace, and `-p` runs it.
 
-**Order.** `order` puts `size` first, so yuclid finishes everything about one
-matrix size before moving to the next.
+**Order.** `order` lists `size` first, so yuclid varies it slowest and finishes
+everything about one matrix size before moving to the next.
 
 Needs a C11 compiler as `cc`.
 
@@ -42,4 +38,4 @@ yuclid tplot yuclid.results.jsonl -x variant -z tile -y seconds
 yuclid tplot yuclid.results.jsonl -x size -z variant -y seconds -f tile=none
 ```
 
-Move through the slices with the arrow keys.
+The arrow keys move through the dimensions that are not on the plot.

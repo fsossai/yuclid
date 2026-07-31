@@ -2,31 +2,27 @@
 
 Imagine having to measure how fast memory is when you read it in different
 ways: straight through, skipping ahead, jumping around, or following pointers.
-Each way has to be tried on arrays of several sizes, and some of them take a
-stride while others do not.
-
-This example shows how to describe a space that is not a plain grid, and how to
-collect several numbers from one run.
+Each way has to be tried on arrays of several sizes, and only one of them takes
+a stride.
 
 ## What to look at in `yuclid.json`
 
-**Conditions.** `stride` applies only to the `strided` pattern. Each value
-carries a `condition`, and yuclid drops the points where it does not hold. The
-space becomes irregular: there is no `linear` point with a 4 KiB stride,
-because it would mean nothing.
+**Conditions.** `stride` applies only to the `strided` pattern. Each value of
+`stride` carries a `condition`, and yuclid skips the points where it does not
+hold. The space is then not a full product: there is no `linear` point with a
+4 KiB stride.
 
-**Many metrics from one trial.** The trial runs once and prints eight numbers
-on one line. Each metric picks its own column out of `${yuclid.@}.out`, the
-file where yuclid captured that trial's output.
+**Several metrics from one trial.** The trial runs once and prints eight
+numbers on one line. Each metric picks one column out of `${yuclid.@}.out`,
+which is the file where yuclid captured that trial's standard output.
 
-**A wrapper around the real program.** `measure.py` adds `perf` counters when
-they are available and zeroes when they are not, reporting which case it was in
-through `perf_available`. Wrapping the workload in a small script is often
-easier than making the configuration handle every machine.
+**A wrapper around the program.** The trial calls `measure.py`, which runs the
+C program under `perf` when it is available and reports zeros otherwise, saying
+which case it was in through `perf_available`. The configuration stays the same
+on every machine.
 
-**A second preset.** `memory-pressure` selects the two largest sizes. Presets
-are named subspaces: you can keep several ways of running the same experiment
-in one file.
+**Two presets.** `quick` selects the two smallest sizes, `memory-pressure` the
+two largest. Several ways of running the same experiment can live in one file.
 
 Needs a C11 compiler as `cc`.
 
@@ -40,8 +36,10 @@ yuclid tplot yuclid.results.jsonl -x mebibytes -z pattern -y seconds -f stride=n
 yuclid tplot yuclid.results.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
 ```
 
-Add `-r 5` to repeat every point five times, then look at the distributions:
+With `-r 5` each point is run five times, and `yuclid stats` shows the
+distribution of the samples:
 
 ```sh
+yuclid run -p quick -r 5 -o yuclid.results.jsonl
 yuclid stats yuclid.results.jsonl -y seconds -z pattern
 ```
