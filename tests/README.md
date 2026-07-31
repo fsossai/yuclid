@@ -62,17 +62,13 @@ A `NaN` in the dataset is compared as the string `"NaN"`.
 
 ## Known defects
 
-Cases carrying `xfail` describe behaviour the tool is *supposed* to have and
-does not; the runner reports them as `XFAIL` and stays green. If one starts
-passing, it is reported as `XPASS` and the suite fails — delete the `xfail` key
-and the case becomes a regression test. Each `xfail` string says what actually
-goes wrong.
+A case may carry an `xfail` key explaining why it is expected to fail: it
+asserts behaviour the tool is supposed to have and does not. The runner reports
+those as `XFAIL` and stays green. If one starts passing it is reported as
+`XPASS` and the suite fails — delete the `xfail` key and the case becomes a
+regression test guarding the fix.
 
-Currently expected to fail:
-
-| Case | Defect |
-|---|---|
-| `point-setup-condition-outside-on` | conditions referring outside `on` raise instead of being diagnosed |
+There are none at the moment.
 
 ## Note on invocation
 

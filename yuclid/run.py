@@ -530,7 +530,7 @@ def run_point_command(command, execution, point, on_dims):
     point_map = {key: x for key, x in zip(suborder, point)}
     pcommand = substitute_point_yvars(gcommand, point_map, None)
 
-    if not valid_conditions(point, suborder):
+    if not valid_subpoint_conditions(point, suborder):
         return
 
     if execution["dry_run"]:
@@ -908,6 +908,24 @@ def valid_conditions(point, order):
     point_context["yuclid"] = type("Yuclid", (), yuclid)()
     conditions = [x["condition"] for x in point if "condition" in x]
     return all(eval(c, point_context) for c in conditions)
+
+
+def valid_subpoint_conditions(point, suborder):
+    # A point setup runs on a sub-point: a point restricted to the 'on'
+    # dimensions, standing for every full point that shares those coordinates.
+    # A condition mentioning a dimension outside 'on' therefore cannot be
+    # decided here — it holds at some of those points and not at others — so
+    # the sub-point is kept and the condition is left to the points themselves.
+    point_context = {}
+    yuclid = {name: x["value"] for name, x in zip(suborder, point)}
+    point_context["yuclid"] = type("Yuclid", (), yuclid)()
+    for condition in [x["condition"] for x in point if "condition" in x]:
+        try:
+            if not eval(condition, point_context):
+                return False
+        except (AttributeError, NameError):
+            continue
+    return True
 
 
 def valid_condition(condition, point, order):
