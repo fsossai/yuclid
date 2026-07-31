@@ -1,30 +1,16 @@
 # TODO
 
-- [ ] add examples for real benchmark suites or programs (e.g., GAPBS)
-- [ ] build: lazy subcommand imports + install extras (`yuclid[plot]`, `[tui]`, `[llm]`) — makes `run` light on headless nodes and makes Windows work at all
-- [ ] ci: ruff + formatter
-- [ ] ci: run on Linux/macOS/Windows, starting with `python tests/run_tests.py`
-- [ ] cut unnecessary python dependencies
-- [ ] decide: `--fold` pads the shorter metrics of a point with `NaN`
-- [ ] decide: a metric enabled by several trials should be reported as a warning
-- [ ] docs: examples — benchmarking different types of matrix multiplication
-- [ ] docs: README should lead with the interactive slicer on **any** CSV; add an asciinema/GIF
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
-- [ ] feat: declarative metric extraction — named-capture regex, and JSON/CSV field selection, alongside shell pipelines
-- [ ] feat: derived dimensions — a dimension whose value is computed per-point from other dimensions
-- [ ] feat: metric fallback value when extraction finds nothing, instead of erroring (cf. JUBE's `<pattern default=...>`)
-- [ ] feat: modernize or remove `panorama`
-- [ ] feat: non-shell trials (invoke a Python callable) → captures the Hydra/Optuna sweep audience
-- [ ] feat: notebook path — `yuclid.load() -> DataFrame` plus an ipywidgets slicer
+- [ ] feat: metric fallback value when extraction finds nothing, instead of erroring
 - [ ] feat: Parquet export / `yuclid export`
 - [ ] feat: provenance in output — yuclid version, config hash, host, timestamp, per-point exit code and wall time
 - [ ] feat: publish a JSON Schema (free editor autocomplete + validation)
 - [ ] feat: sum and subtract presets
 - [ ] feat: web viewer
-- [ ] fix: circular import between `cli`, `plot` and `tplot` — `python -m yuclid.cli` cannot start
 - [ ] fix: conditions can alter the expected order of the experiments
 - [ ] fix: evaluation order of variables in `env`
-- [ ] refactor: extract a **view model** (X/Z/Y, free dimensions, positions, normalization, estimator) from the **renderers** (matplotlib, plotext, notebook, web)
-- [ ] refactor: replace bare `eval` in conditions / `:py` domains / derived metrics with a restricted evaluator
-- [ ] test: pipeline tests for plot data prep (`run` is covered by `tests/`)
-- [ ] feat: TOML config support, alongside JSON and YAML
+- [ ] fix: compiled script should print status
+- [ ] new: `--fold` pads the shorter metrics of a point with `NaN`
+- [ ] new: a metric enabled by several trials should be reported
+- [ ] new: add examples for real benchmark suites or programs (e.g., GAPBS)
+- [ ] new: turn `panorama` into a skill
