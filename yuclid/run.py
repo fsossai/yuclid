@@ -1202,24 +1202,51 @@ def load_recorded_points(path, order, metric_names, fmt):
     matched against the points about to run.
     """
     recorded = dict()
+    if os.path.isdir(path):
+        report(LogLevel.FATAL, "--resume needs a file, not a directory", path)
     if not os.path.isfile(path):
         report(LogLevel.INFO, "nothing to resume from", path)
         return recorded
 
     dimensions = set(order)
     foreign, unreadable = 0, 0
-    for record in read_records(path, fmt):
-        if record is None:
-            unreadable += 1
-            continue
-        if set(record.keys()) - metric_names != dimensions:
-            foreign += 1
-            continue
-        key = tuple(str(record[dim]) for dim in order)
-        recorded[key] = recorded.get(key, 0) + 1
+    try:
+        for record in read_records(path, fmt):
+            if record is None:
+                unreadable += 1
+                continue
+            if set(record.keys()) - metric_names != dimensions:
+                foreign += 1
+                continue
+            key = tuple(str(record[dim]) for dim in order)
+            recorded[key] = recorded.get(key, 0) + 1
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        report(
+            LogLevel.FATAL,
+            "cannot read the file given to --resume",
+            path,
+            hint=str(e),
+        )
 
     if unreadable > 0:
-        report(LogLevel.WARNING, "ignoring unparseable records", unreadable)
+        report(
+            LogLevel.FATAL,
+            "the file given to --resume holds {} unreadable record(s)".format(
+                unreadable
+            ),
+            path,
+            hint="--resume expects a result dataset written by yuclid. "
+            "Repair the file, or drop --resume to start a new one",
+        )
+    if len(recorded) == 0 and foreign > 0:
+        report(
+            LogLevel.FATAL,
+            "no record in the file given to --resume belongs to this space",
+            path,
+            hint="its records must carry exactly these dimensions: {}".format(
+                ", ".join(order)
+            ),
+        )
     if foreign > 0:
         report(
             LogLevel.WARNING,

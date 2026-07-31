@@ -1,0 +1,10 @@
+{
+  "description": "a file whose records belong to no point of this space is refused",
+  "args": ["run", "-s", "a=1", "--resume", "existing.jsonl"],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": [
+    "no record in the file given to --resume belongs to this space",
+    "its records must carry exactly these dimensions: a"
+  ]
+}

@@ -1,10 +1,17 @@
 {
-  "description": "records whose dimensions are not this run's are ignored, with one warning",
-  "args": ["run", "-s", "a=1", "--resume", "existing.jsonl"],
+  "description": "records whose dimensions are not this run's are ignored, with one warning, as long as some record does belong to this space",
+  "args": [
+    "run",
+    "-s",
+    "a=1,2",
+    "--resume",
+    "existing.jsonl"
+  ],
   "output_flag": false,
   "stdout_contains": [
     "ignoring records of a different space: 2",
     "a record is matched only when its dimensions are exactly: a",
-    "[1/1]: 1: completed"
+    "[1/2]: 1: already recorded. Skipping",
+    "[2/2]: 2: completed"
   ]
 }

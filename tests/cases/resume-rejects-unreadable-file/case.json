@@ -1,0 +1,10 @@
+{
+  "description": "a file that does not parse as records is refused",
+  "args": ["run", "-s", "a=1", "--resume", "existing.jsonl"],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": [
+    "unreadable record(s)",
+    "Repair the file, or drop --resume to start a new one"
+  ]
+}
