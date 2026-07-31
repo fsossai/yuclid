@@ -1,6 +1,5 @@
 # TODO
 
-- [ ] add `--skip-setup` as alias of `--no-setup`
 - [ ] add examples for real benchmark suites or programs (e.g., GAPBS)
 - [ ] add total run time at the end of a `yuclid run` invocation
 - [ ] build: lazy subcommand imports + install extras (`yuclid[plot]`, `[tui]`, `[llm]`) — makes `run` light on headless nodes and makes Windows work at all

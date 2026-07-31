@@ -98,6 +98,8 @@ def get_parser():
     )
     run_parser.add_argument(
         "--no-setup",
+        "--skip-setup",
+        dest="no_setup",
         default=False,
         action="store_true",
         help="Skip the setup phase and run trials directly",

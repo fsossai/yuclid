@@ -1,0 +1,16 @@
+{
+  "description": "--skip-setup is an alias of --no-setup",
+  "args": [
+    "run",
+    "--skip-setup"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "exists": 0
+    }
+  ],
+  "stdout_contains": [
+    "skipping setup phase"
+  ]
+}
