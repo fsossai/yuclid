@@ -12,11 +12,11 @@ its own input.
 Needs a C++17 compiler as `c++`.
 
 ```sh
-yuclid run -p quick -r 3 -o results.jsonl
+yuclid run -p quick -r 3 -o yuclid.results.jsonl
 
-yuclid tplot results.jsonl -x workers -z schedule -y tested_per_second \
+yuclid tplot yuclid.results.jsonl -x workers -z schedule -y tested_per_second \
   -f segment_kib=64KiB
-yuclid tplot results.jsonl -x segment_kib -z workers -y peak_rss_kib \
+yuclid tplot yuclid.results.jsonl -x segment_kib -z workers -y peak_rss_kib \
   -f schedule=dynamic
 ```
 

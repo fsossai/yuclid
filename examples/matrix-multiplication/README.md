@@ -20,10 +20,10 @@ from a fixed seed, so repeated runs compare against byte-identical inputs.
 Needs a C11 compiler as `cc`.
 
 ```sh
-yuclid run -p quick -o results.jsonl
+yuclid run -p quick -o yuclid.results.jsonl
 
-yuclid tplot results.jsonl -x size -z variant -y seconds -f tile=none
-yuclid tplot results.jsonl -x size -z tile -y seconds -f variant=tiled
+yuclid tplot yuclid.results.jsonl -x size -z variant -y seconds -f tile=none
+yuclid tplot yuclid.results.jsonl -x size -z tile -y seconds -f variant=tiled
 ```
 
 The `large` preset reaches 512×512, where the loop orders separate clearly.

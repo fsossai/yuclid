@@ -1,8 +1,8 @@
 {
   "description": "--resume runs only the points the result file does not already hold",
   "runs": [
-    ["run", "-s", "a=1,2", "-o", "results.jsonl"],
-    ["run", "--resume", "results.jsonl"]
+    ["run", "-s", "a=1,2", "-o", "yuclid.results.jsonl"],
+    ["run", "--resume", "yuclid.results.jsonl"]
   ],
   "output_flag": false,
   "records": [
@@ -11,7 +11,7 @@
     {"a": "3", "n": 3}
   ],
   "stdout_contains": [
-    "resuming from: results.jsonl: 2 points already recorded",
+    "resuming from: yuclid.results.jsonl: 2 points already recorded",
     "[1/3]: 1: already recorded. Skipping",
     "[3/3]: 3: completed"
   ]

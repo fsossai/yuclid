@@ -16,11 +16,11 @@ reading anything into them.
 Needs a C11 compiler as `cc`.
 
 ```sh
-yuclid run -p quick -o results.jsonl
+yuclid run -p quick -o yuclid.results.jsonl
 
-yuclid tplot results.jsonl -x mebibytes -z pattern -y seconds -f stride=none
-yuclid tplot results.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
-yuclid stats results.jsonl -y seconds -z pattern
+yuclid tplot yuclid.results.jsonl -x mebibytes -z pattern -y seconds -f stride=none
+yuclid tplot yuclid.results.jsonl -x mebibytes -z stride -y seconds -f pattern=strided
+yuclid stats yuclid.results.jsonl -y seconds -z pattern
 ```
 
 The `memory-pressure` preset walks 128 and 512 MiB, well past any cache. Add

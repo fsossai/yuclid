@@ -16,8 +16,8 @@ third-party dependencies.
 cd examples/<example>
 yuclid run --dry-run              # every command that would run, run nothing
 yuclid run -i yuclid.yaml -p quick   # the YAML twin, same experiment
-yuclid run -p quick -o results.jsonl
-yuclid tplot results.jsonl -x <dimension> -z <dimension> -y <metric>
+yuclid run -p quick -o yuclid.results.jsonl
+yuclid tplot yuclid.results.jsonl -x <dimension> -z <dimension> -y <metric>
 ```
 
 Every example has a `quick` preset that finishes in seconds and a larger one

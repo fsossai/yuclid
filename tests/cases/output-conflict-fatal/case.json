@@ -3,7 +3,7 @@
   "args": [
     "run",
     "-o",
-    "results.jsonl",
+    "yuclid.results.jsonl",
     "--output-dir",
     "somewhere"
   ],

@@ -19,11 +19,11 @@ Because `strategy` and `batch` only mean something together, combine them into
 one axis when plotting:
 
 ```sh
-yuclid run -p quick -o results.jsonl
+yuclid run -p quick -o yuclid.results.jsonl
 
-yuclid tplot results.jsonl -C strategy,batch -x strategy_batch -z journal \
+yuclid tplot yuclid.results.jsonl -C strategy,batch -x strategy_batch -z journal \
   -y rows_per_second
-yuclid tplot results.jsonl -C strategy,batch -x records -z strategy_batch \
+yuclid tplot yuclid.results.jsonl -C strategy,batch -x records -z strategy_batch \
   -y peak_rss_kib -f journal=WAL
 ```
 

@@ -156,14 +156,14 @@ The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a J
 
 These above results can be displayed with `yuclid plot`, e.g.:
 ```
-yuclid plot results.json -x compression
-yuclid plot results.json -x size -z cpuid
+yuclid plot yuclid.results.jsonl -x compression
+yuclid plot yuclid.results.jsonl -x size -z cpuid
 ```
 Interact with the plot using arrow keys to move around dimensions and number keys to change the metric!
 
 Or entirely in the terminal with `yuclid tplot`:
 ```
-yuclid tplot results.jsonl -x size -z compression -y time.real -A
+yuclid tplot yuclid.results.jsonl -x size -z compression -y time.real -A
 ```
 ```
                                     [1] time.real                               
@@ -299,7 +299,7 @@ re-serialized.
 
 ## Plot API
 
-`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot results.json -x size -z cpuid` can be emulated in a more customizable script, e.g.:
+`yuclid plot` can be used directly on your pyplot canvas. The command `yuclid plot yuclid.results.jsonl -x size -z cpuid` can be emulated in a more customizable script, e.g.:
 
 ```python
 import yuclid.plot
@@ -309,7 +309,7 @@ fig, ax = plt.subplots()
 
 # just like the CLI
 cli_args = [
-  "results.json",
+  "yuclid.results.jsonl",
   "-x",
   "size",
   "-z",

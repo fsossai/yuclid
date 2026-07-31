@@ -29,7 +29,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 CASES_DIR = os.path.join(HERE, "cases")
-RESULTS = "results.jsonl"
+RESULTS = "yuclid.results.jsonl"
 
 
 class Failure(Exception):

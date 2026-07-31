@@ -1,7 +1,7 @@
 {
   "description": "--fold compiles to the same array-valued record, NaN padding included",
   "runs": [
-    ["run", "--compile", "compiled.sh", "--fold", "-o", "results.jsonl"],
+    ["run", "--compile", "compiled.sh", "--fold", "-o", "yuclid.results.jsonl"],
     "sh compiled.sh"
   ],
   "output_flag": false,

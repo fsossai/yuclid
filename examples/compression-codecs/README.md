@@ -13,10 +13,10 @@ derived from the corpus identity, so generation order and parallelism cannot
 change the bytes.
 
 ```sh
-yuclid run -p quick -o results.jsonl
+yuclid run -p quick -o yuclid.results.jsonl
 
-yuclid tplot results.jsonl -x level -z codec -y compression_seconds -f kind=text
-yuclid tplot results.jsonl -x codec -z kind -y ratio -f level=6
+yuclid tplot yuclid.results.jsonl -x level -z codec -y compression_seconds -f kind=text
+yuclid tplot yuclid.results.jsonl -x codec -z kind -y ratio -f level=6
 ```
 
 The `larger` preset builds 8 and 32 MiB corpora, where the memory differences

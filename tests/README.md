@@ -47,7 +47,7 @@ expected records are therefore written out literally.
 | `description` | what the case pins down (shown by `--list`) |
 | `args` | argv after `yuclid` (default `["run"]`) |
 | `runs` | several steps in sequence, instead of `args`: a list is yuclid's argv, a string is a shell command (e.g. running a compiled script) |
-| `output_flag` | set `false` to stop the runner appending `-o results.jsonl` |
+| `output_flag` | set `false` to stop the runner appending `-o yuclid.results.jsonl` |
 | `exit_code` / `exit_codes` | expected status of the last run / of each run |
 | `records` | the exact dataset, in order |
 | `records_unordered` | the exact dataset, as a set |
