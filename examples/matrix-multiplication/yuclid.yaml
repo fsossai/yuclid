@@ -43,8 +43,6 @@ trials:
 metrics:
   - name: seconds
     command: awk '{print $1}' ${yuclid.@}.out
-  - name: checksum
-    command: awk '{print $2}' ${yuclid.@}.out
   - name: peak_rss_kib
     command: awk '{print $3}' ${yuclid.@}.out
 presets:

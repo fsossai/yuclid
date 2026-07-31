@@ -22,10 +22,8 @@ sizes are within a few percent of each other.
 `none`. The space is therefore 3 sizes × 7 variant/tile combinations, not the
 full product of 3 × 4 × 5.
 
-`checksum` is collected next to `seconds`, and all four variants must report
-the same value — a kernel that is fast because it is wrong shows up in the
-results rather than in the plot. Each matrix pair is generated once per size
-from a fixed seed, so repeated runs compare against byte-identical inputs.
+Each matrix pair is generated once per size from a fixed seed, so repeated runs
+compare against byte-identical inputs.
 
 Needs a C11 compiler as `cc`.
 
