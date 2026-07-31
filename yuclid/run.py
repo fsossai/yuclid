@@ -739,12 +739,20 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
     for rep in range(repeat):
         rep_suffix = f"_rep{rep}" if repeat > 1 else ""
 
+        # every trial gets its own captures, and a metric must be evaluated
+        # against the captures of the trial that enabled it
+        metric_point_ids = dict()
+
         for j, trial in enumerate(compatible_trials):
             point_id = os.path.join(
                 settings["temp_dir"],
                 settings["now"],
                 f"{i_padded}." + point_to_string(point) + f"{rep_suffix}_trial{j}",
             )
+
+            for metric in compatible_metrics:
+                if trial["metrics"] is None or metric["name"] in trial["metrics"]:
+                    metric_point_ids[metric["name"]] = point_id
 
             command = substitute_global_yvars(trial["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, point_id)
@@ -777,8 +785,9 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
 
         collected_metrics = dict()
         for metric in compatible_metrics:
+            metric_point_id = metric_point_ids[metric["name"]]
             command = substitute_global_yvars(metric["command"], execution["subspace"])
-            command = substitute_point_yvars(command, point_map, point_id)
+            command = substitute_point_yvars(command, point_map, metric_point_id)
             command_output = subprocess.run(
                 command,
                 shell=True,
@@ -791,7 +800,7 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
 
             if command_output.returncode != 0:
                 hint = "check the following files for more details:\n"
-                hint += f"{point_id}.out\n{point_id}.err\n"
+                hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
                 report(
                     LogLevel.ERROR,
                     point_to_string(point),

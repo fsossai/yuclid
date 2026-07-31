@@ -1,6 +1,5 @@
 {
   "description": "a metric must be evaluated against the captures of the trial that enabled it, not against the last trial's",
-  "xfail": "every metric is evaluated against the last trial's captures: run.py reuses the point_id left over by the trial loop",
   "records": [
     {
       "a": "1",

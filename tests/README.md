@@ -74,7 +74,6 @@ Currently expected to fail:
 |---|---|
 | `preset-wildcard` | a `*` preset entry collects names instead of values and crashes |
 | `numeric-types` | one float metric widens every other metric of the same point |
-| `metric-reads-its-own-trial` | every metric is evaluated against the *last* trial's captures |
 | `point-setup-as-string` | `setup.point` as a plain string crashes |
 | `per-value-setup-leaks-across-presets` | a value's setup re-runs in later presets |
 | `preset-defines-undefined-dimension` | a preset cannot define an undefined dimension |
