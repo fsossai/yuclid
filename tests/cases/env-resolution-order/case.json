@@ -1,0 +1,9 @@
+{
+  "description": "env entries resolve in declaration order and reach every command",
+  "records": [
+    {
+      "a": "1",
+      "sum": 15
+    }
+  ]
+}

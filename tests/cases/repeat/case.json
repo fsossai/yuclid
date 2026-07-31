@@ -1,0 +1,34 @@
+{
+  "description": "-r repeats every point, each repetition contributing its own record",
+  "args": [
+    "run",
+    "-r",
+    "3"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "2",
+      "n": 2
+    },
+    {
+      "a": "2",
+      "n": 2
+    },
+    {
+      "a": "2",
+      "n": 2
+    }
+  ]
+}

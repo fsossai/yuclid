@@ -1,0 +1,30 @@
+{
+  "description": "a preset restricts the dimensions it names and leaves the others whole",
+  "args": [
+    "run",
+    "-p",
+    "small"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "b": "p",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "n": 1
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "n": 2
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "n": 2
+    }
+  ]
+}

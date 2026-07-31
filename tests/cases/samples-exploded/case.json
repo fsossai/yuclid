@@ -1,0 +1,17 @@
+{
+  "description": "a metric emitting k numbers yields k records",
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    },
+    {
+      "a": "1",
+      "m": 3
+    }
+  ]
+}

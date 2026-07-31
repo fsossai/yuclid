@@ -1,0 +1,15 @@
+{
+  "description": "two values may share a name and be told apart by their conditions",
+  "records": [
+    {
+      "mode": "fast",
+      "input": "data",
+      "code": 1
+    },
+    {
+      "mode": "slow",
+      "input": "data",
+      "code": 2
+    }
+  ]
+}

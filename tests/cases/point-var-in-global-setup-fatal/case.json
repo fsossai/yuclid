@@ -1,0 +1,8 @@
+{
+  "description": "a point-scoped variable where no point is in scope is fatal, and the hint points at the space-scoped forms",
+  "exit_code": 2,
+  "stdout_contains": [
+    "wrong use of yuclid point variable",
+    "${yuclid.a.values}"
+  ]
+}

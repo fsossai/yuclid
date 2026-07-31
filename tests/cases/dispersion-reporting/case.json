@@ -1,0 +1,8 @@
+{
+  "description": "a point with several samples reports median and standard deviation",
+  "stdout_contains": [
+    "median: m: 2.000",
+    "stddev: m: 1.000"
+  ],
+  "record_count": 3
+}

@@ -1,0 +1,27 @@
+{
+  "setup": {
+    "global": [
+      "echo ${yuclid.a.values} > all.txt"
+    ]
+  },
+  "space": {
+    "a": [
+      1,
+      2,
+      3
+    ]
+  },
+  "trials": [
+    "cat all.txt"
+  ],
+  "metrics": [
+    {
+      "name": "words",
+      "command": "wc -w < ${yuclid.@}.out"
+    },
+    {
+      "name": "first",
+      "command": "awk '{print $1}' ${yuclid.@}.out"
+    }
+  ]
+}

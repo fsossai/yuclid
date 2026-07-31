@@ -1,0 +1,29 @@
+{
+  "space": {
+    "mode": [
+      "fast",
+      "slow"
+    ],
+    "input": [
+      {
+        "name": "data",
+        "value": "A",
+        "condition": "yuclid.mode == 'fast'"
+      },
+      {
+        "name": "data",
+        "value": "B",
+        "condition": "yuclid.mode == 'slow'"
+      }
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.input}"
+  ],
+  "metrics": [
+    {
+      "name": "code",
+      "command": "awk '{print ($1 == \"A\") ? 1 : 2}' ${yuclid.@}.out"
+    }
+  ]
+}

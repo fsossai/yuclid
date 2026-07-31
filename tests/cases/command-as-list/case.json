@@ -1,0 +1,9 @@
+{
+  "description": "a command given as a list is joined with single spaces",
+  "records": [
+    {
+      "a": "1",
+      "sum": 3
+    }
+  ]
+}

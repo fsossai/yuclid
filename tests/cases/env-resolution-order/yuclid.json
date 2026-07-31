@@ -1,0 +1,20 @@
+{
+  "env": {
+    "BASE": "7",
+    "DERIVED": "$BASE 8"
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo $DERIVED"
+  ],
+  "metrics": [
+    {
+      "name": "sum",
+      "command": "awk '{print $1 + $2}' ${yuclid.@}.out"
+    }
+  ]
+}

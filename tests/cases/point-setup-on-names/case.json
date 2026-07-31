@@ -1,0 +1,13 @@
+{
+  "description": "'dim.names' makes the sub-point carry the name as its value",
+  "records": [
+    {
+      "a": "one",
+      "hits": 1
+    },
+    {
+      "a": "two",
+      "hits": 1
+    }
+  ]
+}

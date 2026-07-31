@@ -1,0 +1,20 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "printf '3 4\\n'"
+  ],
+  "metrics": [
+    {
+      "name": "i",
+      "command": "awk '{print $1}' ${yuclid.@}.out"
+    },
+    {
+      "name": "j",
+      "command": "awk '{print $2}' ${yuclid.@}.out"
+    }
+  ]
+}

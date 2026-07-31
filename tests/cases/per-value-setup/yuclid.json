@@ -1,0 +1,26 @@
+{
+  "space": {
+    "a": [
+      {
+        "name": "one",
+        "value": 1,
+        "setup": [
+          "echo one >> v.txt"
+        ]
+      },
+      {
+        "name": "two",
+        "value": 2
+      }
+    ]
+  },
+  "trials": [
+    "wc -l < v.txt"
+  ],
+  "metrics": [
+    {
+      "name": "lines",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

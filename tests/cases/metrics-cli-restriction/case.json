@@ -1,0 +1,14 @@
+{
+  "description": "-m restricts collection to the named metrics",
+  "args": [
+    "run",
+    "-m",
+    "keep"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "keep": 1
+    }
+  ]
+}

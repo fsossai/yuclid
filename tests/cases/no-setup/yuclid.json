@@ -1,0 +1,21 @@
+{
+  "setup": {
+    "global": [
+      "echo x > created.txt"
+    ]
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "test -f created.txt && echo 1 || echo 0"
+  ],
+  "metrics": [
+    {
+      "name": "exists",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

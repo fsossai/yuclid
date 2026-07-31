@@ -1,0 +1,25 @@
+{
+  "description": "every point of the product yields one record; the last dimension varies fastest",
+  "records": [
+    {
+      "a": "1",
+      "b": "p",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "n": 1
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "n": 2
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "n": 2
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "-s restricts a dimension to the named values; unmentioned dimensions keep their full domain",
+  "args": [
+    "run",
+    "-s",
+    "a=1,3",
+    "b=q"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "b": "q",
+      "n": 1
+    },
+    {
+      "a": "3",
+      "b": "q",
+      "n": 3
+    }
+  ]
+}

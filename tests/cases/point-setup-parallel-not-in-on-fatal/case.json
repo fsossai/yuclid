@@ -1,0 +1,8 @@
+{
+  "description": "a 'parallel' dimension absent from 'on' is fatal",
+  "exit_code": 2,
+  "stdout_contains": [
+    "invalid parallel dimensions",
+    "b"
+  ]
+}

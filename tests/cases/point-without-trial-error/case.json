@@ -1,0 +1,9 @@
+{
+  "description": "a point with no applicable trial is reported before anything runs",
+  "exit_code": 1,
+  "stdout_contains": [
+    "no compatible trials found for point",
+    "2"
+  ],
+  "no_results_file": true
+}

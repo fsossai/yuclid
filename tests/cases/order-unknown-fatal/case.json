@@ -1,0 +1,13 @@
+{
+  "description": "a name in 'order' that is not a dimension is fatal",
+  "args": [
+    "run",
+    "--order",
+    "nope"
+  ],
+  "exit_code": 2,
+  "stdout_contains": [
+    "invalid order values",
+    "nope"
+  ]
+}

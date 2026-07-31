@@ -1,0 +1,13 @@
+{
+  "description": "a selector on an unknown dimension is fatal and lists the available ones",
+  "args": [
+    "run",
+    "-s",
+    "nope=1"
+  ],
+  "exit_code": 2,
+  "stdout_contains": [
+    "unknown dimension in selector",
+    "available dimensions: a"
+  ]
+}

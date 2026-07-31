@@ -1,0 +1,20 @@
+{
+  "description": "a value's setup must not leak into a later preset's setup phase",
+  "xfail": "TODO.md: 'per-value setup commands accumulate across presets' \u2014 run_global_setup appends into data['setup']['global'] itself, so the second preset re-runs the first preset's per-value setup",
+  "args": [
+    "run",
+    "-p",
+    "first",
+    "second"
+  ],
+  "records": [
+    {
+      "a": "one",
+      "lines": 1
+    },
+    {
+      "a": "two",
+      "lines": 2
+    }
+  ]
+}

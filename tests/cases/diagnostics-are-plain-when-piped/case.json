@@ -1,0 +1,12 @@
+{
+  "description": "diagnostics carry the tool's identity and drop styling off a terminal",
+  "record_count": 1,
+  "stdout_contains": [
+    "yuclid ",
+    "INFO",
+    "finished"
+  ],
+  "stdout_not_contains": [
+    "\u001b["
+  ]
+}

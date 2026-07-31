@@ -1,0 +1,10 @@
+{
+  "description": "when every metric of a point is integral, the records keep integers rather than floats",
+  "records": [
+    {
+      "a": "1",
+      "i": 3,
+      "j": 4
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "several configurations merge key-wise, concatenate their sequences and collapse duplicates in 'order'",
+  "args": [
+    "run",
+    "-i",
+    "base.json",
+    "extra.json"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "b": "3",
+      "ab": 13
+    },
+    {
+      "a": "2",
+      "b": "3",
+      "ab": 23
+    }
+  ]
+}

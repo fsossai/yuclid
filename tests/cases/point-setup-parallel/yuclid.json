@@ -1,0 +1,35 @@
+{
+  "setup": {
+    "point": [
+      {
+        "on": [
+          "a",
+          "b"
+        ],
+        "parallel": [
+          "a"
+        ],
+        "command": "mkdir -p out/${yuclid.a}.${yuclid.b}"
+      }
+    ]
+  },
+  "space": {
+    "a": [
+      1,
+      2
+    ],
+    "b": [
+      "p",
+      "q"
+    ]
+  },
+  "trials": [
+    "ls -d out/*/ | wc -l"
+  ],
+  "metrics": [
+    {
+      "name": "dirs",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

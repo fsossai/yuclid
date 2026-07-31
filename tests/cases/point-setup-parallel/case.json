@@ -1,0 +1,25 @@
+{
+  "description": "a parallel point setup still covers every combination of 'on'",
+  "records": [
+    {
+      "a": "1",
+      "b": "p",
+      "dirs": 4
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "dirs": 4
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "dirs": 4
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "dirs": 4
+    }
+  ]
+}

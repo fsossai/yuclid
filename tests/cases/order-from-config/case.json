@@ -1,0 +1,25 @@
+{
+  "description": "the last dimension named in 'order' varies fastest",
+  "records": [
+    {
+      "a": "1",
+      "b": "1",
+      "ab": 11
+    },
+    {
+      "a": "2",
+      "b": "1",
+      "ab": 21
+    },
+    {
+      "a": "1",
+      "b": "2",
+      "ab": 12
+    },
+    {
+      "a": "2",
+      "b": "2",
+      "ab": 22
+    }
+  ]
+}

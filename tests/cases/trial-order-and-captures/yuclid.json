@@ -1,0 +1,17 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo first > log.txt",
+    "echo second >> log.txt"
+  ],
+  "metrics": [
+    {
+      "name": "lines",
+      "command": "wc -l < log.txt"
+    }
+  ]
+}

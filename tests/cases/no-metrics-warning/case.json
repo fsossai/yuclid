@@ -1,0 +1,8 @@
+{
+  "description": "a configuration with no metrics only warns; trials still run",
+  "record_count": 0,
+  "stdout_contains": [
+    "no metrics found",
+    "Trials will not be evaluated"
+  ]
+}

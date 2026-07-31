@@ -1,0 +1,21 @@
+{
+  "description": "a point setup restricted to a dimension whose conditions mention a dimension outside 'on' must be diagnosed, never crash",
+  "xfail": "TODO.md: 'exception when a point setup command refers to a dimension that has conditions involving dimensions outside of on' \u2014 the condition is evaluated with only 'b' in scope and raises AttributeError",
+  "records": [
+    {
+      "a": "1",
+      "b": "p",
+      "lines": 2
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "lines": 2
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "lines": 2
+    }
+  ]
+}

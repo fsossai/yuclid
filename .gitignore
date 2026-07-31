@@ -1,6 +1,6 @@
 .yuclid
 .DS_Store
-*.json
+*.jsonl
 
 # Agents
 .claude

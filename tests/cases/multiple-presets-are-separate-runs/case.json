@@ -1,0 +1,23 @@
+{
+  "description": "each preset is a complete run of its own, appending to the same dataset",
+  "args": [
+    "run",
+    "-p",
+    "lo",
+    "hi"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "3",
+      "n": 3
+    }
+  ],
+  "stdout_contains": [
+    "running preset: lo",
+    "running preset: hi"
+  ]
+}

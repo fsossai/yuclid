@@ -1,0 +1,21 @@
+{
+  "description": "a second run appends to the same dataset instead of truncating it",
+  "runs": [
+    [
+      "run"
+    ],
+    [
+      "run"
+    ]
+  ],
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "n": 1
+    }
+  ]
+}

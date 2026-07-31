@@ -1,0 +1,32 @@
+{
+  "setup": {
+    "point": [
+      {
+        "on": [
+          "a"
+        ],
+        "parallel": [
+          "b"
+        ],
+        "command": "true"
+      }
+    ]
+  },
+  "space": {
+    "a": [
+      1
+    ],
+    "b": [
+      1
+    ]
+  },
+  "trials": [
+    "echo 1"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "echo 1"
+    }
+  ]
+}

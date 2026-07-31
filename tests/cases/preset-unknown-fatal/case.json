@@ -1,0 +1,13 @@
+{
+  "description": "an unknown preset is fatal and the diagnostic lists the available ones",
+  "args": [
+    "run",
+    "-p",
+    "nope"
+  ],
+  "exit_code": 2,
+  "stdout_contains": [
+    "invalid preset",
+    "available presets: lo"
+  ]
+}

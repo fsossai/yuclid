@@ -1,0 +1,15 @@
+{
+  "description": "asking for both an explicit path and an output directory is fatal",
+  "args": [
+    "run",
+    "-o",
+    "results.jsonl",
+    "--output-dir",
+    "somewhere"
+  ],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": [
+    "either --output or --output-dir must be specified"
+  ]
+}

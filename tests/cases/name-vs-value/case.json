@@ -1,0 +1,15 @@
+{
+  "description": "commands see the value, records store the name, ${yuclid.d.name} substitutes the name",
+  "records": [
+    {
+      "size": "small",
+      "v": 10,
+      "namelen": 5
+    },
+    {
+      "size": "big",
+      "v": 20,
+      "namelen": 3
+    }
+  ]
+}

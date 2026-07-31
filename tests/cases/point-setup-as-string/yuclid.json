@@ -1,0 +1,19 @@
+{
+  "setup": {
+    "point": "echo hi > touched.txt"
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "wc -l < touched.txt"
+  ],
+  "metrics": [
+    {
+      "name": "lines",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

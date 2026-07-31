@@ -1,0 +1,30 @@
+{
+  "space": {
+    "a": [
+      1,
+      2,
+      3
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.a}"
+  ],
+  "metrics": [
+    {
+      "name": "n",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ],
+  "presets": {
+    "lo": {
+      "a": [
+        1
+      ]
+    },
+    "hi": {
+      "a": [
+        3
+      ]
+    }
+  }
+}

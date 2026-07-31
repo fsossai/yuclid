@@ -1,0 +1,25 @@
+{
+  "description": "a point setup restricted to 'a' runs once per value of 'a', not once per full point",
+  "records": [
+    {
+      "a": "1",
+      "b": "p",
+      "lines": 2
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "lines": 2
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "lines": 2
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "lines": 2
+    }
+  ]
+}

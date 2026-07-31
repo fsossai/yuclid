@@ -1,0 +1,20 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo 1"
+  ],
+  "metrics": [
+    {
+      "name": "keep",
+      "command": "echo 1"
+    },
+    {
+      "name": "drop",
+      "command": "echo 2"
+    }
+  ]
+}

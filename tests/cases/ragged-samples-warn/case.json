@@ -1,0 +1,18 @@
+{
+  "description": "metrics with different sample counts leave gaps, which must be warned about; note the samples come back as floats, because the gap forces the whole point through a float-typed frame",
+  "records": [
+    {
+      "a": "1",
+      "two": 1.0,
+      "one": 9.0
+    },
+    {
+      "a": "1",
+      "two": 2.0,
+      "one": "NaN"
+    }
+  ],
+  "stdout_contains": [
+    "the following metrics generated some NaNs"
+  ]
+}

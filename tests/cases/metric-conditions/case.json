@@ -1,0 +1,13 @@
+{
+  "description": "metrics sharing a name with exclusive conditions extract the same quantity differently across the space",
+  "records": [
+    {
+      "fmt": "plain",
+      "v": 4
+    },
+    {
+      "fmt": "tagged",
+      "v": 4
+    }
+  ]
+}

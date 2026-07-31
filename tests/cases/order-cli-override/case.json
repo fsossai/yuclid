@@ -1,0 +1,31 @@
+{
+  "description": "--order is applied after the configuration's own order",
+  "args": [
+    "run",
+    "--order",
+    "a",
+    "b"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "b": "1",
+      "ab": 11
+    },
+    {
+      "a": "1",
+      "b": "2",
+      "ab": 12
+    },
+    {
+      "a": "2",
+      "b": "1",
+      "ab": 21
+    },
+    {
+      "a": "2",
+      "b": "2",
+      "ab": 22
+    }
+  ]
+}

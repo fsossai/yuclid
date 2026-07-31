@@ -1,0 +1,8 @@
+{
+  "description": "a failing trial is an error naming its exit status",
+  "exit_code": 1,
+  "stdout_contains": [
+    "failed trial command",
+    "code 3"
+  ]
+}

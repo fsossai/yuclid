@@ -1,0 +1,13 @@
+{
+  "description": "--output-dir generates a timestamped dataset inside it",
+  "args": [
+    "run",
+    "--output-dir",
+    "out"
+  ],
+  "output_flag": false,
+  "no_results_file": true,
+  "files_exist": [
+    "out/yuclid.results.*.jsonl"
+  ]
+}

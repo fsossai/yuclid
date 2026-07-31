@@ -1,0 +1,14 @@
+{
+  "description": "unknown fields inside a value, a trial and a metric are warned about, not fatal",
+  "records": [
+    {
+      "a": "one",
+      "n": 1
+    }
+  ],
+  "stdout_contains": [
+    "point has unexpected fields",
+    "trial item has unexpected fields",
+    "metric has unexpected fields"
+  ]
+}

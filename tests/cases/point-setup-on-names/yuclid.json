@@ -1,0 +1,33 @@
+{
+  "setup": {
+    "point": [
+      {
+        "on": [
+          "a.names"
+        ],
+        "command": "echo ${yuclid.a} >> names.txt"
+      }
+    ]
+  },
+  "space": {
+    "a": [
+      {
+        "name": "one",
+        "value": 1
+      },
+      {
+        "name": "two",
+        "value": 2
+      }
+    ]
+  },
+  "trials": [
+    "grep -c one names.txt"
+  ],
+  "metrics": [
+    {
+      "name": "hits",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

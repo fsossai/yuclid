@@ -1,0 +1,16 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.nope}"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "echo 1"
+    }
+  ]
+}

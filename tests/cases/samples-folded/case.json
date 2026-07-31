@@ -1,0 +1,17 @@
+{
+  "description": "--fold stores all samples of a point in one array-valued record",
+  "args": [
+    "run",
+    "--fold"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": [
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}

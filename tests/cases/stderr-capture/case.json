@@ -1,0 +1,9 @@
+{
+  "description": "a trial's standard error is captured to ${yuclid.@}.err",
+  "records": [
+    {
+      "a": "1",
+      "err": 5
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "an omitted 'on' means the whole space: one execution per point",
+  "record_count": 4,
+  "records_unordered": [
+    {
+      "a": "1",
+      "b": "p",
+      "lines": 4
+    },
+    {
+      "a": "1",
+      "b": "q",
+      "lines": 4
+    },
+    {
+      "a": "2",
+      "b": "p",
+      "lines": 4
+    },
+    {
+      "a": "2",
+      "b": "q",
+      "lines": 4
+    }
+  ]
+}

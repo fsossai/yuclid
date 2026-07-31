@@ -1,0 +1,22 @@
+{
+  "setup": {
+    "global": [
+      "echo x >> counter.txt"
+    ]
+  },
+  "space": {
+    "a": [
+      1,
+      2
+    ]
+  },
+  "trials": [
+    "wc -l < counter.txt"
+  ],
+  "metrics": [
+    {
+      "name": "lines",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

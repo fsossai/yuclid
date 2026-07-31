@@ -1,0 +1,24 @@
+{
+  "space": {
+    "a": [
+      {
+        "name": "one",
+        "value": 1,
+        "colour": "red"
+      }
+    ]
+  },
+  "trials": [
+    {
+      "command": "echo ${yuclid.a}",
+      "nonsense": 1
+    }
+  ],
+  "metrics": [
+    {
+      "name": "n",
+      "command": "cat ${yuclid.@}.out",
+      "nonsense": 1
+    }
+  ]
+}

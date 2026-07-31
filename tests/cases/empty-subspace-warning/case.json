@@ -1,0 +1,7 @@
+{
+  "description": "an empty subspace is a warning, never an error",
+  "record_count": 0,
+  "stdout_contains": [
+    "empty subspace"
+  ]
+}

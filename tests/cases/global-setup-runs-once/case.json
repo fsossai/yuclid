@@ -1,0 +1,13 @@
+{
+  "description": "global setup runs exactly once, before every trial of the subspace",
+  "records": [
+    {
+      "a": "1",
+      "lines": 1
+    },
+    {
+      "a": "2",
+      "lines": 1
+    }
+  ]
+}

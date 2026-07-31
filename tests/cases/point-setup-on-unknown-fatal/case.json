@@ -1,0 +1,8 @@
+{
+  "description": "an 'on' dimension absent from the space is fatal",
+  "exit_code": 2,
+  "stdout_contains": [
+    "point setup 'on' dimension not in space",
+    "available dimensions: a"
+  ]
+}

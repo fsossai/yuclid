@@ -1,0 +1,23 @@
+{
+  "space": {
+    "fmt": [
+      "plain",
+      "tagged"
+    ]
+  },
+  "trials": [
+    "if [ ${yuclid.fmt} = plain ]; then echo 4; else echo 'value: 4'; fi"
+  ],
+  "metrics": [
+    {
+      "name": "v",
+      "command": "cat ${yuclid.@}.out",
+      "condition": "yuclid.fmt == 'plain'"
+    },
+    {
+      "name": "v",
+      "command": "awk '{print $2}' ${yuclid.@}.out",
+      "condition": "yuclid.fmt == 'tagged'"
+    }
+  ]
+}

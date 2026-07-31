@@ -1,0 +1,13 @@
+{
+  "description": "under --ignore-errors a failed metric is simply absent from the record",
+  "args": [
+    "--ignore-errors",
+    "run"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "ok": 5
+    }
+  ]
+}

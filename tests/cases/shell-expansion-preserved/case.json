@@ -1,0 +1,9 @@
+{
+  "description": "substitution is textual and leaves the shell's own expansion intact",
+  "records": [
+    {
+      "a": "1",
+      "m": 5
+    }
+  ]
+}

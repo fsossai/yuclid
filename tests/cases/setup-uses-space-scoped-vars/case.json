@@ -1,0 +1,20 @@
+{
+  "description": "${yuclid.d.values} expands to the subspace's values, in domain order",
+  "records": [
+    {
+      "a": "1",
+      "words": 3,
+      "first": 1
+    },
+    {
+      "a": "2",
+      "words": 3,
+      "first": 1
+    },
+    {
+      "a": "3",
+      "words": 3,
+      "first": 1
+    }
+  ]
+}

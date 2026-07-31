@@ -1,0 +1,26 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": [
+        "echo",
+        "1",
+        "2"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "sum",
+      "command": [
+        "awk",
+        "'{print $1 + $2}'",
+        "${yuclid.@}.out"
+      ]
+    }
+  ]
+}

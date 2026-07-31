@@ -1,0 +1,13 @@
+{
+  "description": "restricting to a metric that was never declared is fatal",
+  "args": [
+    "run",
+    "-m",
+    "nope"
+  ],
+  "exit_code": 2,
+  "stdout_contains": [
+    "invalid metrics",
+    "available metrics: keep"
+  ]
+}

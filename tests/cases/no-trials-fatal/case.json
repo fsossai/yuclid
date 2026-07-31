@@ -1,0 +1,7 @@
+{
+  "description": "a configuration yielding no trials is fatal",
+  "exit_code": 2,
+  "stdout_contains": [
+    "no valid trials found"
+  ]
+}

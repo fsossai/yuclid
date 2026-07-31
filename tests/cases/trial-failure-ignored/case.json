@@ -1,0 +1,13 @@
+{
+  "description": "--ignore-errors downgrades the failure and the run completes",
+  "args": [
+    "--ignore-errors",
+    "run"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "description": "an unknown top-level section is warned about and ignored",
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    }
+  ],
+  "stdout_contains": [
+    "unknown field in configuration",
+    "nonsense"
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "description": "a condition on a value removes the points where it does not hold",
+  "records": [
+    {
+      "a": "1",
+      "b": "x",
+      "n": 1
+    },
+    {
+      "a": "2",
+      "b": "x",
+      "n": 2
+    },
+    {
+      "a": "2",
+      "b": "y",
+      "n": 2
+    },
+    {
+      "a": "3",
+      "b": "x",
+      "n": 3
+    },
+    {
+      "a": "3",
+      "b": "y",
+      "n": 3
+    }
+  ]
+}

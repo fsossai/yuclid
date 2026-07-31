@@ -1,0 +1,13 @@
+{
+  "description": "an unknown value in a selector is an error that terminates by default",
+  "args": [
+    "run",
+    "-s",
+    "a=99"
+  ],
+  "exit_code": 1,
+  "stdout_contains": [
+    "invalid selector",
+    "99"
+  ]
+}

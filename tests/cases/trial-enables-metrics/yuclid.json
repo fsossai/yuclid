@@ -1,0 +1,25 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "printf '5\\n'",
+      "metrics": [
+        "only"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "only",
+      "command": "cat ${yuclid.@}.out"
+    },
+    {
+      "name": "never",
+      "command": "echo 99"
+    }
+  ]
+}

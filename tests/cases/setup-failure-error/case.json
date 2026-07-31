@@ -1,0 +1,7 @@
+{
+  "description": "a failing global setup command is an error and terminates by default",
+  "exit_code": 1,
+  "stdout_contains": [
+    "returned 3"
+  ]
+}

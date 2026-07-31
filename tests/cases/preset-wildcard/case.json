@@ -1,0 +1,19 @@
+{
+  "description": "a preset entry containing '*' selects every matching name",
+  "xfail": "apply_preset collects the matching *names* rather than the values they stand for, so a wildcard preset dies with 'string indices must be integers'",
+  "args": [
+    "run",
+    "-p",
+    "tees"
+  ],
+  "records": [
+    {
+      "d": "t1",
+      "m": 1
+    },
+    {
+      "d": "t2",
+      "m": 2
+    }
+  ]
+}

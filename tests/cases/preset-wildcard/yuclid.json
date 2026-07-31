@@ -1,0 +1,25 @@
+{
+  "space": {
+    "d": [
+      "t1",
+      "t2",
+      "x1"
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.d}"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "sed 's/[^0-9]//g' ${yuclid.@}.out"
+    }
+  ],
+  "presets": {
+    "tees": {
+      "d": [
+        "t*"
+      ]
+    }
+  }
+}

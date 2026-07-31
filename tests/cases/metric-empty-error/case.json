@@ -1,0 +1,7 @@
+{
+  "description": "a metric emitting nothing is an error",
+  "exit_code": 1,
+  "stdout_contains": [
+    "metric m generated an empty string"
+  ]
+}

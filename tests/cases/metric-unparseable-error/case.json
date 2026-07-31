@@ -1,0 +1,8 @@
+{
+  "description": "a metric emitting something that is not a number is an error naming the metric and quoting the output",
+  "exit_code": 1,
+  "stdout_contains": [
+    "cannot parse result of metric m",
+    "abc"
+  ]
+}

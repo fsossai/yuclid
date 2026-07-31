@@ -1,0 +1,27 @@
+{
+  "space": {
+    "size": [
+      {
+        "name": "small",
+        "value": 10
+      },
+      {
+        "name": "big",
+        "value": 20
+      }
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.size} ${yuclid.size.name}"
+  ],
+  "metrics": [
+    {
+      "name": "v",
+      "command": "awk '{print $1}' ${yuclid.@}.out"
+    },
+    {
+      "name": "namelen",
+      "command": "awk '{print length($2)}' ${yuclid.@}.out"
+    }
+  ]
+}

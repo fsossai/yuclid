@@ -1,0 +1,22 @@
+{
+  "space": {
+    "a": [
+      1,
+      2,
+      3
+    ],
+    "b": [
+      10,
+      20
+    ]
+  },
+  "trials": [
+    "echo $((${yuclid.a} * ${yuclid.b}))"
+  ],
+  "metrics": [
+    {
+      "name": "p",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "description": "each point is announced as an ordinal out of the subspace size, identified by its names",
+  "stdout_contains": [
+    "[1/2]: 1: started",
+    "[1/2]: 1: completed",
+    "[2/2]: 2: completed"
+  ],
+  "record_count": 2
+}

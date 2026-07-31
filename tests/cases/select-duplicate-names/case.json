@@ -1,0 +1,20 @@
+{
+  "description": "selecting a duplicated name selects every entry carrying it, each keeping its own condition",
+  "args": [
+    "run",
+    "-s",
+    "input=data"
+  ],
+  "records": [
+    {
+      "mode": "fast",
+      "input": "data",
+      "code": 1
+    },
+    {
+      "mode": "slow",
+      "input": "data",
+      "code": 2
+    }
+  ]
+}

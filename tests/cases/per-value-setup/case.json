@@ -1,0 +1,13 @@
+{
+  "description": "a value's own setup commands join the global setup of its subspace",
+  "records": [
+    {
+      "a": "one",
+      "lines": 1
+    },
+    {
+      "a": "two",
+      "lines": 1
+    }
+  ]
+}

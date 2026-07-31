@@ -1,0 +1,19 @@
+{
+  "env": {
+    "MINE": "4"
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo $((${yuclid.a} + $MINE))"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

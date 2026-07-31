@@ -1,0 +1,18 @@
+{
+  "description": "selecting on an undefined dimension defines its domain",
+  "args": [
+    "run",
+    "-s",
+    "n=4,5"
+  ],
+  "records": [
+    {
+      "n": "4",
+      "m": 4
+    },
+    {
+      "n": "5",
+      "m": 5
+    }
+  ]
+}

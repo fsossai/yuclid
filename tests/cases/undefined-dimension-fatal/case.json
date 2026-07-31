@@ -1,0 +1,10 @@
+{
+  "description": "an undefined dimension left undefined at execution time is fatal, and the diagnostic says how to define it",
+  "exit_code": 2,
+  "stdout_contains": [
+    "dimensions undefined",
+    "n",
+    "--select"
+  ],
+  "no_results_file": true
+}

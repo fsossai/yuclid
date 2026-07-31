@@ -1,0 +1,14 @@
+{
+  "space": {
+    "n:py": "list(range(1, 4))"
+  },
+  "trials": [
+    "echo ${yuclid.n}"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

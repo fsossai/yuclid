@@ -1,0 +1,9 @@
+{
+  "description": "all applicable trials run, in declaration order, before any metric",
+  "records": [
+    {
+      "a": "1",
+      "lines": 2
+    }
+  ]
+}

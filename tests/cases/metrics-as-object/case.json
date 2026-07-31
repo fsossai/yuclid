@@ -1,0 +1,9 @@
+{
+  "description": "metrics may be written as a name-to-command object",
+  "records": [
+    {
+      "a": "1",
+      "m": 7
+    }
+  ]
+}

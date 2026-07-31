@@ -1,0 +1,21 @@
+{
+  "setup": {
+    "global": [
+      "exit 3"
+    ]
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo 1"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

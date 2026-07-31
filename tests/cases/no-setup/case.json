@@ -1,0 +1,16 @@
+{
+  "description": "--no-setup skips the whole setup phase",
+  "args": [
+    "run",
+    "--no-setup"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "exists": 0
+    }
+  ],
+  "stdout_contains": [
+    "skipping setup phase"
+  ]
+}

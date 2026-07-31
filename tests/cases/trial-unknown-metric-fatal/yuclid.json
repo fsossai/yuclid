@@ -1,0 +1,21 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "echo 1",
+      "metrics": [
+        "nope"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "echo 1"
+    }
+  ]
+}

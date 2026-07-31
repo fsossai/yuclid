@@ -1,0 +1,9 @@
+{
+  "description": "a metric not enabled by any applicable trial is not collected",
+  "records": [
+    {
+      "a": "1",
+      "only": 5
+    }
+  ]
+}

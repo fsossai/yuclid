@@ -1,0 +1,33 @@
+{
+  "env": {
+    "E": "1"
+  },
+  "setup": {
+    "global": [
+      "echo global"
+    ],
+    "point": [
+      {
+        "on": [
+          "a"
+        ],
+        "command": "echo point ${yuclid.a}"
+      }
+    ]
+  },
+  "space": {
+    "a": [
+      1,
+      2
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.a}"
+  ],
+  "metrics": [
+    {
+      "name": "n",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

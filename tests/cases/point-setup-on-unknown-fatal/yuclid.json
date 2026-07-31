@@ -1,0 +1,26 @@
+{
+  "setup": {
+    "point": [
+      {
+        "on": [
+          "nope"
+        ],
+        "command": "true"
+      }
+    ]
+  },
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo 1"
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "echo 1"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "space": {
+    "a": [
+      {
+        "name": "one",
+        "value": 1,
+        "setup": [
+          "echo one >> log.txt"
+        ]
+      },
+      {
+        "name": "two",
+        "value": 2,
+        "setup": [
+          "echo two >> log.txt"
+        ]
+      }
+    ]
+  },
+  "trials": [
+    "wc -l < log.txt"
+  ],
+  "metrics": [
+    {
+      "name": "lines",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ],
+  "presets": {
+    "first": {
+      "a": [
+        "one"
+      ]
+    },
+    "second": {
+      "a": [
+        "two"
+      ]
+    }
+  }
+}

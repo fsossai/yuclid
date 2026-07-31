@@ -1,0 +1,8 @@
+{
+  "description": "an unknown substitution variable is fatal, and is caught before anything is executed",
+  "exit_code": 2,
+  "stdout_contains": [
+    "invalid variable 'yuclid.nope'"
+  ],
+  "no_results_file": true
+}
