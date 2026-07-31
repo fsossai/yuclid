@@ -993,7 +993,17 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None, rep
             if file_lock is not None:
                 file_lock.release()
 
-        report(LogLevel.INFO, "obtained", metrics_to_string(collected_metrics))
+        completion = [
+            get_progress(i, execution["subspace_size"]),
+            point_to_string(point),
+            "completed"
+            if requested == 1
+            else "completed rep {}/{}".format(rep + 1, requested),
+        ]
+        if len(collected_metrics) > 0:
+            completion.append(metrics_to_string(collected_metrics))
+        report(LogLevel.INFO, *completion)
+
         for metric_name, values in collected_metrics.items():
             if len(values) > 1:
                 report(
@@ -1009,12 +1019,6 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None, rep
                     f"{pd.Series(values).std():.3f}",
                 )
 
-    report(
-        LogLevel.INFO,
-        get_progress(i, execution["subspace_size"]),
-        point_to_string(point),
-        "completed",
-    )
 
 
 def valid_conditions(point, order):
