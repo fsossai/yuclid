@@ -479,7 +479,9 @@ def apply_preset(data, preset_name):
                         dim,
                     )
                 elif isinstance(item, (str, int, float)):
-                    new_items.append(item)
+                    # like a selector, a preset defines an undefined dimension:
+                    # the entry becomes both the name and the value
+                    new_items.append(normalize_point(item))
                 else:
                     report(
                         LogLevel.FATAL,
@@ -490,7 +492,8 @@ def apply_preset(data, preset_name):
                 # definition via regex
                 pattern = "^" + re.escape(item).replace("\\*", ".*") + "$"
                 regex = re.compile(pattern)
-                new_items += [n for n in space_names[dim] if regex.match(n)]
+                # every matching value, so duplicated names keep their conditions
+                new_items += [x for x in space[dim] if regex.match(x["name"])]
             elif str(item) not in space_names[dim]:
                 report(
                     LogLevel.ERROR,

@@ -72,10 +72,8 @@ Currently expected to fail:
 
 | Case | Defect |
 |---|---|
-| `preset-wildcard` | a `*` preset entry collects names instead of values and crashes |
 | `numeric-types` | one float metric widens every other metric of the same point |
 | `point-setup-as-string` | `setup.point` as a plain string crashes |
-| `preset-defines-undefined-dimension` | a preset cannot define an undefined dimension |
 | `point-setup-condition-outside-on` | conditions referring outside `on` raise instead of being diagnosed |
 
 ## Note on invocation

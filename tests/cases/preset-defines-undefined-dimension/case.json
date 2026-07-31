@@ -1,6 +1,5 @@
 {
   "description": "a preset must be able to define an undefined dimension, like --select does",
-  "xfail": "apply_preset stores the raw preset entries instead of normalized values, so the run dies with 'string indices must be integers'",
   "args": [
     "run",
     "-p",
