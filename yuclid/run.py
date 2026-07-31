@@ -1655,10 +1655,22 @@ def build_settings(args):
         os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
+    # `--resume` without a file resumes whatever --output names
+    settings["resume"] = args.resume
+    if args.resume == "":
+        if args.output is None:
+            report(
+                LogLevel.FATAL,
+                "--resume was given no file, and neither was --output",
+                hint="name the file to resume, as --resume FILE, or the one to "
+                "write, as --output FILE",
+            )
+        settings["resume"] = args.output
+
     settings["format"] = args.format
     if settings["format"] is None:
         # the extension of a name the user chose decides, jsonl otherwise
-        named = args.resume or args.output
+        named = settings["resume"] or args.output
         is_csv = named is not None and named.lower().endswith(".csv")
         settings["format"] = "csv" if is_csv else "jsonl"
 
@@ -1672,21 +1684,22 @@ def build_settings(args):
 
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
     filename = "yuclid.results.{}.{}".format(settings["now"], settings["format"])
-    if args.resume is not None:
-        ignored = [
-            name
-            for name, value in [("--output", args.output), ("--output-dir", args.output_dir)]
-            if value is not None
-        ]
+    if settings["resume"] is not None:
+        # --output is not ignored when it is the very file being resumed
+        overridden = []
+        if args.resume != "":
+            overridden.append(("--output", args.output))
+        overridden.append(("--output-dir", args.output_dir))
+        ignored = [name for name, value in overridden if value is not None]
         if len(ignored) > 0:
             report(
                 LogLevel.WARNING,
                 "ignoring {}".format(" and ".join(ignored)),
                 hint="--resume writes to the file it resumes from: {}".format(
-                    args.resume
+                    settings["resume"]
                 ),
             )
-        settings["output"] = args.resume
+        settings["output"] = settings["resume"]
     elif args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:

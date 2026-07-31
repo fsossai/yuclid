@@ -122,11 +122,13 @@ def get_parser():
     )
     run_parser.add_argument(
         "--resume",
+        nargs="?",
+        const="",
         default=None,
         metavar="FILE",
-        help="Append to an existing JSON Lines result file, skipping the points "
-        "it already holds. FILE becomes the output: --output and --output-dir "
-        "are ignored",
+        help="Append to an existing result file, skipping the points it "
+        "already holds. FILE becomes the output: --output and --output-dir are "
+        "ignored. Without FILE, the file given to --output is resumed",
     )
     run_parser.add_argument(
         "-r",
