@@ -199,32 +199,24 @@ The following is a template showing how to track metrics of a program compiled w
   },
   "setup": {
     "global": [
-      "ulimit -s 1048576" // global commands are run before point commands
+      "ulimit -s 1048576"
     ],
     "point": [
       {
-        "on": [ "compiler" ], // run the command on these dimensions only.
-                              // The entire space is assumed if empty.
+        "on": [ "compiler" ],
         "command": "mkdir -p ${yuclid.compiler}",
-        "parallel": [ "compiler" ] // list|true|false: can execute more commands in parallel
-                                   // true = all dimensions in `on`.
+        "parallel": [ "compiler" ]
       },
       {
-        "on": [ "compiler" ], // run the command on these dimensions only.
-                              // The entire space is assumed if empty.
+        "on": [ "compiler" ],
         "command": "make myprogram.out CXX=${yuclid.compiler} OUTDIR=$root/build/${yuclid.compiler}",
-        "parallel": true // equivalent to ["compiler"]
+        "parallel": true
       }
     ]
   },
   "space": {
     "compiler": [ "g++", "clang++" ],
-    "threads": [ 1, 2, 3, 4 ],
-    // or
-    "threads:py": "list(range(1,5))", // python!
-    // or
-    "nthreads": null, // this forces the user to specify nthreads from CLI
-                      // e.g. --select nthreads=1,7,14
+    "nthreads": null,
     "dataset": [
       {
         "name": "small",
@@ -232,7 +224,7 @@ The following is a template showing how to track metrics of a program compiled w
         "condition": "yuclid.nthreads == 1"
       },
       {
-        "name": "small", // name can be duplicated
+        "name": "small",
         "value": "${data_dir}/mydatasetB.dat",
         "condition": "yuclid.nthreads > 1"
       }
@@ -241,16 +233,12 @@ The following is a template showing how to track metrics of a program compiled w
   "trials": [
     {
       "command": "time -p ${yuclid.compiler}/myprogram.out ${yuclid.dataset}",
-      "metrics": [ "time", "something_else" ] // which metrics this command enables
-                                              // "condition": "True" can specify extra conditions
+      "metrics": [ "time", "something_else" ]
     }
   ],
   "metrics": [
     {
       "name": "time",
-      // each metric command must generate one or more numbers (separated by space or linebreak)
-      // ${yuclid.@} represents a unique trial identifier
-      // ${yuclid.@}.out and ${yuclid.@}.err are automatically generated for each trial
       "command": "cat ${yuclid.@}.err | grep real | grep -E '[0-9]+\\.[0-9]+'"
     },
     {
@@ -258,10 +246,32 @@ The following is a template showing how to track metrics of a program compiled w
       "command": "cat ${yuclid.@}.out | grep something"
     }
   ],
-  "order": [ "compiler", "dataset", "nthreads" ]  // different nthreads first,
-                                                  // then datasets, then compilers
+  "order": [ "compiler", "dataset", "nthreads" ]
 }
 ```
+
+What the template is showing:
+
+- **`setup.global`** runs once, before any point setup.
+- **`on`** restricts a point setup command to those dimensions, so `make` runs
+  once per compiler rather than once per experiment. Omit it to mean the whole
+  space.
+- **`parallel`** is `true`, `false` or a list of dimensions from `on`; `true`
+  means all of them.
+- **`"nthreads": null`** leaves the dimension undefined, forcing it to be
+  supplied at invocation: `--select nthreads=1,7,14`. A literal list
+  (`[1, 2, 3, 4]`) or a generated one (`"nthreads:py": "list(range(1,5))"`)
+  would define it in the configuration instead.
+- **Two values may share a name**, as `dataset` does here, and be told apart by
+  their conditions.
+- **`metrics` inside a trial** lists the metrics that trial produces. A trial
+  may also carry its own `condition`.
+- **`order`** makes the last dimension vary fastest: here every `nthreads` is
+  tried before moving to the next dataset, and every dataset before recompiling
+  for the next compiler.
+- Each metric command must print one or more numbers, separated by spaces or
+  newlines. `${yuclid.@}.out` and `${yuclid.@}.err` are that trial's captured
+  output.
 
 ## Plot API
 

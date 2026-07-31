@@ -9,7 +9,6 @@
 - [ ] decide: `--fold` pads the shorter metrics of a point with `NaN`
 - [ ] decide: a metric enabled by several trials should be reported as a warning
 - [ ] docs: examples — benchmarking different types of matrix multiplication
-- [ ] docs: fix the README's invalid-JSON `//` comments
 - [ ] docs: README should lead with the interactive slicer on **any** CSV; add an asciinema/GIF
 - [ ] feat: `--resume` — skip points already present in the output
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
