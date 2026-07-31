@@ -64,102 +64,68 @@ Parameters can be simple lists or objects with `name`/`value` pairs.
 Use `${yuclid.x}` in a command to reference the value of dimension `x`, and `${yuclid.@}` for a unique output filename.
 `${yuclid.x}` is an alias for `${yuclid.x.value}`.
 
-## Minimal Example
+A value may also carry a **condition**, a boolean expression over the point that
+decides whether that point exists at all — this is what makes the space
+irregular. A dimension declared with no values is **undefined**, and has to be
+supplied at invocation with `--select nthreads=1,7,14`. A **preset** is a named
+subspace, run with `-p`.
 
-Suppose you want to time a compression algorithm on different input sizes and also measure the execution time variance across cores.
-The dimensions of this experiment, i.e., the space, would be the _size_ of the input, the _compression_ level and the _cpuid_.
-Yuclid uses a `yuclid.json` configuration file to define the space and other experiment parameters.
-Here's a minimal example that you can immediately run on your linux terminal.
+The examples below show all of it in place.
 
-```json
-{
-  "space": {
-    "size": [
-      {
-        "name": "small",
-        "value": "10M"
-      },
-      {
-        "name": "medium",
-        "value": "20M"
-      },
-      {
-        "name": "large",
-        "value": "50M"
-      }
-    ],
-    "cpuid": [0, 1, 2, 3],
-    "compression": [
-      {
-        "name": "lowest",
-        "value": 1
-      },
-      {
-        "name": "highest",
-        "value": 9
-      }
-    ]
-  },
-  "trials": [
-    "time -p taskset -c ${yuclid.cpuid} head -c ${yuclid.size} /dev/urandom | gzip -${yuclid.compression} >/dev/null"
-  ],
-  "metrics": [
-    {
-      "name": "time.real",
-      "command": "cat ${yuclid.@}.err | grep real | grep -oE '[0-9]+\\.[0-9]+'"
-    },
-    {
-      "name": "time.sys",
-      "command": "cat ${yuclid.@}.err | grep sys | grep -oE '[0-9]+\\.[0-9]+'"
-    }
-  ]
-}
+## Examples
+
+Five worked experiments live in [`examples/`](examples/), each runnable as it
+stands and each written to teach one part of yuclid:
+
+| Example | Goal |
+|---|---|
+| [matrix-multiplication](examples/matrix-multiplication/) | A plain space, point setup on one dimension, and presets |
+| [cache-traversal](examples/cache-traversal/) | Conditions, several metrics from one trial, and wrapping a workload |
+| [compression-codecs](examples/compression-codecs/) | Point setup shared across a subspace, and metrics that are not timings |
+| [sqlite-ingestion](examples/sqlite-ingestion/) | Conditions over other dimensions, and a private file per point |
+| [parallel-prime-sieve](examples/parallel-prime-sieve/) | Repetitions, and what to do about a noisy measurement |
+
+Each directory holds a `yuclid.json` with an equivalent `yuclid.yaml`, the
+workload it measures, no third-party dependencies, and a README pointing at the
+parts of the configuration worth reading. Read them in that order if you are
+new to yuclid.
+
+```sh
+cd examples/matrix-multiplication
+yuclid run --dry-run   # print every command, run none of them
+yuclid run -p quick    # a small corner of the space
 ```
-To run the experiments, copy the configuration above into `yuclid.json` and from the same directory run
-```
-yuclid run
-```
-You can also run a subspace using the selector `-s`
-```
+
+A subspace can also be selected on the command line:
+
+```sh
 yuclid run -s size=medium
 yuclid run -s cpuid=0,1,2
 yuclid run -s size=small,medium cpuid=3,0
 ```
 
-The command `yuclid run` (or `yuclid run --inputs yuclid.json`) will produce a JSON Lines:
+## What a run produces
+
+One JSON Lines record per point, holding the name of every dimension and the
+metrics collected there:
 
 ```json
 {"size": "small", "cpuid": "0", "compression": "lowest", "time.real": 0.37, "time.sys": 0.05}
 {"size": "small", "cpuid": "0", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
-{"size": "small", "cpuid": "1", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
-{"size": "small", "cpuid": "1", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
-{"size": "small", "cpuid": "2", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
-{"size": "small", "cpuid": "2", "compression": "highest", "time.real": 0.32, "time.sys": 0.05}
-{"size": "small", "cpuid": "3", "compression": "lowest", "time.real": 0.31, "time.sys": 0.05}
-{"size": "small", "cpuid": "3", "compression": "highest", "time.real": 0.33, "time.sys": 0.05}
 {"size": "medium", "cpuid": "0", "compression": "lowest", "time.real": 0.62, "time.sys": 0.11}
-{"size": "medium", "cpuid": "0", "compression": "highest", "time.real": 0.66, "time.sys": 0.1}
-{"size": "medium", "cpuid": "1", "compression": "lowest", "time.real": 0.62, "time.sys": 0.11}
-{"size": "medium", "cpuid": "1", "compression": "highest", "time.real": 0.66, "time.sys": 0.1}
-{"size": "medium", "cpuid": "2", "compression": "lowest", "time.real": 0.64, "time.sys": 0.11}
-{"size": "medium", "cpuid": "2", "compression": "highest", "time.real": 0.65, "time.sys": 0.1}
-{"size": "medium", "cpuid": "3", "compression": "lowest", "time.real": 0.67, "time.sys": 0.11}
-{"size": "medium", "cpuid": "3", "compression": "highest", "time.real": 0.67, "time.sys": 0.11}
 {"size": "large", "cpuid": "0", "compression": "lowest", "time.real": 1.59, "time.sys": 0.27}
-{"size": "large", "cpuid": "0", "compression": "highest", "time.real": 1.58, "time.sys": 0.26}
-{"size": "large", "cpuid": "1", "compression": "lowest", "time.real": 1.59, "time.sys": 0.28}
-{"size": "large", "cpuid": "1", "compression": "highest", "time.real": 1.6, "time.sys": 0.27}
-{"size": "large", "cpuid": "2", "compression": "lowest", "time.real": 1.54, "time.sys": 0.38}
-{"size": "large", "cpuid": "2", "compression": "highest", "time.real": 1.69, "time.sys": 0.26}
-{"size": "large", "cpuid": "3", "compression": "lowest", "time.real": 1.54, "time.sys": 0.27}
-{"size": "large", "cpuid": "3", "compression": "highest", "time.real": 1.59, "time.sys": 0.27}
 ```
 
-These above results can be displayed with `yuclid plot`, e.g.:
+`yuclid describe` reports what such a file holds: the dimensions with their
+values, the metrics with their range, and the combinations that are absent.
+
+The results can be displayed in a window:
+
 ```
 yuclid plot results.yuclid.jsonl -x compression
 yuclid plot results.yuclid.jsonl -x size -z cpuid
 ```
+
 Interact with the plot using arrow keys to move around dimensions and number keys to change the metric!
 
 Or entirely in the terminal with `yuclid tplot`:
@@ -192,92 +158,6 @@ time.real                               size
 highest 1.58    0.66    0.33
 lowest  1.59    0.62    0.37
 ```
-
-## Advanced Example
-
-The following is a template showing how to track metrics of a program compiled with different compilers, running with a different number of threads and customize the input based on how many threads are used.
-
-```json
-{
-  "env": {
-    "root": "/my/path",
-    "data_dir": "/path/to/data"
-  },
-  "setup": {
-    "global": [
-      "ulimit -s 1048576"
-    ],
-    "point": [
-      {
-        "on": [ "compiler" ],
-        "command": "mkdir -p ${yuclid.compiler}",
-        "parallel": [ "compiler" ]
-      },
-      {
-        "on": [ "compiler" ],
-        "command": "make myprogram.out CXX=${yuclid.compiler} OUTDIR=$root/build/${yuclid.compiler}",
-        "parallel": true
-      }
-    ]
-  },
-  "space": {
-    "compiler": [ "g++", "clang++" ],
-    "nthreads": null,
-    "dataset": [
-      {
-        "name": "small",
-        "value": "${data_dir}/mydatasetA.dat",
-        "condition": "yuclid.nthreads == 1"
-      },
-      {
-        "name": "small",
-        "value": "${data_dir}/mydatasetB.dat",
-        "condition": "yuclid.nthreads > 1"
-      }
-    ]
-  },
-  "trials": [
-    {
-      "command": "time -p ${yuclid.compiler}/myprogram.out ${yuclid.dataset}",
-      "metrics": [ "time", "something_else" ]
-    }
-  ],
-  "metrics": [
-    {
-      "name": "time",
-      "command": "cat ${yuclid.@}.err | grep real | grep -E '[0-9]+\\.[0-9]+'"
-    },
-    {
-      "name": "something_else",
-      "command": "cat ${yuclid.@}.out | grep something"
-    }
-  ],
-  "order": [ "compiler", "dataset", "nthreads" ]
-}
-```
-
-What the template is showing:
-
-- **`setup.global`** runs once, before any point setup.
-- **`on`** restricts a point setup command to those dimensions, so `make` runs
-  once per compiler rather than once per experiment. Omit it to mean the whole
-  space.
-- **`parallel`** is `true`, `false` or a list of dimensions from `on`; `true`
-  means all of them.
-- **`"nthreads": null`** leaves the dimension undefined, forcing it to be
-  supplied at invocation: `--select nthreads=1,7,14`. A literal list
-  (`[1, 2, 3, 4]`) or a generated one (`"nthreads:py": "list(range(1,5))"`)
-  would define it in the configuration instead.
-- **Two values may share a name**, as `dataset` does here, and be told apart by
-  their conditions.
-- **`metrics` inside a trial** lists the metrics that trial produces. A trial
-  may also carry its own `condition`.
-- **`order`** makes the last dimension vary fastest: here every `nthreads` is
-  tried before moving to the next dataset, and every dataset before recompiling
-  for the next compiler.
-- Each metric command must print one or more numbers, separated by spaces or
-  newlines. `${yuclid.@}.out` and `${yuclid.@}.err` are that trial's captured
-  output.
 
 ## Output formats
 
@@ -315,6 +195,21 @@ resolved while compiling, so the script is a record of exactly one experiment.
 
 Numbers keep the formatting the measured program printed, rather than being
 re-serialized.
+
+## Skills
+
+If you use Claude, symlink [`skills/`](skills/) into your agent directory and
+it will pick both of them up:
+
+```sh
+ln -s "$PWD/skills" ~/.claude/skills/yuclid       # everywhere
+ln -s "$PWD/skills" .claude/skills/yuclid         # this project only
+```
+
+- **`yuclid-json`** writes and fixes a configuration: the space, the trials,
+  and the commands that scrape the numbers out of them.
+- **`yuclid-plot`** reads a result file and suggests what is worth looking at,
+  as `yuclid plot` / `tplot` / `stats` commands you can paste.
 
 ## Plot API
 
