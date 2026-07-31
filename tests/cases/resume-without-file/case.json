@@ -1,0 +1,10 @@
+{
+  "description": "resuming from a file that does not exist yet runs everything",
+  "args": ["run", "-s", "a=1,2", "--resume", "results.jsonl"],
+  "output_flag": false,
+  "records": [
+    {"a": "1", "n": 1},
+    {"a": "2", "n": 2}
+  ],
+  "stdout_contains": ["nothing to resume from: results.jsonl"]
+}

@@ -1,0 +1,15 @@
+{
+  "description": "a point recorded fewer times than -r asks for is run for the missing repetitions only",
+  "runs": [
+    ["run", "-s", "a=1", "--fold", "-o", "results.jsonl"],
+    ["run", "-s", "a=1", "--fold", "-r", "3", "--resume", "results.jsonl"]
+  ],
+  "output_flag": false,
+  "records": [
+    {"a": "1", "n": [1]},
+    {"a": "1", "n": [1]},
+    {"a": "1", "n": [1]}
+  ],
+  "files_exist": [".yuclid/*/*_rep1_trial0.out", ".yuclid/*/*_rep2_trial0.out"],
+  "files_not_exist": [".yuclid/*/*_rep0_trial0.out"]
+}

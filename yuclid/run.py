@@ -710,7 +710,7 @@ def get_progress(i, subspace_size):
     return "[{}/{}]".format(i, subspace_size)
 
 
-def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
+def run_point_trials(settings, data, execution, f, i, point, file_lock=None, repeat=None):
     os.makedirs(
         os.path.join(settings["temp_dir"], settings["now"]),
         exist_ok=True,
@@ -740,10 +740,13 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
         )
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
-    repeat = settings["repeat"]
+    # with --resume, only the repetitions still missing are run, and their
+    # numbering continues where the recorded ones left off
+    requested = settings["repeat"]
+    repeat = requested if repeat is None else repeat
 
-    for rep in range(repeat):
-        rep_suffix = f"_rep{rep}" if repeat > 1 else ""
+    for rep in range(requested - repeat, requested):
+        rep_suffix = f"_rep{rep}" if requested > 1 else ""
 
         # every trial gets its own captures, and a metric must be evaluated
         # against the captures of the trial that enabled it
@@ -1009,6 +1012,73 @@ def get_compatible_trials_and_metrics(data, point, execution):
     return compatible_trials, compatible_metrics
 
 
+def load_recorded_points(path, order, metric_names):
+    """Count the records a previous run already wrote for each point.
+
+    A record counts only if its non-metric fields are exactly this run's
+    dimensions: anything else was produced by a different space and cannot be
+    matched against the points about to run.
+    """
+    recorded = dict()
+    if not os.path.isfile(path):
+        report(LogLevel.INFO, "nothing to resume from", path)
+        return recorded
+
+    dimensions = set(order)
+    foreign, unreadable = 0, 0
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if len(line) == 0:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                unreadable += 1
+                continue
+            if set(record.keys()) - metric_names != dimensions:
+                foreign += 1
+                continue
+            key = tuple(str(record[dim]) for dim in order)
+            recorded[key] = recorded.get(key, 0) + 1
+
+    if unreadable > 0:
+        report(LogLevel.WARNING, "ignoring unparseable records", unreadable)
+    if foreign > 0:
+        report(
+            LogLevel.WARNING,
+            "ignoring records of a different space",
+            foreign,
+            hint="a record is matched only when its dimensions are exactly: {}".format(
+                ", ".join(order)
+            ),
+        )
+    report(
+        LogLevel.INFO,
+        "resuming from",
+        path,
+        "{} points already recorded".format(len(recorded)),
+    )
+    return recorded
+
+
+def report_skipped(execution, i, point):
+    report(
+        LogLevel.INFO,
+        get_progress(i, execution["subspace_size"]),
+        point_to_string(point),
+        "already recorded. Skipping",
+    )
+
+
+def remaining_repetitions(settings, execution, point):
+    recorded = execution["recorded"]
+    if recorded is None:
+        return settings["repeat"]
+    key = tuple(str(x["name"]) for x in point)
+    return max(0, settings["repeat"] - recorded.get(key, 0))
+
+
 def run_subspace_trials(settings, data, execution):
     if settings["dry_run"]:
         for i, point in enumerate(execution["subspace_points"], start=1):
@@ -1017,6 +1087,14 @@ def run_subspace_trials(settings, data, execution):
                 compatible_trials, compatible_metrics = (
                     get_compatible_trials_and_metrics(data, point, execution)
                 )
+                if remaining_repetitions(settings, execution, point) == 0:
+                    report(
+                        LogLevel.INFO,
+                        get_progress(i, execution["subspace_size"]),
+                        point_to_string(point),
+                        "already recorded. Skipping",
+                    )
+                    continue
                 report(
                     LogLevel.INFO,
                     get_progress(i, execution["subspace_size"]),
@@ -1045,6 +1123,10 @@ def run_subspace_trials(settings, data, execution):
                     for i, point in enumerate(
                         execution["subspace_points"], start=1
                     ):
+                        repeat = remaining_repetitions(settings, execution, point)
+                        if repeat == 0:
+                            report_skipped(execution, i, point)
+                            continue
                         future = executor.submit(
                             run_point_trials,
                             settings,
@@ -1054,6 +1136,7 @@ def run_subspace_trials(settings, data, execution):
                             i,
                             point,
                             file_lock,
+                            repeat,
                         )
                         futures.append(future)
                     for future in concurrent.futures.as_completed(futures):
@@ -1064,7 +1147,13 @@ def run_subspace_trials(settings, data, execution):
                 for i, point in enumerate(
                     execution["subspace_points"], start=1
                 ):
-                    run_point_trials(settings, data, execution, f, i, point)
+                    repeat = remaining_repetitions(settings, execution, point)
+                    if repeat == 0:
+                        report_skipped(execution, i, point)
+                        continue
+                    run_point_trials(
+                        settings, data, execution, f, i, point, repeat=repeat
+                    )
                     f.flush()
 
 
@@ -1076,7 +1165,9 @@ def validate_dimensions(subspace):
         report(LogLevel.FATAL, "dimensions undefined", ", ".join(undefined), hint=hint)
 
 
-def prepare_subspace_execution(subspace, order, env, metrics, dry_run, repeat=1):
+def prepare_subspace_execution(
+    subspace, order, env, metrics, dry_run, repeat=1, recorded=None
+):
     ordered_subspace = [subspace[x] for x in order]
 
     execution = dict()
@@ -1097,6 +1188,7 @@ def prepare_subspace_execution(subspace, order, env, metrics, dry_run, repeat=1)
     execution["env"] = env
     execution["dry_run"] = dry_run
     execution["metrics"] = metrics
+    execution["recorded"] = recorded
 
     if execution["subspace_size"] == 0:
         report(LogLevel.WARNING, "empty subspace")
@@ -1177,7 +1269,22 @@ def build_settings(args):
     # output
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
     filename = "yuclid.results.{}.jsonl".format(settings["now"])
-    if args.output is None and args.output_dir is None:
+    if args.resume is not None:
+        ignored = [
+            name
+            for name, value in [("--output", args.output), ("--output-dir", args.output_dir)]
+            if value is not None
+        ]
+        if len(ignored) > 0:
+            report(
+                LogLevel.WARNING,
+                "ignoring {}".format(" and ".join(ignored)),
+                hint="--resume writes to the file it resumes from: {}".format(
+                    args.resume
+                ),
+            )
+        settings["output"] = args.resume
+    elif args.output is None and args.output_dir is None:
         settings["output"] = filename
     elif args.output is not None and args.output_dir is not None:
         report(LogLevel.FATAL, "either --output or --output-dir must be specified")
@@ -1319,7 +1426,7 @@ def print_subspace(subspace):
         report(LogLevel.INFO, "subspace.{}: {}".format(dim, ", ".join(names)))
 
 
-def run_experiments(settings, data, order, env, preset_name=None):
+def run_experiments(settings, data, order, env, preset_name=None, recorded=None):
     if preset_name is None:
         subspace = data["space"].copy()
     else:
@@ -1330,7 +1437,7 @@ def run_experiments(settings, data, order, env, preset_name=None):
     print_subspace(subspace)
     execution = prepare_subspace_execution(
         subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"],
-        repeat=settings["repeat"],
+        repeat=settings["repeat"], recorded=recorded,
     )
     validate_execution(execution, data)
     if not settings["no_setup"]:
@@ -1377,13 +1484,26 @@ def launch(args):
 
     validate_presets(settings, data)
 
+    recorded = None
+    if settings["resume"] is not None:
+        metric_names = {m["name"] for m in data["metrics"]}
+        recorded = load_recorded_points(settings["resume"], order, metric_names)
+        if settings["repeat"] > 1 and not settings["fold"]:
+            report(
+                LogLevel.WARNING,
+                "counting one recorded repetition per record",
+                hint="a metric emitting several samples writes one record per "
+                "sample, so a point may look more repeated than it is. Use "
+                "--fold for an exact count",
+            )
+
     if len(settings["presets"]) > 0:
         for preset_name in settings["presets"]:
             report(LogLevel.INFO, "running preset", preset_name)
-            run_experiments(settings, data, order, env, preset_name)
+            run_experiments(settings, data, order, env, preset_name, recorded)
             report(LogLevel.INFO, "completed preset", preset_name)
     else:
-        run_experiments(settings, data, order, env, preset_name=None)
+        run_experiments(settings, data, order, env, preset_name=None, recorded=recorded)
 
     report(LogLevel.INFO, "finished in", format_duration(time.monotonic() - started))
 

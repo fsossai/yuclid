@@ -1,6 +1,7 @@
 .yuclid
 .DS_Store
 *.jsonl
+!tests/cases/**/*.jsonl
 
 # Agents
 .claude

@@ -105,6 +105,14 @@ def get_parser():
         help="Skip the setup phase and run trials directly",
     )
     run_parser.add_argument(
+        "--resume",
+        default=None,
+        metavar="FILE",
+        help="Append to an existing JSON Lines result file, skipping the points "
+        "it already holds. FILE becomes the output: --output and --output-dir "
+        "are ignored",
+    )
+    run_parser.add_argument(
         "-r",
         "--repeat",
         type=int,

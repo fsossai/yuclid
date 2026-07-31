@@ -10,7 +10,6 @@
 - [ ] decide: a metric enabled by several trials should be reported as a warning
 - [ ] docs: examples — benchmarking different types of matrix multiplication
 - [ ] docs: README should lead with the interactive slicer on **any** CSV; add an asciinema/GIF
-- [ ] feat: `--resume` — skip points already present in the output
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
 - [ ] feat: compile standalone bash script
 - [ ] feat: declarative metric extraction — named-capture regex, and JSON/CSV field selection, alongside shell pipelines
