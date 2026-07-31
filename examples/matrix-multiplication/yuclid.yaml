@@ -3,27 +3,30 @@ env:
   MATRIX_SEED: '20260730'
 space:
   size:
-    - name: 64x64
-      value: 64
-    - name: 128x128
-      value: 128
-    - name: 256x256
-      value: 256
     - name: 512x512
       value: 512
+    - name: 1024x1024
+      value: 1024
+    - name: 1536x1536
+      value: 1536
+    - name: 2048x2048
+      value: 2048
   variant: [dot, rows, columns, tiled]
   tile:
     - name: none
       value: 0
       condition: yuclid.variant != 'tiled'
-    - name: 16x16
-      value: 16
-      condition: yuclid.variant == 'tiled'
     - name: 32x32
       value: 32
       condition: yuclid.variant == 'tiled'
     - name: 64x64
       value: 64
+      condition: yuclid.variant == 'tiled'
+    - name: 128x128
+      value: 128
+      condition: yuclid.variant == 'tiled'
+    - name: 256x256
+      value: 256
       condition: yuclid.variant == 'tiled'
 setup:
   global:
@@ -48,7 +51,7 @@ metrics:
     command: awk '{print $3}' ${yuclid.@}.out
 presets:
   quick:
-    size: [64x64, 128x128]
+    size: [512x512, 1024x1024]
   large:
-    size: [256x256, 512x512]
+    size: [1536x1536, 2048x2048]
 order: [size, variant, tile]
