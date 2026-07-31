@@ -6,6 +6,7 @@ import pandas as pd
 import subprocess
 import itertools
 import json
+import time
 import re
 import os
 
@@ -1353,7 +1354,18 @@ def validate_settings(data, settings):
             )
 
 
+def format_duration(seconds):
+    hours, remainder = divmod(int(seconds), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}h{minutes:02d}m{seconds:02d}s"
+    if minutes > 0:
+        return f"{minutes}m{seconds:02d}s"
+    return f"{seconds}s"
+
+
 def launch(args):
+    started = time.monotonic()
     settings = build_settings(args)
     data = aggregate_input_data(settings)
     validate_settings(data, settings)
@@ -1373,7 +1385,7 @@ def launch(args):
     else:
         run_experiments(settings, data, order, env, preset_name=None)
 
-    report(LogLevel.INFO, "finished")
+    report(LogLevel.INFO, "finished in", format_duration(time.monotonic() - started))
 
     if not settings["dry_run"]:
         metric_names = {m["name"] for m in data["metrics"]}

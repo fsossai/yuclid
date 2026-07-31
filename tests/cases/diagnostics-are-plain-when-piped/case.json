@@ -4,7 +4,7 @@
   "stdout_contains": [
     "yuclid ",
     "INFO",
-    "finished"
+    "finished in"
   ],
   "stdout_not_contains": [
     "\u001b["
