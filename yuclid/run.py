@@ -7,6 +7,7 @@ import pandas as pd
 import subprocess
 import itertools
 import json
+import csv
 import time
 import re
 import os
@@ -105,6 +106,52 @@ def sh_in_quotes(text):
     for char in ["\\", '"', "$", "`"]:
         text = text.replace(char, "\\" + char)
     return text
+
+
+def record_columns(data, settings, order):
+    """Every column a record may hold: the dimensions, then the metrics.
+
+    CSV needs one fixed header for the whole dataset, while conditions make
+    the metrics collected at a point vary, so the columns are decided from the
+    configuration rather than from the first record.
+    """
+    selected = settings["metrics"]
+    names = remove_duplicates(
+        m["name"]
+        for m in data["metrics"]
+        if selected is None or m["name"] in selected
+    )
+    return list(order) + names
+
+
+class RecordWriter:
+    """Appends records to the result dataset, as JSON Lines or as CSV."""
+
+    def __init__(self, stream, fmt, columns, write_header):
+        self.stream = stream
+        self.format = fmt
+        self.columns = columns
+        if fmt == "csv":
+            self.writer = csv.DictWriter(
+                stream,
+                fieldnames=columns,
+                extrasaction="ignore",
+                restval="",
+                # csv defaults to CRLF; stay with the line ending of every
+                # other file yuclid writes, including the compiled script's
+                lineterminator="\n",
+            )
+            if write_header:
+                self.writer.writeheader()
+
+    def write(self, record):
+        if self.format == "csv":
+            self.writer.writerow(record)
+        else:
+            self.stream.write(json.dumps(record) + "\n")
+
+    def flush(self):
+        self.stream.flush()
 
 
 class ScriptWriter:
@@ -821,7 +868,9 @@ def get_progress(i, subspace_size):
     return "[{}/{}]".format(i, subspace_size)
 
 
-def run_point_trials(settings, data, execution, f, i, point, file_lock=None, repeat=None):
+def run_point_trials(
+    settings, data, execution, writer, i, point, file_lock=None, repeat=None
+):
     os.makedirs(
         os.path.join(settings["temp_dir"], settings["now"]),
         exist_ok=True,
@@ -983,12 +1032,12 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None, rep
         try:
             if settings["fold"]:
                 result.update(padded)
-                f.write(json.dumps(result) + "\n")
+                writer.write(result)
             else:
                 for k in range(samples):
                     result.update({name: v[k] for name, v in padded.items()})
-                    f.write(json.dumps(result) + "\n")
-            f.flush()
+                    writer.write(result)
+            writer.flush()
         finally:
             if file_lock is not None:
                 file_lock.release()
@@ -1127,7 +1176,25 @@ def get_compatible_trials_and_metrics(data, point, execution):
     return compatible_trials, compatible_metrics
 
 
-def load_recorded_points(path, order, metric_names):
+def read_records(path, fmt):
+    """Yield the records of a result dataset, or None for an unreadable one."""
+    if fmt == "csv":
+        with open(path, "r", newline="") as f:
+            for row in csv.DictReader(f):
+                yield row
+        return
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if len(line) == 0:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                yield None
+
+
+def load_recorded_points(path, order, metric_names, fmt):
     """Count the records a previous run already wrote for each point.
 
     A record counts only if its non-metric fields are exactly this run's
@@ -1141,21 +1208,15 @@ def load_recorded_points(path, order, metric_names):
 
     dimensions = set(order)
     foreign, unreadable = 0, 0
-    with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if len(line) == 0:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                unreadable += 1
-                continue
-            if set(record.keys()) - metric_names != dimensions:
-                foreign += 1
-                continue
-            key = tuple(str(record[dim]) for dim in order)
-            recorded[key] = recorded.get(key, 0) + 1
+    for record in read_records(path, fmt):
+        if record is None:
+            unreadable += 1
+            continue
+        if set(record.keys()) - metric_names != dimensions:
+            foreign += 1
+            continue
+        key = tuple(str(record[dim]) for dim in order)
+        recorded[key] = recorded.get(key, 0) + 1
 
     if unreadable > 0:
         report(LogLevel.WARNING, "ignoring unparseable records", unreadable)
@@ -1177,7 +1238,42 @@ def load_recorded_points(path, order, metric_names):
     return recorded
 
 
-def compile_record(script, coordinates, metric_names, folded):
+def csv_quote(text):
+    """Quote a CSV field the way csv.writer would."""
+    text = str(text)
+    if any(c in text for c in [',', '"', "\n"]):
+        return '"' + text.replace('"', '""') + '"'
+    return text
+
+
+def compile_csv_record(script, coordinates, metric_names, columns):
+    """Emit the CSV row of one point, with an empty cell per absent metric."""
+    files = ['"$R".m{}'.format(k) for k in range(len(metric_names))]
+    slot = {name: k + 1 for k, name in enumerate(metric_names)}
+    named = dict(coordinates)
+
+    fields, values = [], []
+    for column in columns:
+        if column in named:
+            fields.append(csv_quote(named[column]))
+        elif column in slot:
+            fields.append("%s")
+            values.append(
+                '(${0}=="" ? "nan" : ${0})'.format(slot[column])
+            )
+        else:
+            # a metric that does not apply at this point
+            fields.append("")
+    program = 'BEGIN {{ FS="\\t" }} {{ printf "{}\\n"{} }}'.format(
+        ",".join(fields).replace('"', '\\"'),
+        (", " + ", ".join(values)) if values else "",
+    )
+    script.command(
+        "paste {} | awk {} >> \"$OUTPUT\"".format(" ".join(files), sh_quote(program))
+    )
+
+
+def compile_record(script, coordinates, metric_names, folded, fmt, columns):
     """Emit the commands that turn a point's metric files into records.
 
     Exploded mode zips the per-metric sample files row by row, which is what
@@ -1186,6 +1282,10 @@ def compile_record(script, coordinates, metric_names, folded):
     """
     if len(metric_names) == 0:
         script.comment("no metric applies here: nothing to record")
+        return
+
+    if fmt == "csv":
+        compile_csv_record(script, coordinates, metric_names, columns)
         return
 
     files = ['"$R".m{}'.format(k) for k in range(len(metric_names))]
@@ -1278,7 +1378,14 @@ def compile_point_trials(settings, data, execution, i, point, script):
                     command, k
                 )
             )
-        compile_record(script, coordinates, names, settings["fold"])
+        compile_record(
+            script,
+            coordinates,
+            names,
+            settings["fold"],
+            settings["format"],
+            record_columns(data, settings, execution["order"]),
+        )
 
 
 def report_skipped(execution, i, point):
@@ -1329,7 +1436,17 @@ def run_subspace_trials(settings, data, execution):
         output_dir = os.path.dirname(settings["output"])
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        with open(settings["output"], "a") as f:
+        fresh = (
+            not os.path.exists(settings["output"])
+            or os.path.getsize(settings["output"]) == 0
+        )
+        with open(settings["output"], "a", newline="") as f:
+            writer = RecordWriter(
+                f,
+                settings["format"],
+                record_columns(data, settings, execution["order"]),
+                write_header=fresh,
+            )
             if settings["parallel_trials"] != 0:
                 if settings["parallel_trials"] < 0:
                     max_workers = execution["subspace_size"]
@@ -1356,7 +1473,7 @@ def run_subspace_trials(settings, data, execution):
                             settings,
                             data,
                             execution,
-                            f,
+                            writer,
                             i,
                             point,
                             file_lock,
@@ -1376,9 +1493,9 @@ def run_subspace_trials(settings, data, execution):
                         report_skipped(execution, i, point)
                         continue
                     run_point_trials(
-                        settings, data, execution, f, i, point, repeat=repeat
+                        settings, data, execution, writer, i, point, repeat=repeat
                     )
-                    f.flush()
+                    writer.flush()
 
 
 def validate_dimensions(subspace):
@@ -1506,8 +1623,23 @@ def build_settings(args):
         os.makedirs(args.temp_dir, exist_ok=True)
 
     # output
+    settings["format"] = args.format
+    if settings["format"] is None:
+        # the extension of a name the user chose decides, jsonl otherwise
+        named = args.resume or args.output
+        is_csv = named is not None and named.lower().endswith(".csv")
+        settings["format"] = "csv" if is_csv else "jsonl"
+
+    if settings["fold"] and settings["format"] == "csv":
+        report(
+            LogLevel.FATAL,
+            "--fold cannot be written as CSV",
+            hint="a CSV cell holds one value, not an array of samples. "
+            "Drop --fold, or keep the default jsonl format",
+        )
+
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
-    filename = "yuclid.results.{}.jsonl".format(settings["now"])
+    filename = "yuclid.results.{}.{}".format(settings["now"], settings["format"])
     if args.resume is not None:
         ignored = [
             name
@@ -1730,7 +1862,7 @@ def format_duration(seconds):
     return f"{seconds}s"
 
 
-def compile_preamble(script, settings, data):
+def compile_preamble(script, settings, data, columns):
     script.command("#!/bin/sh")
     script.comment("Generated by yuclid {} on {:%Y-%m-%d %H:%M:%S}".format(
         __version__, datetime.now()
@@ -1741,6 +1873,9 @@ def compile_preamble(script, settings, data):
     script.comment("would have run them. Neither yuclid nor the configuration is")
     script.comment("needed to run this script.")
     script.comment()
+    if settings["format"] == "csv":
+        script.comment("Each execution rewrites the CSV from scratch.")
+        script.comment()
     script.comment("Override the destinations with the environment:")
     script.comment("  YUCLID_OUTPUT  where the records are appended")
     script.comment("  YUCLID_WORK    where each trial's output is captured")
@@ -1758,6 +1893,14 @@ def compile_preamble(script, settings, data):
         sh_in_quotes(os.path.join(settings["temp_dir"], settings["now"]))
     ))
     script.command('mkdir -p "$WORK"')
+    if settings["format"] == "csv":
+        # there is no loop-free way to add a header only when the file is new,
+        # so a compiled CSV run starts the file afresh every time
+        script.command(
+            "printf '{}\\n' > \"$OUTPUT\"".format(
+                ",".join(csv_quote(c) for c in columns)
+            )
+        )
 
     if len(data["env"]) > 0:
         script.section("environment")
@@ -1767,7 +1910,7 @@ def compile_preamble(script, settings, data):
 
 def compile_experiments(settings, data, order, env):
     script = ScriptWriter(settings["compile"])
-    compile_preamble(script, settings, data)
+    compile_preamble(script, settings, data, record_columns(data, settings, order))
 
     if len(settings["presets"]) > 0:
         for preset_name in settings["presets"]:
@@ -1809,7 +1952,9 @@ def launch(args):
     recorded = None
     if settings["resume"] is not None:
         metric_names = {m["name"] for m in data["metrics"]}
-        recorded = load_recorded_points(settings["resume"], order, metric_names)
+        recorded = load_recorded_points(
+            settings["resume"], order, metric_names, settings["format"]
+        )
         if settings["repeat"] > 1 and not settings["fold"]:
             report(
                 LogLevel.WARNING,

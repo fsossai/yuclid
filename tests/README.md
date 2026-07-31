@@ -52,6 +52,7 @@ expected records are therefore written out literally.
 | `records` | the exact dataset, in order |
 | `records_unordered` | the exact dataset, as a set |
 | `record_count` | how many records |
+| `results_file` | read the dataset from this name instead of `yuclid.results.jsonl`; a `.csv` name is parsed as CSV |
 | `no_results_file` | no dataset may be written |
 | `stdout_contains` / `stdout_not_contains` | substrings of the diagnostics |
 | `files_exist` / `files_not_exist` | globs, relative to the working directory |

@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import concurrent.futures
+import csv
 import glob
 import json
 import math
@@ -74,9 +75,12 @@ def key(record):
 
 
 def read_records(workdir, case):
-    path = os.path.join(workdir, RESULTS)
+    path = os.path.join(workdir, case.get("results_file", RESULTS))
     if not os.path.isfile(path):
         return None
+    if path.endswith(".csv"):
+        with open(path, newline="") as f:
+            return [normalize(row) for row in csv.DictReader(f)]
     records = []
     with open(path) as f:
         for line in f:

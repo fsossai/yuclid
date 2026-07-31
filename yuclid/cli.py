@@ -47,6 +47,13 @@ def get_parser():
         help="Directory path where the generated data will be saved",
     )
     run_parser.add_argument(
+        "--format",
+        default=None,
+        choices=["jsonl", "csv"],
+        help="Format of the generated data. Defaults to the extension of "
+        "--output or --resume, and to jsonl otherwise",
+    )
+    run_parser.add_argument(
         "--temp-dir",
         default=".yuclid",
         help="Directory where temporary file will be saved",

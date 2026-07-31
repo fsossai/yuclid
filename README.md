@@ -278,6 +278,24 @@ What the template is showing:
   newlines. `${yuclid.@}.out` and `${yuclid.@}.err` are that trial's captured
   output.
 
+## Output formats
+
+Results are JSON Lines by default. `--format csv` writes a CSV instead, with
+one header naming every dimension and metric:
+
+```
+yuclid run --format csv
+yuclid run -o results.csv          # the extension decides on its own
+```
+
+`yuclid plot`, `yuclid tplot` and `yuclid stats` read either, chosen by the
+file's extension. A CSV carries no types, so a dimension whose values are
+numbers is indistinguishable from a metric: name the metrics with `-y` when
+reading one.
+
+`--fold` has no CSV form, since a cell holds one value rather than an array of
+samples.
+
 ## Reproducible scripts
 
 `yuclid run --compile experiment.sh` writes a shell script instead of running

@@ -1,0 +1,13 @@
+{
+  "description": "--format csv writes a header and one row per record",
+  "args": ["run", "--format", "csv", "-o", "yuclid.results.csv"],
+  "output_flag": false,
+  "results_file": "yuclid.results.csv",
+  "records": [
+    {"a": "1", "b": "p", "n": "1"},
+    {"a": "1", "b": "q", "n": "1"},
+    {"a": "2", "b": "p", "n": "2"},
+    {"a": "2", "b": "q", "n": "2"}
+  ],
+  "file_contains": { "yuclid.results.csv": ["a,b,n\n", "1,p,1\n"] }
+}

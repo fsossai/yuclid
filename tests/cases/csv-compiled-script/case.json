@@ -1,0 +1,14 @@
+{
+  "description": "a compiled script writes the same CSV, header included",
+  "runs": [
+    ["run", "--format", "csv", "--compile", "compiled.sh", "-o", "yuclid.results.csv"],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "results_file": "yuclid.results.csv",
+  "records": [
+    {"a": "1", "always": "1", "first_only": "9"},
+    {"a": "2", "always": "2", "first_only": ""}
+  ],
+  "file_contains": { "compiled.sh": ["printf 'a,always,first_only\\n' > \"$OUTPUT\""] }
+}

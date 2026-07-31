@@ -1,0 +1,8 @@
+{
+  "space": { "a": [1, 2] },
+  "trials": ["echo ${yuclid.a}"],
+  "metrics": [
+    { "name": "always", "command": "cat ${yuclid.@}.out" },
+    { "name": "first_only", "command": "echo 9", "condition": "yuclid.a == 1" }
+  ]
+}

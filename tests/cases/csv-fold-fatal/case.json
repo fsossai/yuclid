@@ -1,0 +1,8 @@
+{
+  "description": "--fold has no CSV representation and is refused",
+  "args": ["run", "--format", "csv", "--fold"],
+  "output_flag": false,
+  "exit_code": 2,
+  "stdout_contains": ["--fold cannot be written as CSV", "a CSV cell holds one value"],
+  "no_results_file": true
+}

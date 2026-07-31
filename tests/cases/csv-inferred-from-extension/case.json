@@ -1,0 +1,8 @@
+{
+  "description": "a .csv output name selects the format on its own",
+  "args": ["run", "-s", "a=1", "-o", "out.csv"],
+  "output_flag": false,
+  "results_file": "out.csv",
+  "record_count": 2,
+  "file_contains": { "out.csv": ["a,b,n\n"] }
+}
