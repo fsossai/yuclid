@@ -45,7 +45,26 @@ static size_t minimum(size_t left, size_t right) {
     return left < right ? left : right;
 }
 
-static void multiply_tiled(
+/* Each loop order below has a blocked counterpart: the same order, applied
+   first to blocks and then within one block, so that the working set of the
+   inner loops fits in cache. */
+
+static void multiply_dot_tiled(
+    const double *a, const double *b, double *c, size_t n, size_t tile
+) {
+    for (size_t ii = 0; ii < n; ii += tile)
+        for (size_t jj = 0; jj < n; jj += tile)
+            for (size_t kk = 0; kk < n; kk += tile)
+                for (size_t i = ii; i < minimum(ii + tile, n); ++i)
+                    for (size_t j = jj; j < minimum(jj + tile, n); ++j) {
+                        double sum = 0.0;
+                        for (size_t k = kk; k < minimum(kk + tile, n); ++k)
+                            sum += a[i * n + k] * b[k * n + j];
+                        c[i * n + j] += sum;
+                    }
+}
+
+static void multiply_rows_tiled(
     const double *a, const double *b, double *c, size_t n, size_t tile
 ) {
     for (size_t ii = 0; ii < n; ii += tile)
@@ -56,6 +75,20 @@ static void multiply_tiled(
                         const double scale = a[i * n + k];
                         for (size_t j = jj; j < minimum(jj + tile, n); ++j)
                             c[i * n + j] += scale * b[k * n + j];
+                    }
+}
+
+static void multiply_columns_tiled(
+    const double *a, const double *b, double *c, size_t n, size_t tile
+) {
+    for (size_t jj = 0; jj < n; jj += tile)
+        for (size_t kk = 0; kk < n; kk += tile)
+            for (size_t ii = 0; ii < n; ii += tile)
+                for (size_t j = jj; j < minimum(jj + tile, n); ++j)
+                    for (size_t k = kk; k < minimum(kk + tile, n); ++k) {
+                        const double scale = b[k * n + j];
+                        for (size_t i = ii; i < minimum(ii + tile, n); ++i)
+                            c[i * n + j] += a[i * n + k] * scale;
                     }
 }
 
@@ -73,7 +106,7 @@ static long peak_rss_kib(void) {
 
 int main(int argc, char **argv) {
     if (argc != 4) {
-        fprintf(stderr, "usage: %s VARIANT INPUT TILE\n", argv[0]);
+        fprintf(stderr, "usage: %s VARIANT INPUT TILE (TILE=0 disables blocking)\n", argv[0]);
         return 2;
     }
     FILE *input = fopen(argv[2], "rb");
@@ -112,22 +145,18 @@ int main(int argc, char **argv) {
     }
     fclose(input);
 
+    /* A tile of 0 means no blocking at all. */
+    const size_t tile = (size_t)strtoull(argv[3], NULL, 10);
+
     const double start = now_seconds();
     if (strcmp(argv[1], "dot") == 0)
-        multiply_dot(a, b, c, n);
+        tile ? multiply_dot_tiled(a, b, c, n, tile) : multiply_dot(a, b, c, n);
     else if (strcmp(argv[1], "rows") == 0)
-        multiply_rows(a, b, c, n);
+        tile ? multiply_rows_tiled(a, b, c, n, tile) : multiply_rows(a, b, c, n);
     else if (strcmp(argv[1], "columns") == 0)
-        multiply_columns(a, b, c, n);
-    else if (strcmp(argv[1], "tiled") == 0) {
-        const size_t tile = (size_t)strtoull(argv[3], NULL, 10);
-        if (tile == 0) {
-            fprintf(stderr, "tiled variant requires a positive tile\n");
-            free(a); free(b); free(c);
-            return 2;
-        }
-        multiply_tiled(a, b, c, n, tile);
-    } else {
+        tile ? multiply_columns_tiled(a, b, c, n, tile)
+             : multiply_columns(a, b, c, n);
+    else {
         fprintf(stderr, "unknown variant: %s\n", argv[1]);
         free(a); free(b); free(c);
         return 2;

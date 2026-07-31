@@ -9,13 +9,13 @@
       { "name": "1024x1024", "value": 1024 },
       { "name": "1536x1536", "value": 1536 }
     ],
-    "variant": ["dot", "rows", "columns", "tiled"],
+    "variant": ["dot", "rows", "columns"],
     "tile": [
-      { "name": "none", "value": 0, "condition": "yuclid.variant != 'tiled'" },
-      { "name": "32x32", "value": 32, "condition": "yuclid.variant == 'tiled'" },
-      { "name": "64x64", "value": 64, "condition": "yuclid.variant == 'tiled'" },
-      { "name": "128x128", "value": 128, "condition": "yuclid.variant == 'tiled'" },
-      { "name": "256x256", "value": 256, "condition": "yuclid.variant == 'tiled'" }
+      { "name": "none", "value": 0 },
+      { "name": "32x32", "value": 32 },
+      { "name": "64x64", "value": 64 },
+      { "name": "128x128", "value": 128 },
+      { "name": "256x256", "value": 256 }
     ]
   },
   "setup": {
