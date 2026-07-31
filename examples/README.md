@@ -19,8 +19,8 @@ Read them in that order if you are new to yuclid.
 
 ```sh
 cd examples/<example>
-yuclid run --dry-run                  # every command that would run, run nothing
-yuclid run -p quick
+yuclid run --dry-run  # every command that would run, run nothing
+yuclid run -p quick   # this will produce yuclid.results.20260731-120000.jsonl
 yuclid tplot yuclid.results.20260731-120000.jsonl -x <dimension> -z <dimension> -y <metric>
 ```
 
@@ -28,9 +28,8 @@ yuclid tplot yuclid.results.20260731-120000.jsonl -x <dimension> -z <dimension> 
 executing any of them. Every example defines a `quick` preset covering a small
 part of its space; dropping `-p quick` runs the whole space.
 
-`yuclid run` writes a timestamped file such as
-`yuclid.results.20260731-120000.jsonl` and prints its name at the end. Pass
-`-o` to choose the name yourself.
+The name of the file is printed at the end of the run. Pass `-o` to choose it
+yourself.
 
 `-i yuclid.yaml` runs the YAML twin instead, `-r 5` repeats each point five
 times, and `--compile run.sh` writes the experiment out as a plain shell

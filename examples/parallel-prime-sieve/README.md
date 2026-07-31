@@ -27,7 +27,7 @@ Needs a C++17 compiler as `c++`.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick -r 5
+yuclid run -p quick -r 5  # this will produce yuclid.results.20260731-120000.jsonl
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -x workers -z schedule -y tested_per_second \
   -f segment_kib=64KiB

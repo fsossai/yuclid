@@ -30,8 +30,8 @@ Needs a C11 compiler as `cc`.
 ## Running it
 
 ```sh
-yuclid run --dry-run              # print every command, run none of them
-yuclid run -p quick
+yuclid run --dry-run  # print every command, run none of them
+yuclid run -p quick   # this will produce yuclid.results.20260731-120000.jsonl
 yuclid run
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -x variant -z tile -y seconds

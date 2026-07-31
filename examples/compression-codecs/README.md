@@ -25,7 +25,7 @@ value is its own name.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick
+yuclid run -p quick  # this will produce yuclid.results.20260731-120000.jsonl
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -x level -z codec -y compression_seconds -f kind=text
 yuclid tplot yuclid.results.20260731-120000.jsonl -x codec -z kind -y ratio -f level=6

@@ -28,7 +28,7 @@ three metrics reading the same trial output.
 
 ```sh
 yuclid run --dry-run
-yuclid run -p quick
+yuclid run -p quick  # this will produce yuclid.results.20260731-120000.jsonl
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -C strategy,batch -x strategy_batch -z journal \
   -y rows_per_second
