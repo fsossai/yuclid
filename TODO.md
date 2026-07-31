@@ -26,7 +26,6 @@
 - [ ] feat: web viewer
 - [ ] feat: yaml configuration
 - [ ] feat: YAML/TOML config support
-- [ ] fix: `spread` validation precedence (`sd,200` wrongly rejected)
 - [ ] fix: circular import between `cli`, `plot` and `tplot` — `python -m yuclid.cli` cannot start
 - [ ] fix: conditions can alter the expected order of the experiments
 - [ ] fix: evaluation order of variables in `env`

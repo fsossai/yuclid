@@ -81,7 +81,7 @@ def assert_validity(spread_measure):
             )
             return False
         n = float(parts[1])
-        if parts[0] == "pi" and n < 0 or n > 100:
+        if parts[0] == "pi" and (n < 0 or n > 100):
             report(
                 LogLevel.ERROR,
                 "parameter for spread_measure 'pi' must be in [0, 100]",
