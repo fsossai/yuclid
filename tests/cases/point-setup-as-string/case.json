@@ -1,6 +1,5 @@
 {
   "description": "setup.point given as a plain string must be accepted like a one-item list",
-  "xfail": "TODO.md: 'setup.point given as a plain string (crashes)' \u2014 normalize_point_setup iterates the string's characters and then references an unbound 'normalized_items'",
   "records": [
     {
       "a": "1",

@@ -73,7 +73,6 @@ Currently expected to fail:
 | Case | Defect |
 |---|---|
 | `numeric-types` | one float metric widens every other metric of the same point |
-| `point-setup-as-string` | `setup.point` as a plain string crashes |
 | `point-setup-condition-outside-on` | conditions referring outside `on` raise instead of being diagnosed |
 
 ## Note on invocation

@@ -1,0 +1,7 @@
+{
+  "description": "a point setup item written as a bare command runs on the whole space",
+  "records": [
+    {"a": "1", "lines": 2},
+    {"a": "2", "lines": 2}
+  ]
+}

@@ -1158,54 +1158,53 @@ def build_settings(args):
 
 def normalize_point_setup(point_setup, space):
     if isinstance(point_setup, str):
-        point_setup = [
-            {"command": [x], "on": None, "parallel": False}
-            for x in normalize_command(point_setup)
-        ]
-    elif isinstance(point_setup, list):
-        normalized_items = []
-        for item in point_setup:
-            unexpected = [x for x in item if x not in ["command", "on", "parallel"]]
-            if len(unexpected) > 0:
-                report(
-                    LogLevel.WARNING,
-                    "point setup item has unexpected fields",
-                    ", ".join(unexpected),
-                    hint="fields: 'command', 'on', 'parallel'",
-                )
-            if isinstance(item, str):
-                normalized_items.append(
-                    {"command": [item], "on": None, "parallel": False}
-                )
-            elif isinstance(item, dict):
-                if "command" in item:
-                    normalized_item = {
-                        "command": normalize_command(item["command"]),
-                        "on": item.get("on", None),
-                        "parallel": item.get("parallel", False),
-                    }
-                    if normalized_item["on"] is None:
-                        normalized_item["on"] = list(space.keys())
+        # a bare command is a point setup of one item
+        point_setup = [point_setup]
 
-                    # adding .values to 'on' dimensions
-                    normalized_item["on"] = [
-                        x if "." in x else x + ".values" for x in normalized_item["on"]
-                    ]
-
-                    if normalized_item["parallel"] == True:
-                        normalized_item["parallel"] = [
-                            x.split(".")[0] for x in normalized_item["on"]
-                        ]
-                    normalized_items.append(normalized_item)
-                else:
-                    report(
-                        LogLevel.FATAL,
-                        "point setup item must have 'command' field",
-                    )
-            else:
-                report(LogLevel.FATAL, "point setup must be a string or a list")
-    elif isinstance(point_setup, dict):
+    if not isinstance(point_setup, list):
         report(LogLevel.FATAL, "point setup must be a string or a list")
+
+    normalized_items = []
+    for item in point_setup:
+        if isinstance(item, (str, list)):
+            # an item that is just a command runs on the whole space
+            item = {"command": item}
+        if not isinstance(item, dict):
+            report(LogLevel.FATAL, "point setup must be a string or a list")
+
+        unexpected = [x for x in item if x not in ["command", "on", "parallel"]]
+        if len(unexpected) > 0:
+            report(
+                LogLevel.WARNING,
+                "point setup item has unexpected fields",
+                ", ".join(unexpected),
+                hint="fields: 'command', 'on', 'parallel'",
+            )
+
+        if "command" not in item:
+            report(
+                LogLevel.FATAL,
+                "point setup item must have 'command' field",
+            )
+
+        normalized_item = {
+            "command": normalize_command(item["command"]),
+            "on": item.get("on", None),
+            "parallel": item.get("parallel", False),
+        }
+        if normalized_item["on"] is None:
+            normalized_item["on"] = list(space.keys())
+
+        # adding .values to 'on' dimensions
+        normalized_item["on"] = [
+            x if "." in x else x + ".values" for x in normalized_item["on"]
+        ]
+
+        if normalized_item["parallel"] == True:
+            normalized_item["parallel"] = [
+                x.split(".")[0] for x in normalized_item["on"]
+            ]
+        normalized_items.append(normalized_item)
 
     # check validity of 'on' fields
     for item in normalized_items:
