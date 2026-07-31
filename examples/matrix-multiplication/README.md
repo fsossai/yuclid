@@ -36,6 +36,14 @@ yuclid run
 
 yuclid tplot yuclid.results.20260731-120000.jsonl -x variant -z tile -y seconds
 yuclid tplot yuclid.results.20260731-120000.jsonl -x size -z variant -y seconds -f tile=none
+
+yuclid plot yuclid.results.20260731-120000.jsonl \
+  -x variant -z tile -R variant=dot tile=none -r -A
 ```
 
 The arrow keys move through the dimensions that are not on the plot.
+
+The last command divides every value by the one at `variant=dot tile=none`,
+so the plot reads as a speedup against the plain dot product. `-R` names the
+reference point, `-r` turns the ratio the right way up, and `-A` writes the
+number on each bar.
