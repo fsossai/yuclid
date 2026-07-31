@@ -1,23 +1,38 @@
-# Standard-library compression codecs
+# Compression codecs
 
-gzip, bzip2 and LZMA at three levels, over reproducible text, binary and mixed
-corpora. Both directions are timed, so the cost of compressing can be weighed
-against the cost of reading the result back.
+Imagine having to pick a compression codec. There are three to compare, at
+three levels each, on three kinds of data of different sizes — and the answer
+depends on whether you care about time, size, or memory.
 
-`round_trip_ok` is 1 when decompression reproduced the input byte for byte;
-anything else means the rest of that record is meaningless.
+This example shows how to build the input files once and reuse them across
+every combination that needs them.
 
-Corpora are generated in point setup over `(kind, mebibytes)` only, so a corpus
-is built once and reused by all nine codec/level combinations. Each seed is
-derived from the corpus identity, so generation order and parallelism cannot
-change the bytes.
+## What to look at in `yuclid.json`
+
+**Point setup on part of the space.** A corpus depends on `kind` and
+`mebibytes`, not on the codec or the level. `on: ["kind", "mebibytes"]` builds
+each corpus once and lets all nine codec/level runs share it. Without that
+list, the same file would be written nine times.
+
+**Substitutions in a filename.** The corpus path is built from the point
+itself, `data/${yuclid.kind}-${yuclid.mebibytes}MiB.bin`, so setup and trial
+agree on where the file is without repeating a rule.
+
+**Metrics that are not timings.** `ratio` and `compressed_bytes` are sizes,
+`round_trip_ok` is 1 or 0. Any command that prints a number can be a metric,
+which is a cheap way to record whether a run should be trusted at all.
+
+**Plain lists.** `kind`, `codec` and `level` are written as bare lists. When
+the value is already readable, there is no reason to give it a separate name.
+
+## Running it
 
 ```sh
+yuclid run --dry-run
 yuclid run -p quick -o yuclid.results.jsonl
 
 yuclid tplot yuclid.results.jsonl -x level -z codec -y compression_seconds -f kind=text
 yuclid tplot yuclid.results.jsonl -x codec -z kind -y ratio -f level=6
 ```
 
-The `larger` preset builds 8 and 32 MiB corpora, where the memory differences
-between the codecs become visible.
+Press the number keys to switch between metrics inside the viewer.

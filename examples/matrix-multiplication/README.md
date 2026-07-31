@@ -1,42 +1,45 @@
-# Matrix multiplication loop order
+# Matrix multiplication
 
-Three mathematically equivalent dense `C = A × B` kernels, each measured with
-and without cache blocking, over three matrix sizes:
+Imagine having to find out which way of writing a matrix multiplication is
+fastest. There are three loop orders to try, each of them with and without
+cache blocking, on matrices of several sizes. That is one program run per
+combination, and a number to collect from each.
 
-- `dot` — one dot product per output element (`i-j-k`);
-- `rows` — linear combinations of rows (`i-k-j`);
-- `columns` — linear combinations of columns (`j-k-i`).
+This is what yuclid is for. The configuration declares the three things that
+vary, and yuclid runs the rest.
 
-`tile` is a parameter of every kernel rather than a kernel of its own: `none`
-runs the plain loop nest, and a tile size runs the same loop order applied
-first to blocks and then within a block. The space is the full product —
-3 sizes × 3 loop orders × 5 tile settings.
+## What to look at in `yuclid.json`
 
-The two questions it separates are worth keeping apart. **Loop order** decides
-the order of magnitude: at 1024×1024, `columns` takes about 9.6 s against
-0.23 s for `rows`, a factor of 40 between nests that compute exactly the same
-thing. **Blocking** then buys back a factor of roughly two on the orders that
-traverse memory badly — `dot` goes from 1.84 s to 0.96 s and `columns` from
-9.6 s to 5.8 s at 32×32 tiles — while costing `rows` about 20%, because a
-kernel already walking memory sequentially gains nothing and pays the extra
-loop overhead.
+**The space.** Three dimensions: `size`, `variant` and `tile`. Every
+combination of the three is a point, so the whole grid comes from nine lines
+of configuration.
 
-The matrices are large on purpose: at 512×512 the fastest kernel already takes
-tens of milliseconds, so what is measured is the kernel rather than the timer's
-noise floor. Each matrix pair is generated once per size from a fixed seed, so
-repeated runs compare against byte-identical inputs.
+**Names against values.** `size` is written as `name`/`value` pairs: the
+command receives `512`, while the results say `512x512`. The same for `tile`,
+where the value `0` is called `none`.
+
+**Point setup.** Each matrix file has to exist before the trials can use it,
+but it depends on `size` alone. The `on: ["size"]` list says so, and the file
+is generated once per size instead of once per run. `parallel: true` lets those
+generations happen at the same time.
+
+**Presets.** `quick` restricts `size` to the smallest one. Use it while you are
+still writing the configuration, then run the whole space when you mean it.
+
+**Order.** `order` puts `size` first, so yuclid finishes everything about one
+matrix size before moving to the next.
 
 Needs a C11 compiler as `cc`.
 
+## Running it
+
 ```sh
+yuclid run --dry-run              # print every command, run none of them
 yuclid run -p quick -o yuclid.results.jsonl
+yuclid run -o yuclid.results.jsonl
 
 yuclid tplot yuclid.results.jsonl -x variant -z tile -y seconds
 yuclid tplot yuclid.results.jsonl -x size -z variant -y seconds -f tile=none
 ```
 
-`quick` is 512×512 alone: 15 points in about 5 seconds. `large` adds the two
-bigger sizes and takes a few minutes, most of it spent in untiled `columns`.
-
-The generated matrices occupy about 57 MB in `data/` once every size has been
-visited.
+Move through the slices with the arrow keys.
