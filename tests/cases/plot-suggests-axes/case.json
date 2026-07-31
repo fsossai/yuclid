@@ -1,0 +1,17 @@
+{
+  "description": "a viewer invoked without -x says which columns are dimensions and which are metrics",
+  "runs": [
+    ["tplot", "data.jsonl"],
+    ["plot", "data.jsonl"]
+  ],
+  "exit_codes": [2, 2],
+  "output_flag": false,
+  "no_results_file": true,
+  "stdout_contains": [
+    "-x is missing: it names the dimension along the X axis",
+    "dimensions: size, variant",
+    "metrics: seconds, peak_rss_kib",
+    "try: yuclid tplot data.jsonl -x size -z variant -y seconds",
+    "try: yuclid plot data.jsonl -x size -z variant -y seconds"
+  ]
+}

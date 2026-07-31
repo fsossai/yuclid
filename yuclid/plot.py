@@ -782,9 +782,38 @@ def validate_dimensions(ctx, dims):
             report(LogLevel.FATAL, "invalid column", col, hint=hint)
 
 
+def suggest_axes(ctx):
+    """Say what the data holds when the user has not said what to plot yet."""
+    args = ctx["args"]
+    df = ctx["df"]
+
+    metrics = df.select_dtypes(include=[np.number]).columns.tolist()
+    dimensions = [c for c in df.columns if c not in metrics]
+
+    hint = "dimensions: {}".format(", ".join(dimensions) or "none")
+    hint += "\nmetrics: {}".format(", ".join(metrics) or "none")
+    if len(dimensions) > 0:
+        example = "-x {}".format(dimensions[0])
+        if len(dimensions) > 1:
+            example += " -z {}".format(dimensions[1])
+        if len(metrics) > 0:
+            example += " -y {}".format(metrics[0])
+        hint += "\ntry: yuclid {} {} {}".format(
+            args.command, " ".join(args.files), example
+        )
+    report(
+        LogLevel.FATAL,
+        "-x is missing: it names the dimension along the X axis",
+        hint=hint,
+    )
+
+
 def validate_args(ctx):
     args = ctx["args"]
     df = ctx["df"]
+
+    if args.x is None:
+        suggest_axes(ctx)
 
     validate_dimensions(ctx, [args.x])
 

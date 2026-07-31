@@ -178,7 +178,7 @@ def _add_plot_args(p):
     p.add_argument(
         "files", metavar="FILES", type=str, nargs="+", help="JSON Lines or CSV files"
     )
-    p.add_argument("-x", required=True, help="X-axis column name")
+    p.add_argument("-x", default=None, help="X-axis column name")
     p.add_argument("-y", nargs="*", default=[], help="Y-axis column names")
     p.add_argument("-z", help="Grouping column name")
     p.add_argument(
