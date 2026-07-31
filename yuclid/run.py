@@ -1711,6 +1711,7 @@ def build_settings(args):
                 "script it writes is sequential",
             )
 
+    settings["timing"] = {"setup": 0.0, "experiments": 0.0}
     settings["cwd"] = os.getcwd()
     report(LogLevel.INFO, "working directory", settings["cwd"])
     report(LogLevel.INFO, "input configurations", ", ".join(requested))
@@ -1860,10 +1861,14 @@ def run_experiments(
     )
     validate_execution(execution, data)
     if not settings["no_setup"]:
+        started = time.monotonic()
         run_setup(settings, data, execution)
+        settings["timing"]["setup"] += time.monotonic() - started
     else:
         report(LogLevel.INFO, "skipping setup phase")
+    started = time.monotonic()
     run_subspace_trials(settings, data, execution)
+    settings["timing"]["experiments"] += time.monotonic() - started
 
 
 def validate_settings(data, settings):
@@ -1881,6 +1886,8 @@ def validate_settings(data, settings):
 
 
 def format_duration(seconds):
+    if seconds < 10:
+        return "{:.1f}s".format(seconds)
     hours, remainder = divmod(int(seconds), 3600)
     minutes, seconds = divmod(remainder, 60)
     if hours > 0:
@@ -2000,7 +2007,15 @@ def launch(args):
     else:
         run_experiments(settings, data, order, env, preset_name=None, recorded=recorded)
 
-    report(LogLevel.INFO, "finished in", format_duration(time.monotonic() - started))
+    report(
+        LogLevel.INFO,
+        "finished in",
+        "{} (setup {}, experiments {})".format(
+            format_duration(time.monotonic() - started),
+            format_duration(settings["timing"]["setup"]),
+            format_duration(settings["timing"]["experiments"]),
+        ),
+    )
 
     if not settings["dry_run"]:
         metric_names = {m["name"] for m in data["metrics"]}

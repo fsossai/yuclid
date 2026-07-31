@@ -3,7 +3,10 @@
   "stdout_contains": [
     "[1/2]: 1: started",
     "[1/2]: 1: completed",
-    "[2/2]: 2: completed"
+    "[2/2]: 2: completed",
+    "finished in",
+    "(setup ",
+    ", experiments "
   ],
   "record_count": 2
 }
