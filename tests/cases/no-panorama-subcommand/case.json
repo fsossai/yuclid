@@ -1,0 +1,14 @@
+{
+  "description": "the panorama subcommand is gone; the skill yuclid-plot replaces it",
+  "args": [
+    "panorama",
+    "data.jsonl"
+  ],
+  "output_flag": false,
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "invalid choice: 'panorama'",
+    "{run,plot,tplot,describe,stats}"
+  ]
+}

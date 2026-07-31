@@ -3,6 +3,7 @@ from yuclid.plot import (
     validate_files,
     locate_files,
     generate_dataframe,
+    suggest_describe,
     combine_dimensions,
     update_table,
     get_current_config,
@@ -32,6 +33,13 @@ _DISTRIBUTIONS = {
 def validate_args_stats(ctx):
     args = ctx["args"]
     df = ctx["df"]
+
+    if len(args.y) == 0 and args.z is None:
+        # nothing to go on: guessing both the metric and the grouping would be
+        # a coin toss, so say what `plot` says
+        suggest_describe(
+            args, "-y", "it names the metric whose distribution is shown"
+        )
 
     # auto-detect numeric metric columns (same logic as plot.validate_args)
     exclude = [args.z] if args.z else []

@@ -1,0 +1,6 @@
+{"machine": "laptop", "variant": "dot", "size": "512", "seconds": 0.9, "peak_rss_kib": 100}
+{"machine": "laptop", "variant": "dot", "size": "1024", "seconds": 1.9, "peak_rss_kib": 200}
+{"machine": "laptop", "variant": "dot", "size": "1536", "seconds": 2.9, "peak_rss_kib": 300}
+{"machine": "laptop", "variant": "rows", "size": "512", "seconds": 0.2, "peak_rss_kib": 100}
+{"machine": "laptop", "variant": "rows", "size": "1024", "seconds": 0.4, "peak_rss_kib": 200}
+{"machine": "laptop", "variant": "rows", "size": "1536", "seconds": 0.7, "peak_rss_kib": 300}

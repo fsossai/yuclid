@@ -1,0 +1,14 @@
+{
+  "description": "describe attributes the absent combinations to the slices that explain them",
+  "args": [
+    "describe",
+    "data.jsonl"
+  ],
+  "output_flag": false,
+  "no_results_file": true,
+  "stdout_contains": [
+    "missing: 5 of 9 combinations (56%)",
+    "every point with strategy=autocommit and batch=100",
+    "every point with strategy=executemany and batch=none"
+  ]
+}

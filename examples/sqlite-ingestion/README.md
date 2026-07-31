@@ -36,5 +36,5 @@ yuclid tplot 20260731-120000.yuclid.jsonl -C strategy,batch -x records -z strate
   -y peak_rss_kib -f journal=WAL
 ```
 
-`--show-missing` lists the combinations that are absent from the results, which
-is one way to check what the conditions removed.
+`yuclid describe` lists the combinations that are absent from the results, and
+attributes them to the conditions that removed them.

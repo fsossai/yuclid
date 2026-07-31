@@ -1,0 +1,19 @@
+{
+  "description": "describe names the dimensions with their values and the metrics with their range",
+  "args": [
+    "describe",
+    "data.jsonl"
+  ],
+  "output_flag": false,
+  "no_results_file": true,
+  "stdout_contains": [
+    "6 records, 3 dimensions, 2 metrics",
+    "dimensions",
+    "machine (1) : laptop",
+    "variant (2) : dot, rows",
+    "size (3)    : 512, 1024, 1536",
+    "metrics",
+    "seconds (6)      : 0.2 \u2026 2.9  (median 0.8)",
+    "peak_rss_kib (6) : 100 \u2026 300  (median 200)"
+  ]
+}

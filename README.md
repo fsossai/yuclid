@@ -42,6 +42,7 @@ pip install yuclid
 ```
 
 - **`yuclid run`**: Run experiments with all combinations of the defined parameters.
+- **`yuclid describe`**: Report what a result file holds, and which combinations it does not.
 - **`yuclid plot`**: Interactively visualizes the results produced by `yuclid run`.
 
 ## Configuration for `yuclid run`

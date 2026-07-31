@@ -1,0 +1,11 @@
+{
+  "description": "stats invoked with nothing but a file points at `yuclid describe`, as the viewers do",
+  "args": ["stats", "data.jsonl"],
+  "output_flag": false,
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "FATAL: -y is missing: it names the metric whose distribution is shown",
+    "HINT: run `yuclid describe data.jsonl` to see the dimensions and metrics"
+  ]
+}

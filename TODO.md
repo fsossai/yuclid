@@ -13,4 +13,3 @@
 - [ ] new: `--fold` pads the shorter metrics of a point with `NaN`
 - [ ] new: a metric enabled by several trials should be reported
 - [ ] new: add examples for real benchmark suites or programs (e.g., GAPBS)
-- [ ] new: turn `panorama` into a skill

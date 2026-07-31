@@ -782,29 +782,20 @@ def validate_dimensions(ctx, dims):
             report(LogLevel.FATAL, "invalid column", col, hint=hint)
 
 
-def suggest_axes(ctx):
-    """Say what the data holds when the user has not said what to plot yet."""
-    args = ctx["args"]
-    df = ctx["df"]
-
-    metrics = df.select_dtypes(include=[np.number]).columns.tolist()
-    dimensions = [c for c in df.columns if c not in metrics]
-
-    hint = "dimensions: {}".format(", ".join(dimensions) or "none")
-    hint += "\nmetrics: {}".format(", ".join(metrics) or "none")
-    if len(dimensions) > 0:
-        example = "-x {}".format(dimensions[0])
-        if len(dimensions) > 1:
-            example += " -z {}".format(dimensions[1])
-        if len(metrics) > 0:
-            example += " -y {}".format(metrics[0])
-        hint += "\ntry: yuclid {} {} {}".format(
-            args.command, " ".join(args.files), example
-        )
+def suggest_describe(args, flag, meaning):
+    """Refuse to guess, and point at the command that answers the question."""
     report(
         LogLevel.FATAL,
-        "-x is missing: it names the dimension along the X axis",
-        hint=hint,
+        "{} is missing: {}".format(flag, meaning),
+        hint="run `yuclid describe {}` to see the dimensions and metrics".format(
+            " ".join(args.files)
+        ),
+    )
+
+
+def suggest_axes(ctx):
+    suggest_describe(
+        ctx["args"], "-x", "it names the dimension along the X axis"
     )
 
 
@@ -1023,12 +1014,6 @@ def validate_args(ctx):
     ctx["y_dims"] = args.y
     ctx["y_axis"] = args.y[0]
 
-    if args.show_missing:
-        missing = compute_missing(ctx)
-        if len(missing) > 0:
-            report(LogLevel.WARNING, "missing experiments:")
-            report(LogLevel.WARNING, "\n" + missing.to_string(index=False))
-            report(LogLevel.WARNING, "")
 
 
 def start_gui(ctx):

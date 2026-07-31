@@ -146,27 +146,17 @@ def get_parser():
     )
     _add_plot_args(tplot_parser)
 
+    # describe subcommand
+    describe_parser = subparsers.add_parser(
+        "describe", help="Describe what a result file holds"
+    )
+    _add_describe_args(describe_parser)
+
     # stats subcommand
     stats_parser = subparsers.add_parser(
         "stats", help="Plot the distribution of a metric"
     )
     _add_stats_args(stats_parser)
-
-    panorama_parser = subparsers.add_parser(
-        "panorama", help="Use a local LLM to suggest meaningful visualizations"
-    )
-    panorama_parser.add_argument(
-        "files", metavar="FILES", type=str, nargs="+",
-        help="JSON Lines or CSV result file(s)"
-    )
-    panorama_parser.add_argument(
-        "--model", default=None,
-        help="Ollama model name (default: auto-select from available models)"
-    )
-    panorama_parser.add_argument(
-        "--ollama-url", default="http://localhost:11434",
-        help="Base URL for the Ollama REST API (default: http://localhost:11434)"
-    )
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
@@ -255,12 +245,6 @@ def _add_plot_args(p):
         help="Enable colorblind palette",
     )
     p.add_argument(
-        "--show-missing",
-        action="store_true",
-        default=False,
-        help="Show missing experiments if any",
-    )
-    p.add_argument(
         "--rescale",
         type=float,
         default=1.0,
@@ -314,6 +298,50 @@ def _add_plot_args(p):
         help="Reduce array-valued metrics to a scalar using the given function. "
         "If not set, array elements are exploded into separate rows (samples).",
     )
+
+
+def _add_describe_args(p):
+    p.add_argument(
+        "files",
+        metavar="FILES",
+        type=str,
+        nargs="*",
+        default=[],
+        help="JSON Lines or CSV files",
+    )
+    p.add_argument(
+        "-y",
+        nargs="*",
+        default=[],
+        help="Treat these columns as the metrics (auto-detected if omitted)",
+    )
+    p.add_argument(
+        "-f",
+        "--filter",
+        nargs="*",
+        default=None,
+        help="Describe only these values. E.g. -f a=1 b=value",
+    )
+    p.add_argument(
+        "-C",
+        "--combine",
+        nargs="*",
+        default=[],
+        help="Combine dimensions into a single one via cartesian product",
+    )
+    p.add_argument(
+        "--missing",
+        action="store_true",
+        default=False,
+        help="List every missing combination instead of summarizing them",
+    )
+    p.add_argument(
+        "--no-merge-inputs",
+        action="store_true",
+        default=False,
+        help="Treat each input file separately instead of merging them",
+    )
+    p.set_defaults(array_reduce=None)
 
 
 def _add_stats_args(p):
@@ -400,12 +428,12 @@ def main():
         yuclid.plot.launch(args)
     elif args.command == "tplot":
         yuclid.tplot.launch(args)
+    elif args.command == "describe":
+        from yuclid import describe as _describe
+        _describe.launch(args)
     elif args.command == "stats":
         from yuclid import stats as _stats
         _stats.launch(args)
-    elif args.command == "panorama":
-        from yuclid import panorama as _panorama
-        _panorama.launch(args)
 
 
 if __name__ == "__main__":

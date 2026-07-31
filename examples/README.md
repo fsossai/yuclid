@@ -21,6 +21,7 @@ Read them in that order if you are new to yuclid.
 cd examples/<example>
 yuclid run --dry-run  # every command that would run, run nothing
 yuclid run -p quick   # this will produce a file like 20260731-120000.yuclid.jsonl
+yuclid describe 20260731-120000.yuclid.jsonl
 yuclid tplot 20260731-120000.yuclid.jsonl -x <dimension> -z <dimension> -y <metric>
 ```
 

@@ -49,7 +49,11 @@ def report(level, *args, **kwargs):
     hint = kwargs.pop("hint", None)
     yprint(level, *args, **kwargs)
     if hint is not None:
-        yprint(LogLevel.HINT, hint)
+        # a hint may carry several lines: each one is a hint of its own, so
+        # that every line printed says what it is
+        lines = hint if isinstance(hint, (list, tuple)) else str(hint).splitlines()
+        for line in lines:
+            yprint(LogLevel.HINT, line)
     if level == LogLevel.FATAL:
         sys.exit(2)
     if not _state["ignore_errors"] and level == LogLevel.ERROR:

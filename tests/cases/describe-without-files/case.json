@@ -1,0 +1,12 @@
+{
+  "description": "describe with no file says what it reads, and names one that is lying around",
+  "args": ["describe"],
+  "output_flag": false,
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "FATAL: no file to describe",
+    "HINT: it reads the result files `yuclid run` writes",
+    "HINT: try: yuclid describe 20260731-120000.yuclid.jsonl"
+  ]
+}

@@ -1,0 +1,4 @@
+{"strategy": "autocommit", "batch": "none", "seconds": 1.0}
+{"strategy": "transaction", "batch": "none", "seconds": 1.0}
+{"strategy": "executemany", "batch": "100", "seconds": 1.0}
+{"strategy": "executemany", "batch": "1000", "seconds": 1.0}
