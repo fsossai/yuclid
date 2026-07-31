@@ -1,14 +1,14 @@
 {
-  "description": "metrics with different sample counts leave gaps, which must be warned about; note the samples come back as floats, because the gap forces the whole point through a float-typed frame",
+  "description": "metrics with different sample counts leave gaps, which must be warned about; the samples that do exist keep their own type",
   "records": [
     {
       "a": "1",
-      "two": 1.0,
-      "one": 9.0
+      "two": 1,
+      "one": 9
     },
     {
       "a": "1",
-      "two": 2.0,
+      "two": 2,
       "one": "NaN"
     }
   ],

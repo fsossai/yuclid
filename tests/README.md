@@ -72,7 +72,6 @@ Currently expected to fail:
 
 | Case | Defect |
 |---|---|
-| `numeric-types` | one float metric widens every other metric of the same point |
 | `point-setup-condition-outside-on` | conditions referring outside `on` raise instead of being diagnosed |
 
 ## Note on invocation

@@ -1,6 +1,5 @@
 {
   "description": "an integer metric stays an integer and a decimal one becomes a float",
-  "xfail": "the records go through a single pandas frame per point, so one float-valued metric widens every other metric of that point: the integer 3 is written as 3.0",
   "records": [
     {
       "a": "1",

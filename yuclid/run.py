@@ -840,16 +840,26 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
                     int_or_float(line) for line in output_elements
                 ]
 
-        metric_values_df = pd.DataFrame.from_dict(
-            collected_metrics, orient="index"
-        ).transpose()
+        # metrics may disagree on how many samples they produced: the shorter
+        # ones leave gaps. Kept as plain lists so that an integer metric is not
+        # widened to float by a float metric of the same point.
+        samples = max((len(v) for v in collected_metrics.values()), default=0)
+        padded = {
+            name: values + [float("nan")] * (samples - len(values))
+            for name, values in collected_metrics.items()
+        }
+
         if not settings["fold"]:
-            NaNs = metric_values_df.columns[metric_values_df.isnull().any()]
+            NaNs = [
+                name
+                for name, values in collected_metrics.items()
+                if len(values) < samples
+            ]
             if len(NaNs) > 0:
                 report(
                     LogLevel.WARNING,
                     "the following metrics generated some NaNs",
-                    " ".join(list(NaNs)),
+                    " ".join(NaNs),
                 )
 
         result = {k: x["name"] for k, x in point_map.items()}
@@ -857,11 +867,11 @@ def run_point_trials(settings, data, execution, f, i, point, file_lock=None):
             file_lock.acquire()
         try:
             if settings["fold"]:
-                result.update(metric_values_df.to_dict(orient="list"))
+                result.update(padded)
                 f.write(json.dumps(result) + "\n")
             else:
-                for record in metric_values_df.to_dict(orient="records"):
-                    result.update(record)
+                for k in range(samples):
+                    result.update({name: v[k] for name, v in padded.items()})
                     f.write(json.dumps(result) + "\n")
             f.flush()
         finally:
