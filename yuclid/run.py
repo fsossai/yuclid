@@ -644,7 +644,9 @@ def run_point_setup(data, execution):
 
 def run_global_setup(data, execution):
     subspace = execution["subspace"]
-    setup_commands = data["setup"]["global"]
+    # a copy: the commands gathered below belong to this subspace only and
+    # must not survive into the next preset's setup phase
+    setup_commands = list(data["setup"]["global"])
     # gather setup commands from space
     for key, values in subspace.items():
         for value in values:
