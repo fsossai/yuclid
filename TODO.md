@@ -1,17 +1,14 @@
 # TODO
 
-- [ ] fix: `setup.point` given as a plain string (crashes)
-- [ ] fix: per-value setup commands accumulate across presets
 - [ ] fix: `spread` validation precedence (`sd,200` wrongly rejected)
 - [ ] fix: `tplot --digits` save crash (`--digits` is not typed as int)
-- [ ] fix: exception when a point setup command refers to a dimension that has conditions involving dimensions outside of `on`
 - [ ] fix: conditions can alter the expected order of the experiments
 - [ ] build: lazy subcommand imports + install extras (`yuclid[plot]`, `[tui]`, `[llm]`) — makes `run` light on headless nodes and makes Windows work at all
 - [ ] docs: README should lead with the interactive slicer on **any** CSV; add an asciinema/GIF
 - [ ] build: single source of version truth; `requires-python >= 3.10`
 - [ ] ci: ruff + formatter
-- [ ] test: golden-file dry-run tests for `run`, pipeline tests for plot data prep
-- [ ] ci: run on Linux/macOS/Windows
+- [ ] test: pipeline tests for plot data prep (`run` is covered by `tests/`)
+- [ ] ci: run on Linux/macOS/Windows, starting with `python tests/run_tests.py`
 - [ ] feat: `--resume` — skip points already present in the output
 - [ ] feat: provenance in output — yuclid version, config hash, host, timestamp, per-point exit code and wall time
 - [ ] refactor: replace bare `eval` in conditions / `:py` domains / derived metrics with a restricted evaluator
@@ -21,7 +18,7 @@
 - [ ] feat: declarative metric extraction — named-capture regex, and JSON/CSV field selection, alongside shell pipelines
 - [ ] feat: metric fallback value when extraction finds nothing, instead of erroring (cf. JUBE's `<pattern default=...>`)
 - [ ] docs: examples — benchmarking different types of matrix multiplication
-- [ ] chore: track `examples/` (currently swallowed by `.gitignore`'s `*.json`)
+- [ ] chore: track `examples/`
 - [ ] feat: non-shell trials (invoke a Python callable) → captures the Hydra/Optuna sweep audience
 - [ ] feat: notebook path — `yuclid.load() -> DataFrame` plus an ipywidgets slicer
 - [ ] feat: adaptive repetition (repeat until CI on the median is within a target)
@@ -29,8 +26,15 @@
 - [ ] feat: derived dimensions — a dimension whose value is computed per-point from other dimensions
 - [ ] refactor: extract a **view model** (X/Z/Y, free dimensions, positions, normalization, estimator) from the **renderers** (matplotlib, plotext, notebook, web)
 - [ ] feat: yaml configuration
-- [ ] add extensive tests
 - [ ] cut python dependencies
 - [ ] feat: modernize or remove `panorama`
 - [ ] feat: web viewer
 - [ ] add examples for real benchmark suites or programs (e.g., GAPBS)
+- [ ] add `--skip-setup` as alias of `--no-setup`
+- [ ] feat: compile standalone bash script
+- [ ] feat: sum and subtract presets
+- [ ] add total run time at the end of a `yuclid run` invocation
+- [ ] fix: evaluation order of variables in `env`
+- [ ] fix: circular import between `cli`, `plot` and `tplot` — `python -m yuclid.cli` cannot start
+- [ ] decide: a metric enabled by several trials is evaluated only against the last of them
+- [ ] decide: `--fold` pads the shorter metrics of a point with `NaN`
