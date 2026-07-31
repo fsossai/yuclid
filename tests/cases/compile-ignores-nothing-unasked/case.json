@@ -1,0 +1,8 @@
+{
+  "description": "--compile reports as ignored only the options that were actually given",
+  "args": ["run", "--compile", "compiled.sh"],
+  "output_flag": false,
+  "no_results_file": true,
+  "files_exist": ["compiled.sh"],
+  "stdout_not_contains": ["ignoring"]
+}

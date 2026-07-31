@@ -1699,7 +1699,7 @@ def build_settings(args):
             for name, active in [
                 ("--dry-run", args.dry_run),
                 ("--parallel-trials", args.parallel_trials != 0),
-                ("--resume", args.resume is not None),
+                ("--resume", args.resume),
             ]
             if active
         ]
