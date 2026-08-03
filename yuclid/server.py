@@ -1,0 +1,230 @@
+"""A loopback view of the runs a directory holds.
+
+It owns nothing. Every read comes from the run directories, which is why a run
+that finished last week looks the same as one going now and why this can be
+started, killed and started again while a run continues undisturbed. The one
+thing it cannot do by reading is change a run, so control requests are forwarded
+to the run's own socket and answered with what the run said it did.
+"""
+
+from yuclid.log import LogLevel, report
+import yuclid.workspace as workspace
+import yuclid.control as control
+import http.server
+import functools
+import secrets
+import json
+import os
+import re
+
+
+PAGE = os.path.join(os.path.dirname(__file__), "web", "index.html")
+BODY_LIMIT = 1 << 16
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    server_version = "yuclid"
+
+    def log_message(self, *args):
+        pass
+
+    # -- plumbing ---------------------------------------------------------
+
+    def respond(self, status, payload, kind="application/json"):
+        body = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def permitted(self):
+        """Loopback is not a boundary on a shared machine, so check the caller.
+
+        The Host check is what stops a page on the open web from reaching this
+        through a name that resolves to 127.0.0.1.
+        """
+        host = (self.headers.get("Host") or "").split(":")[0]
+        if host not in ("127.0.0.1", "localhost", "[::1]", "::1"):
+            self.respond(403, {"error": "unexpected Host header"})
+            return False
+        if self.path.startswith("/api/"):
+            given = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+            if not secrets.compare_digest(given, self.server.token):
+                self.respond(401, {"error": "bad or missing token"})
+                return False
+        return True
+
+    def do_GET(self):
+        if not self.permitted():
+            return
+        path = self.path.split("?")[0]
+        query = dict(
+            pair.split("=", 1)
+            for pair in self.path.partition("?")[2].split("&")
+            if "=" in pair
+        )
+        try:
+            if path in ("/", "/index.html"):
+                return self.respond(200, self.page(), "text/html; charset=utf-8")
+            if path == "/api/runs":
+                return self.respond(200, {"runs": self.summaries()})
+            match = re.fullmatch(r"/api/runs/([^/]+)", path)
+            if match:
+                return self.respond(200, self.run(match.group(1)))
+            match = re.fullmatch(r"/api/runs/([^/]+)/progress", path)
+            if match:
+                return self.respond(200, self.progress(match.group(1), query))
+        except FileNotFoundError:
+            return self.respond(404, {"error": "no such run"})
+        self.respond(404, {"error": "no such resource"})
+
+    def do_POST(self):
+        if not self.permitted():
+            return
+        match = re.fullmatch(r"/api/runs/([^/]+)/control", self.path.split("?")[0])
+        if not match:
+            return self.respond(404, {"error": "no such resource"})
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > BODY_LIMIT:
+            return self.respond(413, {"error": "body too long"})
+        try:
+            operation = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return self.respond(400, {"error": "body is not JSON"})
+        try:
+            return self.respond(200, self.control(match.group(1), operation))
+        except FileNotFoundError:
+            return self.respond(404, {"error": "no such run"})
+
+    # -- what it serves ---------------------------------------------------
+
+    def page(self):
+        with open(PAGE, "rb") as f:
+            html = f.read()
+        return html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
+
+    def manifest(self, run_id):
+        directory = workspace.run_directory(self.server.root, run_id)
+        manifest = workspace.read_manifest(directory)
+        if manifest is None:
+            raise FileNotFoundError(run_id)
+        manifest["state"] = workspace.state_of(manifest)
+        manifest["directory"] = directory
+        return manifest
+
+    def summaries(self):
+        from yuclid.steer import progress_counts
+
+        summaries = []
+        for manifest in workspace.list_runs(self.server.root):
+            counts = progress_counts(manifest["directory"])
+            summaries.append(
+                {
+                    "id": manifest["id"],
+                    "state": manifest["state"],
+                    "created": manifest.get("created"),
+                    "output": manifest.get("output"),
+                    "completed": counts[0] if counts else 0,
+                    "total": counts[1] if counts else 0,
+                }
+            )
+        return summaries
+
+    def run(self, run_id):
+        manifest = self.manifest(run_id)
+        records = workspace.read_progress(manifest["directory"])
+        plan = next((r for r in records if r["type"] == "plan"), None)
+        completed, total, current = 0, plan["total"] if plan else 0, None
+        for record in records:
+            if record.get("total") is not None:
+                total = record["total"]
+            if record["type"] == "point.finished":
+                completed += record.get("repetitions", 1)
+            if record["type"] == "point.started":
+                current = record["key"]
+
+        return {
+            "id": manifest["id"],
+            "state": manifest["state"],
+            "created": manifest.get("created"),
+            "ended": manifest.get("ended"),
+            "output": manifest.get("output"),
+            "argv": manifest.get("argv"),
+            "replay_of": manifest.get("replay_of"),
+            "order": plan["order"] if plan else [],
+            "dimensions": dimensions_of(plan),
+            "completed": completed,
+            "total": total,
+            "current": current,
+            "live": manifest["state"] == workspace.RUNNING,
+        }
+
+    def progress(self, run_id, query):
+        manifest = self.manifest(run_id)
+        since = int(query.get("since") or 0)
+        records = workspace.read_progress(manifest["directory"], since=since)
+        return {"records": records, "seq": records[-1]["seq"] if records else since}
+
+    def control(self, run_id, operation):
+        manifest = self.manifest(run_id)
+        if manifest["state"] != workspace.RUNNING:
+            return {"error": "run {} is {}".format(run_id, manifest["state"])}
+        path = os.path.join(manifest["directory"], workspace.CONTROL)
+        try:
+            return {"effect": control.request(path, operation)}
+        except control.ControlError as e:
+            return {"error": str(e)}
+        except OSError as e:
+            return {"error": "cannot reach the run: {}".format(e)}
+
+
+def dimensions_of(plan):
+    """Each dimension's values, in the order the space puts them."""
+    if plan is None:
+        return {}
+    values = {dim: [] for dim in plan["order"]}
+    for point in plan["points"]:
+        for dim, name in zip(plan["order"], point["key"]):
+            if name not in values[dim]:
+                values[dim].append(name)
+    return values
+
+
+class Server(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, root, port):
+        super().__init__(("127.0.0.1", port), Handler)
+        self.root = root
+        self.token = secrets.token_urlsafe(24)
+
+
+def launch(args):
+    root = workspace.find_root(args.directory)
+    if root is None:
+        report(
+            LogLevel.FATAL,
+            "no .yuclid directory in {}".format(
+                os.path.abspath(args.directory or os.getcwd())
+            ),
+            hint="`yuclid run` creates one; name the directory holding it",
+        )
+    if not os.path.exists(PAGE):
+        report(LogLevel.FATAL, "the web page is missing from the installation", PAGE)
+
+    server = Server(root, args.port)
+    url = "http://127.0.0.1:{}/?t={}".format(server.server_port, server.token)
+    report(LogLevel.INFO, "watching", root)
+    report(LogLevel.INFO, "open", url, hint="stop with Ctrl-C")
+    if args.open:
+        import webbrowser
+
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        report(LogLevel.INFO, "stopped")
+    finally:
+        server.server_close()

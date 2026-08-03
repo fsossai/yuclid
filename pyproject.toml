@@ -18,6 +18,9 @@ yaml = ["pyyaml"]
 [tool.setuptools]
 packages = ["yuclid"]
 
+[tool.setuptools.package-data]
+yuclid = ["web/*"]
+
 [tool.setuptools.dynamic]
 version = { attr = "yuclid.__version__" }
 

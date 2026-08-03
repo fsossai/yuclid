@@ -185,6 +185,31 @@ def get_parser():
     )
     _add_stats_args(stats_parser)
 
+    # serve subcommand
+    serve_parser = subparsers.add_parser(
+        "serve", help="Watch and steer the runs of a directory in a browser"
+    )
+    serve_parser.add_argument(
+        "directory",
+        metavar="DIR",
+        nargs="?",
+        default=None,
+        help="The directory holding .yuclid (default: the working directory)",
+    )
+    serve_parser.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Port to listen on, on the loopback interface (default: any free one)",
+    )
+    serve_parser.add_argument(
+        "--open",
+        default=False,
+        action="store_true",
+        help="Open the page in a browser once the server is up",
+    )
+
     # replay subcommand
     replay_parser = subparsers.add_parser(
         "replay", help="Run a previous run again, steering and all"
@@ -531,6 +556,10 @@ def main():
 
     if args.command == "run":
         yuclid.run.launch(args)
+    elif args.command == "serve":
+        from yuclid import server as _server
+
+        _server.launch(args)
     elif args.command == "replay":
         from yuclid import steer as _steer
 

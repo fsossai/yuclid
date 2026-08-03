@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>yuclid</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --panel: #fff; --line: #e3e1dd; --ink: #1c1b19;
+    --dim: #6b6862; --accent: #2f6f4e; --warn: #a4462d; --chip: #f1efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a; --panel: #1d1e22; --line: #2e3036; --ink: #e6e4e1;
+      --dim: #918d87; --accent: #6fb58c; --warn: #e08a6d; --chip: #26282d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  header b { font-weight: 600; letter-spacing: .02em; }
+  header span { color: var(--dim); }
+  main { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 0; }
+  @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
+  #runs { border-right: 1px solid var(--line); min-height: 70vh; }
+  #runs button {
+    display: block; width: 100%; text-align: left; padding: 10px 16px;
+    background: none; border: 0; border-bottom: 1px solid var(--line);
+    color: inherit; font: inherit; cursor: pointer;
+  }
+  #runs button:hover { background: var(--chip); }
+  #runs button[aria-current="true"] { background: var(--chip); font-weight: 600; }
+  #runs small { display: block; color: var(--dim); font-weight: 400; }
+  section { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+  h2 {
+    margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--dim); font-weight: 600;
+  }
+  .bar { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .state { font-weight: 600; }
+  .state[data-state="running"] { color: var(--accent); }
+  .state[data-state="interrupted"], .state[data-state="failed"] { color: var(--warn); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button.act {
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: inherit; font: inherit; cursor: pointer;
+  }
+  button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button.act:disabled { opacity: .4; cursor: not-allowed; }
+  .dim-row { margin-bottom: 8px; }
+  .dim-row b { display: inline-block; min-width: 90px; color: var(--dim); font-weight: 600; }
+  .chip {
+    padding: 3px 9px; margin: 2px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--chip); color: inherit; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .chip:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
+  .chip:disabled { cursor: default; opacity: .6; }
+  pre {
+    margin: 0; max-height: 40vh; overflow: auto; font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
+  }
+  pre b { color: var(--ink); font-weight: 600; }
+  #says { color: var(--dim); min-height: 1.5em; }
+  #says[data-bad="true"] { color: var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <b>yuclid</b>
+  <span id="where"></span>
+</header>
+<main>
+  <nav id="runs"></nav>
+  <div>
+    <section>
+      <h2>Run</h2>
+      <div class="row" style="justify-content: space-between">
+        <div><code id="rid">—</code> <span class="state" id="rstate"></span></div>
+        <div id="rcount" style="color: var(--dim)"></div>
+      </div>
+      <div class="bar" style="margin: 10px 0"><div id="rbar"></div></div>
+      <div style="color: var(--dim)" id="rwhere"></div>
+    </section>
+    <section>
+      <h2>Steer</h2>
+      <div class="row">
+        <button class="act" data-op="pause">Pause</button>
+        <button class="act" data-op="resume">Resume</button>
+        <button class="act" data-op="stop">Stop</button>
+        <button class="act" data-op="kill" data-scope="rep">Kill repetition</button>
+        <button class="act" data-op="kill" data-scope="point">Kill point</button>
+      </div>
+      <p id="says"></p>
+    </section>
+    <section>
+      <h2>Dimensions — a value drops that slice</h2>
+      <div id="dims"></div>
+    </section>
+    <section>
+      <h2>Log</h2>
+      <pre id="log"></pre>
+    </section>
+  </div>
+</main>
+<script>
+const TOKEN = "__YUCLID_TOKEN__";
+let current = null, since = 0, live = false, lines = [];
+
+const ask = async (path, body) => {
+  const options = {headers: {Authorization: "Bearer " + TOKEN}};
+  if (body) {
+    options.method = "POST";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(path, options);
+  return response.json();
+};
+
+const say = (text, bad) => {
+  const says = document.getElementById("says");
+  says.textContent = text || "";
+  says.dataset.bad = bad ? "true" : "false";
+};
+
+const describe = (op, effect) => {
+  const left = (effect.total || 0) - (effect.completed || 0);
+  if (op.op === "drop") return `${effect.dropped} point(s) dropped, ${left} unit(s) remain`;
+  if (op.op === "kill") return `abandoned ${(effect.points || []).map(p => p.join(".")).join(", ")}`;
+  if (op.op === "pause") return `paused with ${effect.in_flight} point(s) in flight`;
+  if (op.op === "resume") return `resumed, ${left} unit(s) remain`;
+  if (op.op === "stop") return `stopping, ${effect.abandoned} point(s) abandoned`;
+  return JSON.stringify(effect);
+};
+
+const send = async op => {
+  say("…");
+  const answer = await ask(`/api/runs/${current}/control`, op);
+  if (answer.error) return say(answer.error, true);
+  say(describe(op, answer.effect));
+  refresh();
+};
+
+document.querySelectorAll("button.act").forEach(button => {
+  button.onclick = () => {
+    const op = {op: button.dataset.op};
+    if (button.dataset.scope) op.scope = button.dataset.scope;
+    send(op);
+  };
+});
+
+const select = id => {
+  if (id === current) return;
+  current = id;
+  since = 0;
+  lines = [];
+  document.getElementById("log").textContent = "";
+  say("");
+  refresh();
+};
+
+const renderRuns = runs => {
+  const nav = document.getElementById("runs");
+  nav.innerHTML = "";
+  for (const run of runs) {
+    const button = document.createElement("button");
+    button.setAttribute("aria-current", run.id === current);
+    button.innerHTML = `${run.id}<small>${run.state} · ${run.completed}/${run.total}</small>`;
+    button.onclick = () => select(run.id);
+    nav.append(button);
+  }
+  if (!current && runs.length) select(runs[0].id);
+};
+
+const renderRun = run => {
+  live = run.live;
+  document.getElementById("rid").textContent = run.id;
+  const state = document.getElementById("rstate");
+  state.textContent = run.state + (run.replay_of ? ` · replay of ${run.replay_of}` : "");
+  state.dataset.state = run.state;
+  document.getElementById("rcount").textContent = `${run.completed} / ${run.total}`;
+  document.getElementById("rbar").style.width =
+    run.total ? `${(100 * run.completed) / run.total}%` : "0";
+  document.getElementById("rwhere").textContent =
+    run.current ? "at " + run.current.join(".") : (run.output || "");
+
+  document.querySelectorAll("button.act").forEach(b => (b.disabled = !live));
+
+  const dims = document.getElementById("dims");
+  dims.innerHTML = "";
+  for (const [dim, values] of Object.entries(run.dimensions || {})) {
+    const row = document.createElement("div");
+    row.className = "dim-row";
+    row.innerHTML = `<b>${dim}</b>`;
+    for (const value of values) {
+      const chip = document.createElement("button");
+      chip.className = "chip";
+      chip.textContent = value;
+      chip.disabled = !live;
+      chip.title = `drop ${dim}=${value}`;
+      chip.onclick = () => send({op: "drop", coords: {[dim]: [value]}});
+      row.append(chip);
+    }
+    dims.append(row);
+  }
+};
+
+const summarize = record => {
+  const at = new Date(record.time * 1000).toLocaleTimeString();
+  if (record.type === "point.started") return `${at}  ${record.key.join(".")} started`;
+  if (record.type === "point.finished")
+    return `${at}  ${(record.key || []).join(".")} completed ${
+      record.metrics ? Object.entries(record.metrics).map(([k, v]) => `${k}=${v}`).join(" ") : ""}`;
+  if (record.type === "point.killed")
+    return `${at}  ${record.key.join(".")} ${record.scope} abandoned`;
+  if (record.type === "op.applied") return `${at}  steered: ${JSON.stringify(record.op)}`;
+  if (record.type === "plan") return `${at}  plan: ${record.points.length} point(s)`;
+  if (record.type === "run.finished") return `${at}  run ${record.state}`;
+  return `${at}  ${record.type}`;
+};
+
+const renderProgress = payload => {
+  if (!payload.records.length) return;
+  since = payload.seq;
+  lines.push(...payload.records.map(summarize));
+  lines = lines.slice(-300);
+  const log = document.getElementById("log");
+  const stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = lines.join("\n");
+  if (stuck) log.scrollTop = log.scrollHeight;
+};
+
+const refresh = async () => {
+  try {
+    const {runs} = await ask("/api/runs");
+    renderRuns(runs);
+    if (!current) return;
+    renderRun(await ask(`/api/runs/${current}`));
+    renderProgress(await ask(`/api/runs/${current}/progress?since=${since}`));
+  } catch (e) {
+    say(String(e), true);
+  }
+};
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>
