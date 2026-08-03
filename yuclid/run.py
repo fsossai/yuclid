@@ -1443,12 +1443,41 @@ def valid_condition(condition, point, order):
     return eval(condition, point_context)
 
 
+def enablers_of(metric_name, trials):
+    """The trials whose captures a metric would be read from."""
+    return [
+        trial
+        for trial in trials
+        if trial["metrics"] is None or metric_name in trial["metrics"]
+    ]
+
+
 def validate_execution(execution, data):
+    # `${yuclid.@}` in a metric names the captures of the trial that enabled
+    # it, so two trials enabling that metric at one point leaves it undefined
+    # which output is measured. A metric that reads something else — a file the
+    # trials all wrote to, say — does not care which of them enabled it, and
+    # conditions may keep the rest apart, so both are checked before objecting.
+    contested = {
+        metric["name"]
+        for metric in data["metrics"]
+        if "${yuclid.@}" in metric["command"]
+        and len(enablers_of(metric["name"], data["trials"])) > 1
+    }
+    ambiguous = dict()
+
     # checking if there's at least of compatible trial command for each point
     for point in execution["subspace_points"]:
         compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
             data, point, execution
         )
+        for metric in compatible_metrics:
+            name = metric["name"]
+            if name not in contested or name in ambiguous:
+                continue
+            enablers = enablers_of(name, compatible_trials)
+            if len(enablers) > 1:
+                ambiguous[name] = (len(enablers), point)
         if len(compatible_trials) == 0:
             report(
                 LogLevel.ERROR,
@@ -1470,6 +1499,19 @@ def validate_execution(execution, data):
                     ", ".join(incompatible),
                     hint="try relaxing your metric conditions or adding more metrics.",
                 )
+
+    if ambiguous:
+        report(
+            LogLevel.ERROR,
+            "these metrics are enabled by more than one trial",
+            ", ".join(
+                "{} ({} trials at {})".format(name, count, point_to_string(point))
+                for name, (count, point) in sorted(ambiguous.items())
+            ),
+            hint="a metric reads the output of the trial that enabled it, so "
+            "only one may enable it at a point. Check the conditions on those "
+            "metrics, or on the trials that enable them",
+        )
 
 
 def get_compatible_trials_and_metrics(data, point, execution):

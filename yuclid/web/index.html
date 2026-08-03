@@ -165,7 +165,7 @@
   }
   .free { display: block; width: 100%; max-width: 40ch; }
   #rfile {
-    margin-top: 4px; font-size: 12.5px; color: var(--dim); cursor: pointer;
+    margin-bottom: 4px; font-size: 12.5px; color: var(--dim); cursor: pointer;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow-wrap: anywhere;
   }
@@ -213,18 +213,16 @@
     <div id="detail">
     <section>
       <h2>Run</h2>
-      <div class="row" style="justify-content: space-between">
-        <div class="row">
-          <input id="name" aria-label="run name">
-          <code id="rid" style="color: var(--dim)">—</code>
-          <span class="state" id="rstate"></span>
-        </div>
-        <div id="rcount" style="color: var(--dim)"></div>
+      <div class="row">
+        <input id="name" aria-label="run name">
+        <code id="rid" style="color: var(--dim)">—</code>
+        <span class="state" id="rstate"></span>
+        <span id="rcount" style="color: var(--dim)"></span>
       </div>
       <div class="bar" id="rbar" style="margin: 10px 0"><div></div></div>
+      <div id="rfile" title="click to copy"></div>
       <div style="color: var(--dim)" id="rwhen"></div>
       <div style="color: var(--dim)" id="rwhere"></div>
-      <div id="rfile" title="click to copy"></div>
       <div id="rcommand"></div>
       <div id="rsetup"></div>
     </section>
@@ -1170,20 +1168,30 @@ const copyPath = async (element, path) => {
 
 // the id is a compact stamp and reads as one; when a run happened is easier to
 // take in spelled out, so the header says it both ways
+// the same shape yuclid prints when a run ends, so the clock the page keeps
+// and the line the terminal prints do not disagree about what 3m07s looks like
+const duration = seconds => {
+  seconds = Math.max(0, Math.round(seconds));
+  const pad = n => String(n).padStart(2, "0");
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m${pad(seconds % 60)}s`;
+  return `${Math.floor(minutes / 60)}h${pad(minutes % 60)}m${pad(seconds % 60)}s`;
+};
+
 const spell = run => {
   if (!run.created) return "";
-  const started = new Date(run.created * 1000);
-  const long = started.toLocaleString(undefined, {
+  const long = new Date(run.created * 1000).toLocaleString(undefined, {
     dateStyle: "long",
     timeStyle: "medium",
   });
+  // a run still going has no end to measure to, so it is measured to now —
+  // redrawn every second along with everything else
+  if (run.live) {
+    return `started ${long} · running for ${duration(Date.now() / 1000 - run.created)}`;
+  }
   if (!run.ended) return `started ${long}`;
-  const seconds = Math.round(run.ended - run.created);
-  const took =
-    seconds < 60
-      ? `${seconds}s`
-      : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
-  return `started ${long}, took ${took}`;
+  return `started ${long} · took ${duration(run.ended - run.created)}`;
 };
 
 let gapsShow = "";
