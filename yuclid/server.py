@@ -105,7 +105,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/runs/([^/]+)/finish", path)
         if match:
             try:
-                return self.respond(200, self.finish(match.group(1)))
+                return self.respond(200, self.finish_run(match.group(1)))
             except FileNotFoundError:
                 return self.respond(404, {"error": "no such run"})
 
@@ -224,7 +224,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
 
-    def finish(self, run_id):
+    def finish_run(self, run_id):
         """Start a run that measures what this one did not.
 
         The command is built here from the run's id and nothing else, so a
