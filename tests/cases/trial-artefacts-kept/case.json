@@ -2,7 +2,7 @@
   "description": "trial captures survive the run, segregated per run under the temp directory",
   "record_count": 1,
   "files_exist": [
-    ".yuclid/*/*.out",
-    ".yuclid/*/*.err"
+    ".yuclid/runs/*/tmp/*.out",
+    ".yuclid/runs/*/tmp/*.err"
   ]
 }

@@ -267,9 +267,7 @@ def compile_preamble(script, settings, data, columns):
         'OUTPUT="${{YUCLID_OUTPUT:-{}}}"'.format(sh_in_quotes(settings["output"]))
     )
     script.command(
-        'WORK="${{YUCLID_WORK:-{}}}"'.format(
-            sh_in_quotes(os.path.join(settings["temp_dir"], settings["now"]))
-        )
+        'WORK="${{YUCLID_WORK:-{}}}"'.format(sh_in_quotes(settings["trials_dir"]))
     )
     script.command('mkdir -p "$WORK"')
     if settings["format"] == "csv":

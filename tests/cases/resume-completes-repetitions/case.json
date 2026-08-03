@@ -43,10 +43,10 @@
     }
   ],
   "files_exist": [
-    ".yuclid/*/*_rep1_trial0.out",
-    ".yuclid/*/*_rep2_trial0.out"
+    ".yuclid/runs/*/tmp/*_rep1_trial0.out",
+    ".yuclid/runs/*/tmp/*_rep2_trial0.out"
   ],
   "files_not_exist": [
-    ".yuclid/*/*_rep0_trial0.out"
+    ".yuclid/runs/*/tmp/*_rep0_trial0.out"
   ]
 }

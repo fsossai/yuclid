@@ -55,8 +55,9 @@ def get_parser():
     )
     run_parser.add_argument(
         "--temp-dir",
-        default=".yuclid",
-        help="Directory where temporary file will be saved",
+        default=None,
+        help="Directory where the trials' output will be saved. "
+        "Defaults to the run's own directory under .yuclid/runs",
     )
     run_parser.add_argument(
         "-p",
@@ -151,6 +152,25 @@ def get_parser():
         "describe", help="Describe what a result file holds"
     )
     _add_describe_args(describe_parser)
+
+    # runs subcommand
+    runs_parser = subparsers.add_parser(
+        "runs", help="List the runs recorded under .yuclid"
+    )
+    runs_parser.add_argument(
+        "-n",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Show at most N runs (default: %(default)s)",
+    )
+    runs_parser.add_argument(
+        "--last",
+        default=False,
+        action="store_true",
+        help="Print only the results file of the most recent run, so that it "
+        "can be passed to another command",
+    )
 
     # stats subcommand
     stats_parser = subparsers.add_parser(
@@ -424,6 +444,9 @@ def main():
 
     if args.command == "run":
         yuclid.run.launch(args)
+    elif args.command == "runs":
+        from yuclid import steer as _steer
+        _steer.launch_runs(args)
     elif args.command == "plot":
         yuclid.plot.launch(args)
     elif args.command == "tplot":

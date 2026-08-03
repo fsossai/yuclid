@@ -1,12 +1,14 @@
 from yuclid.log import LogLevel, report
 from datetime import datetime
 import concurrent.futures
+import yuclid.workspace as workspace
 import threading
 import pandas as pd
 import subprocess
 import itertools
 import json
 import csv
+import sys
 import time
 import re
 import os
@@ -837,10 +839,7 @@ def progress_units(settings, execution, i):
 def run_point_trials(
     settings, data, execution, writer, i, point, file_lock=None, repeat=None
 ):
-    os.makedirs(
-        os.path.join(settings["temp_dir"], settings["now"]),
-        exist_ok=True,
-    )
+    os.makedirs(settings["trials_dir"], exist_ok=True)
 
     point_map = {key: x for key, x in zip(execution["order"], point)}
     total, base = progress_units(settings, execution, i)
@@ -882,8 +881,7 @@ def run_point_trials(
 
         for j, trial in enumerate(compatible_trials):
             point_id = os.path.join(
-                settings["temp_dir"],
-                settings["now"],
+                settings["trials_dir"],
                 f"{i_padded}." + point_to_string(point) + f"{rep_suffix}_trial{j}",
             )
 
@@ -1289,6 +1287,10 @@ def run_subspace_trials(settings, data, execution):
             or os.path.getsize(settings["output"]) == 0
         )
         with open(settings["output"], "a", newline="") as f:
+            if settings["run_dir"] is not None:
+                # only now does the file exist to be linked, so a run that never
+                # gets this far leaves no empty dataset behind
+                workspace.link_results(settings["run_dir"], settings["output"])
             writer = RecordWriter(
                 f,
                 settings["format"],
@@ -1466,10 +1468,6 @@ def build_settings(args):
             report(LogLevel.ERROR, f"'{file}' does not exist")
         else:
             settings["inputs"].append(file)
-    if args.compile is None:
-        # compiling touches nothing but the script it writes
-        os.makedirs(args.temp_dir, exist_ok=True)
-
     # output
     # `--resume` continues the file named by --output
     settings["resume"] = None
@@ -1530,15 +1528,47 @@ def build_settings(args):
 
     settings["timing"] = {"setup": 0.0, "experiments": 0.0}
     settings["cwd"] = os.getcwd()
+    build_run_directory(settings, args)
+
     report(LogLevel.INFO, "working directory", settings["cwd"])
     report(LogLevel.INFO, "input configurations", ", ".join(requested))
     report(LogLevel.INFO, "output data", settings["output"])
-    report(
-        LogLevel.INFO,
-        "temp directory",
-        os.path.join(settings["temp_dir"], settings["now"]),
-    )
+    report(LogLevel.INFO, "temp directory", settings["trials_dir"])
     return settings
+
+
+def build_run_directory(settings, args):
+    """Give the run a directory of its own to record itself in.
+
+    Compiling writes a script and runs nothing, so it gets no directory: there
+    would be no run to describe.
+    """
+    settings["run_dir"] = None
+    settings["run_id"] = None
+    settings["root"] = None
+
+    if args.compile is not None:
+        settings["trials_dir"] = os.path.join(
+            args.temp_dir or os.path.join(workspace.DIRNAME, workspace.TRIALS),
+            settings["now"],
+        )
+        return
+
+    settings["root"] = workspace.open_root()
+    settings["run_id"], settings["run_dir"] = workspace.create_run(
+        settings["root"],
+        settings["now"],
+        argv=sys.argv[1:],
+        inputs=settings["inputs"],
+        output=os.path.abspath(settings["output"]),
+        replay_of=settings.get("replay_of"),
+    )
+
+    if args.temp_dir is None:
+        settings["trials_dir"] = os.path.join(settings["run_dir"], workspace.TRIALS)
+    else:
+        settings["trials_dir"] = os.path.join(args.temp_dir, settings["now"])
+    os.makedirs(settings["trials_dir"], exist_ok=True)
 
 
 def normalize_point_setup(point_setup, space):
@@ -1715,8 +1745,27 @@ def format_duration(seconds):
 
 
 def launch(args):
-    started = time.monotonic()
     settings = build_settings(args)
+    if settings["run_dir"] is None:
+        execute(settings)
+        return
+    state = workspace.FAILED
+    try:
+        execute(settings)
+        state = settings.get("final_state", workspace.FINISHED)
+    except KeyboardInterrupt:
+        state = workspace.INTERRUPTED
+        raise
+    except SystemExit as e:
+        state = workspace.FINISHED if not e.code else workspace.FAILED
+        raise
+    finally:
+        # nothing is watching a run, so it records its own ending
+        workspace.set_state(settings["run_dir"], state)
+
+
+def execute(settings):
+    started = time.monotonic()
     data = aggregate_input_data(settings)
     validate_settings(data, settings)
     env = build_environment(settings, data)
