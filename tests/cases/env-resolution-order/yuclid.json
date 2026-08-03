@@ -1,8 +1,8 @@
 {
-  "env": {
-    "BASE": "7",
-    "DERIVED": "$BASE 8"
-  },
+  "env": [
+    { "BASE": "7" },
+    { "DERIVED": "$BASE 8" }
+  ],
   "space": {
     "a": [
       1

@@ -1,5 +1,5 @@
 env:
-  EVENT_SEED: '314159'
+  - EVENT_SEED: '314159'
 space:
   records:
     - name: 1k

@@ -1,5 +1,5 @@
 env:
-  CORPUS_SEED: '8675309'
+  - CORPUS_SEED: '8675309'
 space:
   kind: [text, binary, mixed]
   mebibytes:

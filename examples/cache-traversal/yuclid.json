@@ -1,8 +1,10 @@
 {
-  "env": {
-    "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic",
-    "CACHE_SEED": "12648430"
-  },
+  "env": [
+    {
+      "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic",
+      "CACHE_SEED": "12648430"
+    }
+  ],
   "space": {
     "mebibytes": [
       { "name": "8MiB", "value": 8 },

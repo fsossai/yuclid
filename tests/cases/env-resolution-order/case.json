@@ -1,5 +1,5 @@
 {
-  "description": "env entries resolve in declaration order and reach every command",
+  "description": "a later env group sees the earlier ones, and the result reaches every command",
   "records": [
     {
       "a": "1",

@@ -1,6 +1,6 @@
 env:
-  CFLAGS: -O3 -std=c11 -Wall -Wextra -pedantic
-  MATRIX_SEED: '20260730'
+  - CFLAGS: -O3 -std=c11 -Wall -Wextra -pedantic
+    MATRIX_SEED: '20260730'
 space:
   size:
     - name: 512x512

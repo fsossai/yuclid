@@ -1,7 +1,9 @@
 {
-  "env": {
-    "EVENT_SEED": "314159"
-  },
+  "env": [
+    {
+      "EVENT_SEED": "314159"
+    }
+  ],
   "space": {
     "records": [
       { "name": "1k", "value": 1000 },

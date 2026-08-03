@@ -26,6 +26,19 @@ def sh_in_quotes(text):
     return text
 
 
+def sh_env_value(text):
+    """An env value for a double-quoted `export`, expanded as yuclid expands it.
+
+    A reference is left for the shell to resolve, since the script's exports
+    run in the same order the configuration sets them. Everything else yuclid
+    treats as text is protected, so quotes survive and a command substitution
+    stays the string it was rather than becoming something that runs.
+    """
+    for char in ["\\", '"', "`"]:
+        text = text.replace(char, "\\" + char)
+    return text.replace("$(", "\\$(").replace("$$", "\\$")
+
+
 def sh_printf_literal(text):
     """Escape text that goes into a printf format, where a % is a directive."""
     return text.replace("%", "%%")
@@ -290,10 +303,13 @@ def compile_preamble(script, settings, data, columns):
             )
         )
 
-    if len(data["env"]) > 0:
+    if any(len(group) > 0 for group in data["env"]):
         script.section("environment")
-        for key, value in data["env"].items():
-            script.command('export {}="{}"'.format(key, value))
+        # exported group by group, in the order the configuration set them, so
+        # the script resolves references exactly as a run does
+        for group in data["env"]:
+            for key, value in group.items():
+                script.command('export {}="{}"'.format(key, sh_env_value(value)))
 
 
 def compile_epilogue(script, settings):

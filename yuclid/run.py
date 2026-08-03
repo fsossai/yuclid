@@ -80,8 +80,9 @@ def validate_global_yvars(space, exp):
 
 
 def validate_yvars_in_env(space, env):
-    for v in env.values():
-        validate_global_yvars(space, v)
+    for group in env:
+        for v in group.values():
+            validate_global_yvars(space, v)
 
 
 def validate_yvars_in_setup(space, setup):
@@ -207,7 +208,7 @@ def load_config(path):
 
 def aggregate_input_data(settings):
     data = {
-        "env": {},
+        "env": [],
         "setup": {"global": [], "point": []},
         "space": {},
         "trials": [],
@@ -219,9 +220,9 @@ def aggregate_input_data(settings):
     for file in settings["inputs"]:
         current = normalize_data(load_config(file))
         for key, val in current.items():
-            if key in ["env", "space", "presets"]:
+            if key in ["space", "presets"]:
                 data[key].update(val)
-            elif key in ["trials", "metrics", "order"]:
+            elif key in ["env", "trials", "metrics", "order"]:
                 data[key].extend(val)
             elif key == "setup":
                 for subkey, subval in val.items():
@@ -252,24 +253,117 @@ def remove_duplicates(items):
     return result
 
 
+# `$$` is a literal dollar, `${NAME}` and `$NAME` are references. Anything else
+# a shell would treat specially — `$(...)`, backticks, quotes — is plain text.
+ENV_TOKEN = re.compile(r"\$\$|\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)")
+
+
+def env_references(value):
+    """The names a value refers to, ignoring escaped dollars."""
+    return [a or b for a, b in ENV_TOKEN.findall(value) if a or b]
+
+
+def expand_env_value(value, environment):
+    """Resolve a value's references against an environment, and nothing else.
+
+    Done here rather than by a shell, so the value survives intact: quotes stay
+    quotes, backslashes stay backslashes, trailing spaces are still there, and
+    a command substitution is text rather than something that runs. An unset
+    name expands to nothing, as it would in a shell.
+    """
+
+    def resolve(match):
+        if match.group(0) == "$$":
+            return "$"
+        return environment.get(match.group(1) or match.group(2), "")
+
+    return ENV_TOKEN.sub(resolve, value)
+
+
+def normalize_env(env):
+    """The environment as a list of groups, which is what fixes the order.
+
+    A group is resolved as a whole, so nothing in it can see anything else in
+    it: within a group the entries are independent, and one group may refer to
+    the groups before it. Order is what the list says it is, rather than an
+    accident of how an object happened to be written down — objects have no
+    order to rely on, and a formatter is free to rearrange one.
+
+    A plain object is a list of one group, which is what most configurations
+    are: a handful of constants that refer to nothing.
+    """
+    if isinstance(env, dict):
+        if len(env) > 1:
+            # nothing here can depend on anything else here, and an object
+            # gives no way to say otherwise: worth saying before someone
+            # writes a reference and watches it resolve to the wrong thing
+            report(
+                LogLevel.WARNING,
+                "env is one group of {} independent variables".format(len(env)),
+                hint="none of them can refer to another. Write env as a list of "
+                "objects if one has to be set before the next",
+            )
+        env = [env]
+    if not isinstance(env, list):
+        report(
+            LogLevel.FATAL,
+            "env must be an object, or a list of objects to set in order",
+        )
+
+    groups = []
+    for group in env:
+        if not isinstance(group, dict):
+            report(
+                LogLevel.FATAL,
+                "every element of env must be an object of name/value pairs",
+                str(group),
+            )
+        groups.append({str(k): str(v) for k, v in group.items()})
+    return groups
+
+
+def validate_env_order(groups):
+    """Refuse a reference that the order cannot satisfy.
+
+    Referring to a name set later, or set alongside in the same group, would
+    silently resolve against the inherited environment instead — the value
+    would be wrong rather than missing, and wrong differently on another
+    machine. Referring to a name's inherited value is not that: `PATH` built
+    from `$PATH` is the ordinary way to extend one.
+    """
+    for i, group in enumerate(groups):
+        later = {name for g in groups[i:] for name in g}
+        for key, value in group.items():
+            for name in env_references(value):
+                if name == key or name not in later:
+                    continue
+                where = "alongside it" if name in group else "further down"
+                report(
+                    LogLevel.FATAL,
+                    "env: {} refers to {}, which this configuration sets {}".format(
+                        key, name, where
+                    ),
+                    hint="env is a list of groups applied in order, and a group "
+                    "cannot see itself. Put {} in an earlier group than {}".format(
+                        name, key
+                    ),
+                )
+
+
 def build_environment(settings, data):
-    if settings["dry_run"]:
-        for key, value in data["env"].items():
-            report(LogLevel.INFO, "dry env", f'{key}="{value}"')
-        env = dict()
-    else:
-        resolved_env = os.environ.copy()
-        for k, v in data["env"].items():
-            expanded = subprocess.run(
-                f'echo "{v}"',
-                env=resolved_env,
-                capture_output=True,
-                text=True,
-                shell=True,
-            ).stdout.strip()
-            resolved_env[k] = expanded
-        env = resolved_env
-    return env
+    resolved_env = os.environ.copy()
+    for group in data["env"]:
+        # resolved against the environment as it stood before the group, so a
+        # group's entries genuinely cannot see one another
+        expanded = {k: expand_env_value(v, resolved_env) for k, v in group.items()}
+        if settings["dry_run"]:
+            for key, value in expanded.items():
+                report(LogLevel.INFO, "dry env", f'{key}="{value}"')
+        resolved_env.update(expanded)
+
+    # a dry run executes nothing, so it hands out no environment either — but
+    # it resolves one, which is the only way to see what a value comes to
+    return dict() if settings["dry_run"] else resolved_env
 
 
 def parse_coordinates(pairs, what="selector"):
@@ -517,6 +611,7 @@ def normalize_data(json_data):
     space = normalize_space_values(json_data.get("space", {}))
 
     normalized["space"] = space
+    normalized["env"] = normalize_env(json_data.get("env", []))
     normalized["trials"] = normalize_trials(json_data.get("trials", []))
     normalized["setup"] = normalize_setup(json_data.get("setup", {}), space)
     normalized["metrics"] = normalize_metrics(json_data.get("metrics", []))
@@ -2393,6 +2488,7 @@ def execute(settings):
     started = time.monotonic()
     data = aggregate_input_data(settings)
     validate_settings(data, settings)
+    validate_env_order(data["env"])
     env = build_environment(settings, data)
     order = define_order(settings, data)
     validate_yvars_in_env(data["space"], data["env"])

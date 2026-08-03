@@ -1,7 +1,9 @@
 {
-  "env": {
-    "CXXFLAGS": "-O3 -std=c++17 -Wall -Wextra -pedantic -pthread"
-  },
+  "env": [
+    {
+      "CXXFLAGS": "-O3 -std=c++17 -Wall -Wextra -pedantic -pthread"
+    }
+  ],
   "space": {
     "limit": [
       { "name": "1M", "value": 1000000 },

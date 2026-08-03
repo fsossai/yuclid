@@ -1,7 +1,9 @@
 {
-  "env": {
-    "CORPUS_SEED": "8675309"
-  },
+  "env": [
+    {
+      "CORPUS_SEED": "8675309"
+    }
+  ],
   "space": {
     "kind": ["text", "binary", "mixed"],
     "mebibytes": [

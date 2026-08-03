@@ -1,8 +1,10 @@
 {
-  "env": {
-    "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic",
-    "MATRIX_SEED": "20260730"
-  },
+  "env": [
+    {
+      "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic",
+      "MATRIX_SEED": "20260730"
+    }
+  ],
   "space": {
     "size": [512,1024,1536],
     "variant": ["dot", "rows", "columns"],
