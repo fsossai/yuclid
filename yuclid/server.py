@@ -16,6 +16,7 @@ import threading
 import signal
 import secrets
 import json
+import time
 import sys
 import os
 import re
@@ -104,8 +105,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         match = re.fullmatch(r"/api/runs/([^/]+)/finish", path)
         if match:
+            payload = self.body()
+            if payload is None:
+                return
             try:
-                return self.respond(200, self.finish_run(match.group(1)))
+                mode = payload.get("mode") or "finish"
+                return self.respond(200, self.finish_run(match.group(1), mode))
             except FileNotFoundError:
                 return self.respond(404, {"error": "no such run"})
 
@@ -224,24 +229,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
 
-    def finish_run(self, run_id):
-        """Start a run that measures what this one did not.
+    def finish_run(self, run_id, mode):
+        """Start a run from an old one: either completing it or repeating it.
 
-        The command is built here from the run's id and nothing else, so a
-        request never becomes an argument. The new run is detached: `serve`
-        owns no run, and killing it must not take one down.
+        `finish` resumes into the same results file, so only the points that
+        went unmeasured are run. `restart` runs the whole configuration again
+        as a run of its own. The command is built here from the run's id and a
+        mode this method knows, so nothing in a request becomes an argument.
+        The new run is detached: `serve` owns no run, and killing it must not
+        take one down.
         """
+        if mode not in ("finish", "restart"):
+            return {"error": "unknown mode '{}'".format(mode)}
+
         manifest = self.manifest(run_id)
         if manifest["state"] == workspace.RUNNING:
             return {"error": "run {} is still going".format(run_id)}
 
+        argv = {
+            "finish": ["finish", run_id],
+            "restart": ["replay", run_id, "--no-steering"],
+        }[mode]
+
         with self.server.lock:
-            # a run takes a moment to appear in the directory, so asking twice
-            # in that moment would start two runs appending to one file. What
-            # was spawned from here is remembered rather than looked up
             started = self.server.finishing.get(run_id)
             if started is not None and started.poll() is None:
-                return {"error": "already finishing run {}".format(run_id)}
+                return {"error": "run {} is already being restarted".format(run_id)}
 
             output = manifest.get("output")
             for other in workspace.live_runs(self.server.root):
@@ -252,15 +265,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         )
                     }
 
-            log = open(os.path.join(manifest["directory"], "finish.log"), "w")
-            self.server.finishing[run_id] = subprocess.Popen(
-                [sys.executable, "-c", ENTRY_POINT, "finish", run_id],
+            before = {m["id"] for m in workspace.list_runs(self.server.root)}
+            log = open(os.path.join(manifest["directory"], mode + ".log"), "w")
+            child = subprocess.Popen(
+                [sys.executable, "-c", ENTRY_POINT] + argv,
                 cwd=os.path.dirname(self.server.root),
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
-        return {"started": run_id}
+            self.server.finishing[run_id] = child
+
+        # the child names its own run, so the only way to say which one it is
+        # is to wait for it to appear — a second or two, mostly spent importing
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            fresh = [
+                m
+                for m in workspace.list_runs(self.server.root)
+                if m["id"] not in before
+            ]
+            if fresh:
+                return {"started": fresh[0]["id"], "mode": mode}
+            if child.poll() is not None:
+                break
+            time.sleep(0.1)
+        return {
+            "error": "the run did not start",
+            "log": os.path.join(manifest["directory"], mode + ".log"),
+        }
 
     def control(self, run_id, operation):
         manifest = self.manifest(run_id)

@@ -144,10 +144,8 @@
     <section id="gaps-section" hidden>
       <h2>Gaps — points of the space with no measurement</h2>
       <div id="gaps"></div>
-      <div class="row" style="margin-top: 10px">
-        <button class="act" id="finish">Run the missing points</button>
-        <span id="gaps-how" style="color: var(--dim)"></span>
-      </div>
+      <div class="row" style="margin-top: 10px" id="gaps-actions"></div>
+      <p id="gaps-how" style="color: var(--dim)"></p>
     </section>
     <section>
       <h2>Log</h2>
@@ -440,19 +438,64 @@ const renderGaps = run => {
     .join("\n");
   box.append(list);
 
-  const button = document.getElementById("finish");
-  button.disabled = run.live;
-  button.onclick = async () => {
-    button.disabled = true;
-    say("…");
-    const answer = await ask(`/api/runs/${current}/finish`, {});
+  renderGapActions(run, gaps.length);
+};
+
+// starting a run from an old one means one of two different things, and which
+// one is not something to guess: asked before anything is spawned
+const renderGapActions = (run, missing) => {
+  const row = document.getElementById("gaps-actions");
+  const how = document.getElementById("gaps-how");
+  row.innerHTML = "";
+  if (run.live) {
+    how.textContent = "a run can only be continued once it has ended";
+    return;
+  }
+
+  const start = document.createElement("button");
+  start.className = "act";
+  start.textContent = "Run the missing points";
+  start.onclick = () => {
+    row.innerHTML = "";
+    const question = document.createElement("span");
+    question.className = "confirm";
+    question.append(`${missing} point(s) missing:`);
+    for (const [mode, label, told] of [
+      ["finish", "complete this run", `same as \`yuclid finish ${run.id}\``],
+      ["restart", "start a new one", `same as \`yuclid replay ${run.id} --no-steering\``],
+    ]) {
+      const choice = document.createElement("button");
+      choice.className = "yes";
+      choice.textContent = label;
+      choice.onclick = () => spawn(mode, told);
+      question.append(choice);
+    }
+    const no = document.createElement("button");
+    no.className = "no";
+    no.textContent = "cancel";
+    no.onclick = () => renderGapActions(run, missing);
+    question.append(no);
+    row.append(question);
+    how.textContent = "";
+  };
+  row.append(start);
+  how.textContent = `${missing} point(s) of the space were never measured`;
+
+  const spawn = async (mode, told) => {
+    row.querySelectorAll("button").forEach(b => (b.disabled = true));
+    how.textContent = told;
+    say("starting…");
+    const answer = await ask(`/api/runs/${current}/finish`, {mode});
+    renderGapActions(run, missing);
     if (answer.error) return say(answer.error, true);
-    say(`started a run for the ${gaps.length} missing point(s)`);
+    say(
+      mode === "finish"
+        ? `run ${answer.started} is measuring the ${missing} missing point(s)`
+        : `run ${answer.started} is running the whole space again`
+    );
+    if (mode === "restart") select(answer.started);
     refresh();
   };
-  document.getElementById("gaps-how").textContent = run.live
-    ? "available once this run has ended"
-    : `same as \`yuclid finish ${run.id}\``;
 };
 
 // the same stamp yuclid's own diagnostics carry, so a line from the page and
