@@ -300,8 +300,8 @@ def normalize_env(env):
             report(
                 LogLevel.WARNING,
                 "env is one group of {} independent variables".format(len(env)),
-                hint="none of them can refer to another. Write env as a list of "
-                "objects if one has to be set before the next",
+                hint="turn it into a list of objects, or make sure there are no "
+                "dependencies between the variables",
             )
         env = [env]
     if not isinstance(env, list):
