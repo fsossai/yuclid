@@ -568,6 +568,17 @@ def main():
     args = parser.parse_args()
     yuclid.log.init()
 
+    try:
+        dispatch(args)
+    except KeyboardInterrupt:
+        # Ctrl-C is how a run is meant to be stopped, not a crash: say so and
+        # leave, with the exit status a shell expects from an interrupted
+        # program. Whatever was under way has already recorded itself
+        yuclid.log.report(yuclid.log.LogLevel.INFO, "interrupted")
+        return 130
+
+
+def dispatch(args):
     if args.command == "run":
         yuclid.run.launch(args)
     elif args.command == "serve":
