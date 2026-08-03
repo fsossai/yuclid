@@ -1,5 +1,9 @@
 {
-  "description": "a metric emitting something that is not a number is an error naming the metric and quoting the output",
+  "description": "under --abort-on-error a metric emitting something that is not a number ends the run, naming the metric and quoting the output",
+  "args": [
+    "run",
+    "--abort-on-error"
+  ],
   "exit_code": 1,
   "stdout_contains": [
     "cannot parse result of metric m",

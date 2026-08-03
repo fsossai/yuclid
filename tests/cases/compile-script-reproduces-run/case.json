@@ -40,7 +40,7 @@
   "file_contains": {
     "compiled.sh": [
       "#!/bin/sh",
-      "set -eu",
+      "set -u",
       "export FACTOR=\"3\"",
       "mkdir -p work",
       "echo 1 > work/1.txt",

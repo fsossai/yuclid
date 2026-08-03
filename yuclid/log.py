@@ -12,7 +12,7 @@ class LogLevel:
     HINT = 5
 
 
-def init(ignore_errors):
+def init():
     _state["style"] = {
         "none": "\033[0m",
         "yellow": "\033[93m",
@@ -25,7 +25,6 @@ def init(ignore_errors):
         for k, v in _state["style"].items():
             _state["style"][k] = ""
 
-    _state["ignore_errors"] = ignore_errors
     style = _state["style"]
     _state["level_prefix"] = {
         LogLevel.INFO: "{}INFO{}".format(style["green"], style["none"]),
@@ -46,7 +45,15 @@ def yprint(level, *args, **kwargs):
 
 
 def report(level, *args, **kwargs):
+    """Say something, and stop the program when what was said is fatal.
+
+    An ERROR ends the run by default, because most of them mean yuclid was
+    asked for something it cannot do. The failures that happen while
+    experiments are running are different — one bad point is not a reason to
+    throw away the others — so those pass `fatal=False` and the run goes on.
+    """
     hint = kwargs.pop("hint", None)
+    fatal = kwargs.pop("fatal", None)
     yprint(level, *args, **kwargs)
     if hint is not None:
         # a hint may carry several lines: each one is a hint of its own, so
@@ -56,5 +63,5 @@ def report(level, *args, **kwargs):
             yprint(LogLevel.HINT, line)
     if level == LogLevel.FATAL:
         sys.exit(2)
-    if not _state["ignore_errors"] and level == LogLevel.ERROR:
+    if level == LogLevel.ERROR and (fatal is None or fatal):
         sys.exit(1)

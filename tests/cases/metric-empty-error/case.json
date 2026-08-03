@@ -1,5 +1,9 @@
 {
-  "description": "a metric emitting nothing is an error",
+  "description": "under --abort-on-error a metric emitting nothing ends the run",
+  "args": [
+    "run",
+    "--abort-on-error"
+  ],
   "exit_code": 1,
   "stdout_contains": [
     "metric m generated an empty string"

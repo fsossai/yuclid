@@ -268,11 +268,11 @@ def compile_preamble(script, settings, data, columns):
     script.comment("  YUCLID_OUTPUT  where the records are appended")
     script.comment("  YUCLID_WORK    where each trial's output is captured")
     script.blank()
-    if settings["ignore_errors"]:
-        script.command("set -u")
-    else:
-        # the default error policy: stop at the first failing command
+    if settings["abort_on_error"]:
         script.command("set -eu")
+    else:
+        # the default, as in a run: a failing command does not end the script
+        script.command("set -u")
     script.blank()
     script.command(
         'OUTPUT="${{YUCLID_OUTPUT:-{}}}"'.format(sh_in_quotes(settings["output"]))

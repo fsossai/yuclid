@@ -1,13 +1,12 @@
 {
-  "description": "--ignore-errors downgrades the failure and the run completes",
-  "args": [
-    "--ignore-errors",
-    "run"
-  ],
+  "description": "a failing trial is reported and the run carries on, which is the default",
   "records": [
     {
       "a": "1",
       "m": 1
     }
+  ],
+  "stdout_contains": [
+    "failed trial command"
   ]
 }

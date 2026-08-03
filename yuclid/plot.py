@@ -249,7 +249,7 @@ def draw(fig, ax, cli_args):
     ctx["args"] = args
     ctx["fig"] = fig
     ctx["ax_plot"] = ax
-    yuclid.log.init(ignore_errors=args.ignore_errors)
+    yuclid.log.init()
     validate_files(ctx)
     locate_files(ctx)
     generate_dataframe(ctx)

@@ -1,5 +1,9 @@
 {
-  "description": "a failing trial is an error naming its exit status",
+  "description": "under --abort-on-error a failing trial ends the run, naming its exit status",
+  "args": [
+    "run",
+    "--abort-on-error"
+  ],
   "exit_code": 1,
   "stdout_contains": [
     "failed trial command",

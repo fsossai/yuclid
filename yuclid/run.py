@@ -309,11 +309,15 @@ def apply_user_selectors(settings, subspace):
                         if x["name"] == selector:
                             selection.append(x)
                 else:
+                    # one bad name out of several is not yet the whole story:
+                    # what matters is whether anything was selected at all,
+                    # which is decided below
                     report(
                         LogLevel.ERROR,
                         "invalid selector",
                         selector,
                         hint="available: {}".format(", ".join(valid)),
+                        fatal=False,
                     )
 
             if len(selection) == 0:
@@ -1085,6 +1089,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     point_to_string(point),
                     f"failed trial command '{command}' (code {returncode})",
                     hint=hint,
+                    fatal=settings["abort_on_error"],
                 )
 
         if killed:
@@ -1118,6 +1123,8 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     "metric {} failed with return code {}".format(
                         metric["name"], returncode
                     ),
+                    hint=hint,
+                    fatal=settings["abort_on_error"],
                 )
             elif text == "":
                 failed = True
@@ -1125,6 +1132,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     LogLevel.ERROR,
                     point_to_string(point),
                     "metric {} generated an empty string".format(metric["name"]),
+                    fatal=settings["abort_on_error"],
                 )
             else:
                 output_elements = re.split("[\n|\r| ]+", text)
@@ -1136,12 +1144,16 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                         try:
                             return float(x)
                         except ValueError:
-                            hint = "the command generated '{}'".format(text)
                             report(
                                 LogLevel.ERROR,
                                 "cannot parse result of metric {}".format(metric["name"]),
                                 text,
+                                hint="the command generated '{}'".format(text),
+                                fatal=settings["abort_on_error"],
                             )
+                            # the run carries on, so the sample has to be
+                            # something: a gap, like any other missing one
+                            return float("nan")
 
                 collected_metrics[metric["name"]] = [
                     int_or_float(line) for line in output_elements
@@ -1199,7 +1211,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         completion = [
             get_progress(base + entry["done"], total),
             point_to_string(point),
-            "completed",
+            "failed" if failed else "completed",
         ]
         if len(collected_metrics) > 0:
             completion.append(metrics_to_string(collected_metrics))
@@ -1534,7 +1546,12 @@ def run_subspace_trials(settings, data, execution):
                     for future in concurrent.futures.as_completed(futures):
                         exc = future.exception()
                         if exc is not None:
-                            report(LogLevel.ERROR, "trial failed", str(exc))
+                            report(
+                                LogLevel.ERROR,
+                                "trial failed",
+                                str(exc),
+                                fatal=settings["abort_on_error"],
+                            )
             else:
                 for entry in plan.pending():
                     run_point(settings, data, execution, writer, entry)

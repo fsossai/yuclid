@@ -1,13 +1,15 @@
 {
-  "description": "an unknown value in a selector is an error that terminates by default",
+  "description": "an unknown value in a selector is named, and selecting nothing at all is fatal",
   "args": [
     "run",
     "-s",
     "a=99"
   ],
-  "exit_code": 1,
+  "exit_code": 2,
   "stdout_contains": [
     "invalid selector",
-    "99"
+    "99",
+    "no valid selection for dimension 'a'",
+    "pick from the following values: 1, 2"
   ]
 }

@@ -1,9 +1,5 @@
 {
-  "description": "under --ignore-errors a failed metric is simply absent from the record",
-  "args": [
-    "--ignore-errors",
-    "run"
-  ],
+  "description": "a failed metric is simply absent from the record, and the run carries on",
   "records": [
     {
       "a": "1",

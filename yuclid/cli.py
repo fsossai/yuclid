@@ -11,13 +11,6 @@ def get_parser():
     parser = argparse.ArgumentParser(prog="yuclid", description="Yuclid CLI tool")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    parser.add_argument(
-        "--ignore-errors",
-        default=False,
-        action="store_true",
-        help="Yuclid will not abort on any errors unless fatal",
-    )
-
     # run subcommand
     run_parser = subparsers.add_parser("run", help="Run experiments and collect data")
     run_parser.add_argument(
@@ -135,6 +128,14 @@ def get_parser():
         default=1,
         metavar="N",
         help="Run each point configuration N times (default: 1)",
+    )
+    run_parser.add_argument(
+        "--abort-on-error",
+        default=False,
+        action="store_true",
+        help="Stop at the first point that fails. By default a failing trial "
+        "or metric is reported, the point is marked failed, and the run "
+        "carries on with the rest of the space",
     )
     run_parser.add_argument(
         "--name",
@@ -559,7 +560,7 @@ def _add_stats_args(p):
 def main():
     parser = get_parser()
     args = parser.parse_args()
-    yuclid.log.init(ignore_errors=args.ignore_errors)
+    yuclid.log.init()
 
     if args.command == "run":
         yuclid.run.launch(args)
