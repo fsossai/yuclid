@@ -35,7 +35,7 @@ def progress_counts(directory):
     for record in workspace.read_progress(directory):
         if record.get("total") is not None:
             total = record["total"]
-        if record["type"] == "point.finished":
+        if record["type"] in ("point.finished", "point.skipped"):
             done += record.get("repetitions", 1)
     if total is None:
         return None
@@ -50,6 +50,21 @@ def format_counts(directory):
     if counts is None:
         return "-"
     return get_progress(*counts)
+
+
+def failed_points(directory):
+    """The points that ran but recorded nothing, so the gaps have a cause."""
+    failed, plan = set(), None
+    for record in workspace.read_progress(directory):
+        if record["type"] == "plan":
+            plan = record
+        if record["type"] == "point.finished" and record.get("failed"):
+            failed.add(tuple(record["key"]))
+    if plan is not None:
+        failed |= {
+            tuple(p["key"]) for p in plan["points"] if p["status"] == "failed"
+        }
+    return sorted(failed)
 
 
 def launch_runs(args):
@@ -72,11 +87,15 @@ def launch_runs(args):
 
     rows = []
     for manifest in runs[: args.n]:
+        failed = failed_points(manifest["directory"])
+        state = manifest["state"]
+        if failed:
+            state += " ({} failed)".format(len(failed))
         rows.append(
             (
                 manifest["id"],
                 manifest.get("name") or "",
-                manifest["state"],
+                state,
                 format_counts(manifest["directory"]),
                 relative(manifest.get("output")),
             )
@@ -192,6 +211,58 @@ def describe(command, effect):
     return str(effect)
 
 
+def source_run(run_id):
+    """A previous run's directory and the command that made it."""
+    root = find_root_or_fail()
+    directory = workspace.run_directory(root, run_id)
+    manifest = workspace.read_manifest(directory)
+    if manifest is None:
+        report(
+            LogLevel.FATAL,
+            "no such run",
+            run_id,
+            hint="`yuclid runs` lists what there is",
+        )
+    argv = list(manifest.get("argv") or [])
+    if argv[:1] != ["run"]:
+        report(
+            LogLevel.FATAL,
+            "run {} was not started by `yuclid run`".format(run_id),
+        )
+    manifest["directory"] = directory
+    return manifest, argv
+
+
+def launch_finish(args, parser):
+    """Run again whatever a previous run did not record.
+
+    Points that failed, were killed, or never started left no record behind, so
+    resuming against the same file is exactly the work still outstanding — the
+    same mechanism that finishes a run cut short by Ctrl-C.
+    """
+    import yuclid.run
+
+    manifest, argv = source_run(args.run)
+    output = manifest.get("output")
+    if not output or not os.path.exists(output):
+        report(
+            LogLevel.FATAL,
+            "the results of run {} are gone".format(args.run),
+            output or "",
+            hint="there is nothing to resume from, so start the run again",
+        )
+
+    argv = strip_option(argv, "--replay")
+    argv = strip_option(argv, "-o")
+    argv = strip_option(argv, "--output")
+    argv = strip_option(argv, "--output-dir")
+    argv = [x for x in argv if x != "--resume"]
+    argv += ["-o", output, "--resume"]
+
+    report(LogLevel.INFO, "resuming", " ".join(argv))
+    yuclid.run.launch(parser.parse_args(argv))
+
+
 def launch_replay(args, parser):
     """Run a previous run's command again, with the steering it received.
 
@@ -200,24 +271,7 @@ def launch_replay(args, parser):
     """
     import yuclid.run
 
-    root = find_root_or_fail()
-    directory = workspace.run_directory(root, args.run)
-    manifest = workspace.read_manifest(directory)
-    if manifest is None:
-        report(
-            LogLevel.FATAL,
-            "no such run",
-            args.run,
-            hint="`yuclid runs` lists what there is to replay",
-        )
-
-    argv = list(manifest.get("argv") or [])
-    if argv[:1] != ["run"]:
-        report(
-            LogLevel.FATAL,
-            "run {} was not started by `yuclid run`".format(args.run),
-            hint="only a run can be replayed",
-        )
+    _, argv = source_run(args.run)
     argv = strip_option(argv, "--replay")
     if not args.no_steering:
         argv += ["--replay", args.run]

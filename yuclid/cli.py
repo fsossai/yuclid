@@ -218,6 +218,12 @@ def get_parser():
         help="Open the page in a browser once the server is up",
     )
 
+    # finish subcommand
+    finish_parser = subparsers.add_parser(
+        "finish", help="Run again whatever a previous run did not record"
+    )
+    finish_parser.add_argument("run", metavar="ID", help="The run to finish")
+
     # replay subcommand
     replay_parser = subparsers.add_parser(
         "replay", help="Run a previous run again, steering and all"
@@ -572,6 +578,10 @@ def main():
         from yuclid import steer as _steer
 
         _steer.launch_replay(args, get_parser())
+    elif args.command == "finish":
+        from yuclid import steer as _steer
+
+        _steer.launch_finish(args, get_parser())
     elif args.command in ("runs", "status") or args.command in STEERING:
         from yuclid import steer as _steer
 

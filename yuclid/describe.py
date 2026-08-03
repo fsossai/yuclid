@@ -97,6 +97,62 @@ def describe_missing(df, dimensions):
     return len(missing), patterns, unexplained
 
 
+def find_run(files):
+    """The run that wrote these results, when one in this directory did.
+
+    A dataset is a plain file and says nothing about how it was made, but the
+    run directory holds a hard link to that very file, so the run can be found
+    by inode. Only one run is looked for: merging several datasets makes the
+    question meaningless.
+    """
+    import yuclid.workspace as workspace
+
+    root = workspace.find_root()
+    if root is None or len(files) != 1:
+        return None
+    return workspace.run_of_output(root, files[0])
+
+
+def last_plan(directory):
+    import yuclid.workspace as workspace
+
+    plan = None
+    for record in workspace.read_progress(directory):
+        if record["type"] == "plan":
+            plan = record
+    return plan
+
+
+def missing_from_plan(df, dimensions, plan):
+    """What the run set out to measure and did not, and what became of it.
+
+    Inferring absences from the data alone cannot see a value that is missing
+    everywhere: if every point with a=2 failed, the dataset simply has no a=2
+    and its cartesian product looks complete. The plan knows better, and knows
+    why each point is absent.
+    """
+    if plan is None or sorted(plan["order"]) != sorted(dimensions):
+        return None
+
+    order = plan["order"]
+    observed = {
+        tuple(str(v) for v in row) for row in df[order].drop_duplicates().values
+    }
+    missing = [
+        (tuple(str(v) for v in p["key"]), p["status"])
+        for p in plan["points"]
+        if tuple(str(v) for v in p["key"]) not in observed
+    ]
+    return order, len(plan["points"]), sorted(missing)
+
+
+def name_of(manifest):
+    who = manifest["id"]
+    if manifest.get("name"):
+        who += " ({})".format(manifest["name"])
+    return who
+
+
 def suggest_files():
     """Say what describe reads, and name a file if one is lying around."""
     hints = ["it reads the result files `yuclid run` writes"]
@@ -182,6 +238,48 @@ def launch(args):
                     format_number(values.median()),
                 )
             )
+
+    manifest = find_run(ctx["local_files"])
+    planned = None
+    if manifest is not None:
+        planned = missing_from_plan(df, dimensions, last_plan(manifest["directory"]))
+
+    if planned is not None:
+        order, combinations, missing = planned
+        lines.append("")
+        lines.append("from run {}".format(name_of(manifest)))
+        if len(missing) == 0:
+            lines.append("  every point it planned was recorded")
+        else:
+            lines.append(
+                "  missing: {} of {} points ({:.0%})".format(
+                    len(missing), combinations, len(missing) / combinations
+                )
+            )
+            shown = missing if args.missing else missing[:POINT_LIMIT]
+            for point, status in shown:
+                lines.append(
+                    "    {}  {}".format(
+                        ", ".join(
+                            "{}={}".format(paint(d, "bold"), v)
+                            for d, v in zip(order, point)
+                        ),
+                        status,
+                    )
+                )
+            if not args.missing and len(missing) > len(shown):
+                lines.append(
+                    "    ... and {} more, with --missing".format(
+                        len(missing) - len(shown)
+                    )
+                )
+            lines.append(
+                "  `yuclid finish {}` runs what it did not record".format(
+                    manifest["id"]
+                )
+            )
+        print("\n".join(lines))
+        return
 
     total, patterns, unexplained = describe_missing(df, dimensions)
     if total > 0:

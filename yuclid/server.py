@@ -172,7 +172,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 plan = record
             if record.get("total") is not None:
                 total = record["total"]
-            if record["type"] == "point.finished":
+            if record["type"] in ("point.finished", "point.skipped"):
                 completed += record.get("repetitions", 1)
                 failed = failed or bool(record.get("failed"))
             if record["type"] == "point.started":
@@ -200,6 +200,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "paused": bool(plan.get("paused")) if plan and live else False,
             "failed": failed,
             "mood": mood(manifest["state"], plan, live, failed),
+            "gaps": gaps_of(plan, live),
         }
 
     def progress(self, run_id, query):
@@ -235,6 +236,25 @@ def mood(state, plan, live, failed):
     if live and plan is not None and plan.get("paused"):
         return "paused"
     return "fine"
+
+
+def gaps_of(plan, live):
+    """The points of the space this run will not have measured.
+
+    A point still pending is not a gap while the run is going — it is simply
+    its turn next — but once the run has ended, one that never came up is as
+    absent from the results as one that failed.
+    """
+    if plan is None:
+        return []
+    left_behind = {"failed", "killed", "dropped"}
+    if not live:
+        left_behind |= {"pending", "running"}
+    return [
+        {"key": p["key"], "status": p["status"]}
+        for p in plan["points"]
+        if p["status"] in left_behind
+    ]
 
 
 def dimensions_of(plan):

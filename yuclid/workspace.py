@@ -177,6 +177,30 @@ def live_runs(root):
     return [m for m in list_runs(root) if m["state"] == RUNNING]
 
 
+def run_of_output(root, path):
+    """The run that wrote this result file, if this directory holds it.
+
+    Matched by inode: the run directory holds a hard link to the very file, so
+    the two names are the same file however either of them was reached. A run
+    whose output landed on another filesystem is matched by path instead, since
+    there it is a symlink rather than a link.
+    """
+    try:
+        wanted = os.stat(path).st_ino
+    except OSError:
+        return None
+    absolute = os.path.abspath(path)
+    for manifest in list_runs(root):
+        try:
+            if os.stat(os.path.join(manifest["directory"], RESULTS)).st_ino == wanted:
+                return manifest
+        except OSError:
+            pass
+        if manifest.get("output") == absolute:
+            return manifest
+    return None
+
+
 def select_run(root, run_id=None):
     """The run a steering command is addressed to.
 

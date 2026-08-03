@@ -1458,6 +1458,16 @@ def report_skipped(execution, entry):
         point_to_string(entry["point"]),
         "already recorded. Skipping",
     )
+    # recorded work is still work done: without this a run that resumed a
+    # nearly complete file would look as though it had barely started
+    execution["progress"].emit(
+        "point.skipped",
+        index=entry["seq"],
+        key=list(entry["key"]),
+        repetitions=entry["done"],
+        completed=base + entry["target"],
+        total=total,
+    )
 
 
 def run_subspace_trials(settings, data, execution):

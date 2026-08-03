@@ -140,6 +140,11 @@
       <h2>Dimensions — click to drop, drag back to restore</h2>
       <div id="dims"></div>
     </section>
+    <section id="gaps-section" hidden>
+      <h2>Gaps — points of the space with no measurement</h2>
+      <div id="gaps"></div>
+      <p id="gaps-how" style="color: var(--dim)"></p>
+    </section>
     <section>
       <h2>Log</h2>
       <pre id="log"></pre>
@@ -370,6 +375,37 @@ const renderRun = run => {
 
   document.querySelectorAll("button.act").forEach(b => (b.disabled = !live));
   renderDims(run);
+  renderGaps(run);
+};
+
+const GAP_LIMIT = 12;
+
+const renderGaps = run => {
+  const gaps = run.gaps || [];
+  document.getElementById("gaps-section").hidden = gaps.length === 0;
+  if (!gaps.length) return;
+
+  const box = document.getElementById("gaps");
+  box.innerHTML = "";
+  const counts = {};
+  for (const gap of gaps) counts[gap.status] = (counts[gap.status] || 0) + 1;
+  const summary = document.createElement("div");
+  summary.style.marginBottom = "8px";
+  summary.textContent =
+    `${gaps.length} of ${gaps.length + run.completed} point(s): ` +
+    Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(", ");
+  box.append(summary);
+
+  const list = document.createElement("pre");
+  list.style.maxHeight = "20vh";
+  list.textContent = gaps
+    .slice(0, GAP_LIMIT)
+    .map(g => `${run.order.map((d, i) => `${d}=${g.key[i]}`).join(", ")}   ${g.status}`)
+    .join("\n") + (gaps.length > GAP_LIMIT ? `\n... and ${gaps.length - GAP_LIMIT} more` : "");
+  box.append(list);
+
+  document.getElementById("gaps-how").textContent =
+    `yuclid finish ${run.id}   runs what this one did not record`;
 };
 
 const summarize = record => {
