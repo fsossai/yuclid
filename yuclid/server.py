@@ -13,6 +13,7 @@ import yuclid.control as control
 import http.server
 import subprocess
 import threading
+import signal
 import secrets
 import json
 import sys
@@ -357,7 +358,24 @@ def launch(args):
     if not os.path.exists(PAGE):
         report(LogLevel.FATAL, "the web page is missing from the installation", PAGE)
 
+    existing = workspace.read_server(root)
+    if existing is not None and not args.force:
+        # nothing stops a second one working — they both only read files and
+        # forward control — but two tabs of the same runs is rarely the intent
+        report(
+            LogLevel.FATAL,
+            "a server is already watching this directory",
+            "http://127.0.0.1:{}/ (pid {})".format(existing["port"], existing["pid"]),
+            hint="open that one, or `yuclid serve --force` to start another anyway",
+        )
+
     server = Server(root, args.port)
+    if workspace.read_server(root) is None:
+        # a forced second server does not take the note over: it stays with
+        # the one that was here first, which is the one worth pointing at
+        workspace.write_server(root, server.server_port)
+    # so that `kill` leaves as tidily as Ctrl-C does
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     # the page carries the token itself, so the URL does not have to: a secret
     # in one ends up in scrollback, shell history and any Referer header
     url = "http://127.0.0.1:{}/".format(server.server_port)
@@ -369,7 +387,8 @@ def launch(args):
         webbrowser.open(url)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         report(LogLevel.INFO, "stopped")
     finally:
+        workspace.clear_server(root)
         server.server_close()

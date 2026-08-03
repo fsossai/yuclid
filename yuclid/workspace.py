@@ -22,6 +22,7 @@ import os
 
 DIRNAME = ".yuclid"
 RUNS = "runs"
+SERVER = "server.json"
 
 MANIFEST = "manifest.json"
 NAME = "name"
@@ -175,6 +176,51 @@ def list_runs(root):
 
 def live_runs(root):
     return [m for m in list_runs(root) if m["state"] == RUNNING]
+
+
+def read_server(root):
+    """The server watching this directory, if one still is.
+
+    A courtesy note left by `yuclid serve`, not a claim on anything: a server
+    owns no run, so a stale file from one that was killed is simply ignored.
+    """
+    try:
+        with open(os.path.join(root, SERVER)) as f:
+            info = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if info.get("host") != hostname():
+        return None
+    try:
+        os.kill(info["pid"], 0)
+    except (OSError, TypeError, KeyError):
+        return None
+    return info
+
+
+def write_server(root, port):
+    info = {
+        "pid": os.getpid(),
+        "host": hostname(),
+        "port": port,
+        "started": time.time(),
+    }
+    with open(os.path.join(root, SERVER), "w") as f:
+        json.dump(info, f, indent=2)
+        f.write("\n")
+    return info
+
+
+def clear_server(root):
+    """Take the note down, unless it was another server that left it."""
+    path = os.path.join(root, SERVER)
+    try:
+        with open(path) as f:
+            if json.load(f).get("pid") != os.getpid():
+                return
+        os.unlink(path)
+    except (OSError, ValueError):
+        pass
 
 
 def run_of_output(root, path):

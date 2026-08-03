@@ -217,6 +217,12 @@ def get_parser():
         action="store_true",
         help="Open the page in a browser once the server is up",
     )
+    serve_parser.add_argument(
+        "--force",
+        default=False,
+        action="store_true",
+        help="Start even if another server is already watching this directory",
+    )
 
     # finish subcommand
     finish_parser = subparsers.add_parser(
