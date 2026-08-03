@@ -1484,25 +1484,28 @@ def run_subspace_trials(settings, data, execution):
                     f"running trials in parallel with {max_workers} workers",
                 )
                 file_lock = threading.Lock()
+                # a point is taken from the plan only when a worker is free for
+                # it. `submit` queues without blocking, so without this the loop
+                # would claim the whole plan at once and nothing could be paused
+                # or dropped before it had already started
+                slots = threading.Semaphore(max(1, max_workers))
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=max(1, max_workers)
                 ) as executor:
                     futures = []
-                    # submitted as the plan yields them rather than all at once,
-                    # so that a pause drains the pool and a point dropped while
-                    # the run is under way is never started
                     for entry in plan.pending():
-                        futures.append(
-                            executor.submit(
-                                run_point_trials,
-                                settings,
-                                data,
-                                execution,
-                                writer,
-                                entry,
-                                file_lock,
-                            )
+                        slots.acquire()
+                        future = executor.submit(
+                            run_point_trials,
+                            settings,
+                            data,
+                            execution,
+                            writer,
+                            entry,
+                            file_lock,
                         )
+                        future.add_done_callback(lambda _: slots.release())
+                        futures.append(future)
                     for future in concurrent.futures.as_completed(futures):
                         exc = future.exception()
                         if exc is not None:
