@@ -75,23 +75,25 @@ def launch_runs(args):
         rows.append(
             (
                 manifest["id"],
+                manifest.get("name") or "",
                 manifest["state"],
                 format_counts(manifest["directory"]),
                 relative(manifest.get("output")),
             )
         )
 
-    widths = [max(len(row[i]) for row in rows) for i in range(3)]
+    widths = [max(len(row[i]) for row in rows) for i in range(4)]
     for row in rows:
         print(
             "  ".join(
                 [
                     row[0].ljust(widths[0]),
                     row[1].ljust(widths[1]),
-                    row[2].rjust(widths[2]),
-                    row[3],
+                    row[2].ljust(widths[2]),
+                    row[3].rjust(widths[3]),
+                    row[4],
                 ]
-            )
+            ).rstrip()
         )
 
 
@@ -265,6 +267,10 @@ def status_line(manifest):
         if record["type"] == "point.started":
             where = " " + ".".join(record["key"])
             break
+    name = manifest.get("name")
     return "{}  {}  {}{}".format(
-        manifest["id"], state, format_counts(directory), where
+        "{} ({})".format(manifest["id"], name) if name else manifest["id"],
+        state,
+        format_counts(directory),
+        where,
     )

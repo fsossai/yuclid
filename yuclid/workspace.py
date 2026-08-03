@@ -24,6 +24,7 @@ DIRNAME = ".yuclid"
 RUNS = "runs"
 
 MANIFEST = "manifest.json"
+NAME = "name"
 PROGRESS = "progress.jsonl"
 CONTROL = "control.sock"
 RESULTS = "results.yuclid.jsonl"
@@ -167,6 +168,7 @@ def list_runs(root):
             continue
         manifest["state"] = state_of(manifest)
         manifest["directory"] = directory
+        manifest["name"] = read_name(directory)
         runs.append(manifest)
     return runs
 
@@ -188,6 +190,7 @@ def select_run(root, run_id=None):
             report(LogLevel.FATAL, "no such run", run_id)
         manifest["state"] = state_of(manifest)
         manifest["directory"] = directory
+        manifest["name"] = read_name(directory)
         return manifest
 
     live = live_runs(root)
@@ -204,6 +207,43 @@ def select_run(root, run_id=None):
             hint="name one with --run {}".format(live[0]["id"]),
         )
     return live[0]
+
+
+def read_name(directory):
+    """The name given to a run, or None."""
+    try:
+        with open(os.path.join(directory, NAME)) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def check_name(name):
+    """The name, stripped, or a ValueError saying why it is not one."""
+    name = (name or "").strip()
+    if len(name) > 120 or "\n" in name or "\r" in name:
+        raise ValueError("a name is one line of at most 120 characters")
+    return name
+
+
+def write_name(directory, name):
+    """Name a run, or clear its name with an empty one.
+
+    Kept in a file of its own rather than in the manifest, which the run writes
+    and nothing else does. A rename arriving while the run records its final
+    state would otherwise be a lost update between two read-modify-writes.
+    """
+    name = check_name(name)
+    path = os.path.join(directory, NAME)
+    if name == "":
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return None
+    with open(path, "w") as f:
+        f.write(name + "\n")
+    return name
 
 
 def link_results(directory, output):

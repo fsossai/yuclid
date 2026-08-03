@@ -80,23 +80,48 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.respond(404, {"error": "no such run"})
         self.respond(404, {"error": "no such resource"})
 
+    def body(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > BODY_LIMIT:
+            self.respond(413, {"error": "body too long"})
+            return None
+        try:
+            return json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            self.respond(400, {"error": "body is not JSON"})
+            return None
+
     def do_POST(self):
         if not self.permitted():
             return
         match = re.fullmatch(r"/api/runs/([^/]+)/control", self.path.split("?")[0])
         if not match:
             return self.respond(404, {"error": "no such resource"})
-        length = int(self.headers.get("Content-Length") or 0)
-        if length > BODY_LIMIT:
-            return self.respond(413, {"error": "body too long"})
-        try:
-            operation = json.loads(self.rfile.read(length) or b"{}")
-        except ValueError:
-            return self.respond(400, {"error": "body is not JSON"})
+        operation = self.body()
+        if operation is None:
+            return
         try:
             return self.respond(200, self.control(match.group(1), operation))
         except FileNotFoundError:
             return self.respond(404, {"error": "no such run"})
+
+    def do_PUT(self):
+        if not self.permitted():
+            return
+        match = re.fullmatch(r"/api/runs/([^/]+)/name", self.path.split("?")[0])
+        if not match:
+            return self.respond(404, {"error": "no such resource"})
+        payload = self.body()
+        if payload is None:
+            return
+        try:
+            manifest = self.manifest(match.group(1))
+            name = workspace.write_name(manifest["directory"], payload.get("name"))
+        except FileNotFoundError:
+            return self.respond(404, {"error": "no such run"})
+        except ValueError as e:
+            return self.respond(400, {"error": str(e)})
+        return self.respond(200, {"name": name})
 
     # -- what it serves ---------------------------------------------------
 
@@ -112,6 +137,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise FileNotFoundError(run_id)
         manifest["state"] = workspace.state_of(manifest)
         manifest["directory"] = directory
+        manifest["name"] = workspace.read_name(directory)
         return manifest
 
     def summaries(self):
@@ -123,6 +149,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             summaries.append(
                 {
                     "id": manifest["id"],
+                    "name": manifest.get("name"),
                     "state": manifest["state"],
                     "created": manifest.get("created"),
                     "output": manifest.get("output"),
@@ -135,18 +162,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def run(self, run_id):
         manifest = self.manifest(run_id)
         records = workspace.read_progress(manifest["directory"])
-        plan = next((r for r in records if r["type"] == "plan"), None)
-        completed, total, current = 0, plan["total"] if plan else 0, None
+
+        # the last snapshot, not the first: the plan changes shape as points are
+        # dropped and added, and one is written whenever it does
+        plan = None
+        completed, total, current, failed = 0, 0, None, False
         for record in records:
+            if record["type"] == "plan":
+                plan = record
             if record.get("total") is not None:
                 total = record["total"]
             if record["type"] == "point.finished":
                 completed += record.get("repetitions", 1)
+                failed = failed or bool(record.get("failed"))
             if record["type"] == "point.started":
                 current = record["key"]
 
+        if plan is not None:
+            failed = failed or any(p["status"] == "failed" for p in plan["points"])
+
+        live = manifest["state"] == workspace.RUNNING
         return {
             "id": manifest["id"],
+            "name": manifest.get("name"),
             "state": manifest["state"],
             "created": manifest.get("created"),
             "ended": manifest.get("ended"),
@@ -158,7 +196,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "completed": completed,
             "total": total,
             "current": current,
-            "live": manifest["state"] == workspace.RUNNING,
+            "live": live,
+            "paused": bool(plan.get("paused")) if plan and live else False,
+            "failed": failed,
+            "mood": mood(manifest["state"], plan, live, failed),
         }
 
     def progress(self, run_id, query):
@@ -180,16 +221,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return {"error": "cannot reach the run: {}".format(e)}
 
 
+def mood(state, plan, live, failed):
+    """How the run is doing, in one word, worst news first.
+
+    A pause is not news — you asked for it — so a failed point outranks it. A
+    run that was stopped ended the way it was told to and is not bad news
+    either.
+    """
+    if state in (workspace.INTERRUPTED, workspace.FAILED):
+        return "dead"
+    if failed:
+        return "failed"
+    if live and plan is not None and plan.get("paused"):
+        return "paused"
+    return "fine"
+
+
 def dimensions_of(plan):
-    """Each dimension's values, in the order the space puts them."""
+    """Each dimension's values, in the order the space puts them.
+
+    A value counts as dropped once every point carrying it has been: that is
+    what makes it something the page can offer to put back.
+    """
     if plan is None:
         return {}
-    values = {dim: [] for dim in plan["order"]}
+    seen = {dim: [] for dim in plan["order"]}
+    dropped = {dim: {} for dim in plan["order"]}
     for point in plan["points"]:
         for dim, name in zip(plan["order"], point["key"]):
-            if name not in values[dim]:
-                values[dim].append(name)
-    return values
+            if name not in seen[dim]:
+                seen[dim].append(name)
+                dropped[dim][name] = True
+            if point["status"] != "dropped":
+                dropped[dim][name] = False
+    return {
+        dim: [{"value": name, "dropped": dropped[dim][name]} for name in names]
+        for dim, names in seen.items()
+    }
 
 
 class Server(http.server.ThreadingHTTPServer):

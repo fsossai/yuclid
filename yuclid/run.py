@@ -1750,6 +1750,14 @@ def build_run_directory(settings, args):
         )
         return
 
+    if args.name is not None:
+        # checked before a directory is claimed, so a name that cannot be used
+        # leaves no half-started run behind
+        try:
+            workspace.check_name(args.name)
+        except ValueError as e:
+            report(LogLevel.FATAL, "invalid --name", str(e))
+
     settings["root"] = workspace.open_root()
     settings["run_id"], settings["run_dir"] = workspace.create_run(
         settings["root"],
@@ -1759,6 +1767,8 @@ def build_run_directory(settings, args):
         output=os.path.abspath(settings["output"]),
         replay_of=args.replay,
     )
+    if args.name is not None:
+        workspace.write_name(settings["run_dir"], args.name)
     build_replay_schedule(settings, args)
 
     if args.temp_dir is None:

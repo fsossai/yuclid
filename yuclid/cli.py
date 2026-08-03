@@ -137,6 +137,13 @@ def get_parser():
         help="Run each point configuration N times (default: 1)",
     )
     run_parser.add_argument(
+        "--name",
+        default=None,
+        metavar="NAME",
+        help="A name for this run, to tell it apart from the others in "
+        "`yuclid runs`. Runs are still addressed by their id",
+    )
+    run_parser.add_argument(
         "--replay",
         default=None,
         metavar="ID",
