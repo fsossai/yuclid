@@ -3,7 +3,7 @@
   "args": ["run", "--compile", "compiled.sh"],
   "output_flag": false,
   "file_contains": {
-    "compiled.sh": ["[1/3] 1", "[2/3] 2", "[3/3] 3"]
+    "compiled.sh": ["[0/3] 0% 1", "[1/3] 33% 2", "[2/3] 66% 3"]
   },
   "file_not_contains": {
     "compiled.sh": ["for ", "while ", "if [", "case ", "${yuclid."]

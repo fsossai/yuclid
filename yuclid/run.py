@@ -935,8 +935,13 @@ def get_progress(unit, total):
     With -r N every point is N units of work, so the counter and its total
     describe the whole experiment: a point already recorded by a previous run
     consumes its share of the count without being executed again.
+
+    `unit` is always work finished, never work started, and the percentage is
+    floored so that it reads 100% only once the run has genuinely got there.
     """
-    return "[{}/{}]".format(unit, total)
+    if total <= 0:
+        return "[{}/{}]".format(unit, total)
+    return "[{}/{}] {}%".format(unit, total, 100 * unit // total)
 
 
 def progress_units(execution, entry):
@@ -948,6 +953,19 @@ def progress_units(execution, entry):
     plan = execution["plan"]
     total, _ = plan.units()
     return total, plan.units_before(entry)
+
+
+def run_point(settings, data, execution, writer, entry, file_lock=None):
+    """Run a point, and leave the plan saying what became of it either way.
+
+    A worker that raises would otherwise leave its entry marked as running for
+    the rest of the run, which is the one status that cannot be true of it.
+    """
+    try:
+        run_point_trials(settings, data, execution, writer, entry, file_lock)
+    except Exception:
+        execution["plan"].finish(entry, "failed")
+        raise
 
 
 def abandon_repetition(execution, entry, rep):
@@ -981,7 +999,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     total, base = progress_units(execution, entry)
     report(
         LogLevel.INFO,
-        get_progress(base + entry["done"] + 1, total),
+        get_progress(base + entry["done"], total),
         point_to_string(point),
         "started",
     )
@@ -1014,6 +1032,9 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     # numbering continues where the recorded ones left off
     requested = settings["repeat"]
     killed = False
+    # a command that returned non-zero without our having killed it: only
+    # --ignore-errors lets the run get past one, and the point should say so
+    failed = False
 
     while entry["done"] < entry["target"] and not killed:
         if trials.is_abandoned(entry["key"]):
@@ -1056,6 +1077,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 break
 
             if returncode != 0:
+                failed = True
                 hint = "check the following files for more details:\n"
                 hint += f"{point_id}.out\n{point_id}.err"
                 report(
@@ -1087,6 +1109,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 break
 
             if returncode != 0:
+                failed = True
                 hint = "check the following files for more details:\n"
                 hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
                 report(
@@ -1097,6 +1120,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     ),
                 )
             elif text == "":
+                failed = True
                 report(
                     LogLevel.ERROR,
                     point_to_string(point),
@@ -1186,6 +1210,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             key=list(entry["key"]),
             rep=rep,
             repetitions=1,
+            failed=failed,
             metrics={k: v for k, v in collected_metrics.items()},
             completed=base + entry["done"],
             total=total,
@@ -1211,7 +1236,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         progress.emit("point.killed", index=i, key=list(entry["key"]), scope="point")
         plan.finish(entry, "killed")
     else:
-        plan.finish(entry, "done")
+        plan.finish(entry, "failed" if failed else "done")
 
 
 def valid_conditions(point, order):
@@ -1496,7 +1521,7 @@ def run_subspace_trials(settings, data, execution):
                     for entry in plan.pending():
                         slots.acquire()
                         future = executor.submit(
-                            run_point_trials,
+                            run_point,
                             settings,
                             data,
                             execution,
@@ -1512,7 +1537,7 @@ def run_subspace_trials(settings, data, execution):
                             report(LogLevel.ERROR, "trial failed", str(exc))
             else:
                 for entry in plan.pending():
-                    run_point_trials(settings, data, execution, writer, entry)
+                    run_point(settings, data, execution, writer, entry)
                     writer.flush()
 
 
@@ -2023,9 +2048,15 @@ class Steering:
             effect = self.kill(message)
         else:
             effect = self.execution["plan"].apply(message)
-        report(LogLevel.INFO, "steered", describe_op(message, effect))
+        report(LogLevel.INFO, "control", describe_op(message, effect))
         self.progress.emit(
             "op.applied", op=message, effect=effect, total=effect.get("total")
+        )
+        # the plan has just changed shape, so record the new one: readers take
+        # the last snapshot rather than replaying what every operation meant
+        plan = self.execution["plan"]
+        self.progress.emit(
+            "plan", preset=self.execution.get("preset"), **plan.snapshot()
         )
         return effect
 
@@ -2213,6 +2244,7 @@ def run_experiments(
 
     execution["trials"] = settings["trials"]
     execution["progress"] = settings["progress"]
+    execution["preset"] = preset_name
     execution["plan"] = Plan(
         order,
         execution["subspace_points"],
@@ -2232,7 +2264,14 @@ def run_experiments(
     else:
         report(LogLevel.INFO, "skipping setup phase")
     started = time.monotonic()
-    run_subspace_trials(settings, data, execution)
+    try:
+        run_subspace_trials(settings, data, execution)
+    finally:
+        # what every point came to, recorded even if the run is cut short: the
+        # last snapshot is what a reader takes as the truth
+        execution["progress"].emit(
+            "plan", preset=preset_name, **execution["plan"].snapshot()
+        )
     settings["timing"]["experiments"] += time.monotonic() - started
 
 

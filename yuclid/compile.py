@@ -26,6 +26,11 @@ def sh_in_quotes(text):
     return text
 
 
+def sh_printf_literal(text):
+    """Escape text that goes into a printf format, where a % is a directive."""
+    return text.replace("%", "%%")
+
+
 def csv_quote(text):
     """Quote a CSV field the way csv.writer would."""
     text = str(text)
@@ -47,6 +52,7 @@ class ScriptWriter:
     def __init__(self, path):
         self.path = path
         self.lines = []
+        self.total = 0
 
     def blank(self):
         if len(self.lines) > 0 and self.lines[-1] != "":
@@ -184,10 +190,12 @@ def compile_point_trials(settings, data, execution, i, point, script):
 
     for rep in range(repeat):
         rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
-        counter = run.get_progress(base + rep + 1, total)
+        # the counter is printed before the block runs, so it says what is
+        # already finished, exactly as `yuclid run` does
+        counter = run.get_progress(base + rep, total)
         script.section("{} {}{}".format(counter, run.point_to_string(point), rep_suffix))
         script.progress(
-            "{}{}{} %s".format(BLUE, counter, PLAIN),
+            "{}{}{} %s".format(BLUE, sh_printf_literal(counter), PLAIN),
             argument=run.point_to_string(point),
         )
 
@@ -232,6 +240,8 @@ def compile_point_trials(settings, data, execution, i, point, script):
 
 
 def compile_subspace_trials(settings, data, execution, script):
+    # remembered so the epilogue can close the counter at its total
+    script.total = execution["subspace_size"] * settings["repeat"]
     for i, point in enumerate(execution["subspace_points"], start=1):
         compile_point_trials(settings, data, execution, i, point, script)
 
@@ -288,6 +298,10 @@ def compile_preamble(script, settings, data, columns):
 
 def compile_epilogue(script, settings):
     script.section("done")
+    # nothing follows the last block to report its completion, so the script
+    # says so itself and the counter reaches its total
+    counter = yuclid.run.get_progress(script.total, script.total)
+    script.progress("{}{}{}".format(BLUE, sh_printf_literal(counter), PLAIN))
     script.progress("written to %s", colour=YELLOW, argument=settings["output"])
 
 

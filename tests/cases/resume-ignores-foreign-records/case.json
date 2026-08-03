@@ -12,7 +12,7 @@
   "stdout_contains": [
     "ignoring records of a different space: 2",
     "a record is matched only when its dimensions are exactly: a",
-    "[1/2]: 1: already recorded. Skipping",
-    "[2/2]: 2: completed"
+    "[1/2] 50%: 1: already recorded. Skipping",
+    "[2/2] 100%: 2: completed"
   ]
 }

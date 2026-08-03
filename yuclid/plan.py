@@ -139,9 +139,15 @@ class Plan:
             )
 
     def snapshot(self):
+        """The whole plan as it stands, which is what a late reader needs.
+
+        Written at the start and again after every steering operation, so the
+        last one in the progress file is always the current picture.
+        """
         with self.lock:
             return {
                 "order": list(self.order),
+                "paused": self.paused,
                 "total": sum(
                     e["target"] for e in self.entries if e["status"] != DROPPED
                 ),

@@ -10,8 +10,8 @@
     "dry run: echo global",
     "dry run: echo point 1",
     "dry run: echo point 2",
-    "[1/2]: dry run: 1",
-    "[2/2]: dry run: 2"
+    "[1/2] 50%: dry run: 1",
+    "[2/2] 100%: dry run: 2"
   ],
   "files_not_exist": [
     "created-by-setup.txt"

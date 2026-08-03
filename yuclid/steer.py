@@ -43,10 +43,13 @@ def progress_counts(directory):
 
 
 def format_counts(directory):
+    """The same counter the run prints, so one format is learnt once."""
+    from yuclid.run import get_progress
+
     counts = progress_counts(directory)
     if counts is None:
         return "-"
-    return "{}/{}".format(*counts)
+    return get_progress(*counts)
 
 
 def launch_runs(args):
@@ -257,15 +260,11 @@ def launch_status(args):
 def status_line(manifest):
     directory = manifest["directory"]
     state = workspace.state_of(workspace.read_manifest(directory) or manifest)
-    counts = progress_counts(directory)
     where = ""
     for record in reversed(workspace.read_progress(directory)):
         if record["type"] == "point.started":
             where = " " + ".".join(record["key"])
             break
     return "{}  {}  {}{}".format(
-        manifest["id"],
-        state,
-        "[{}/{}]".format(*counts) if counts else "-",
-        where,
+        manifest["id"], state, format_counts(directory), where
     )
