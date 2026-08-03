@@ -303,7 +303,9 @@ def launch(args):
         report(LogLevel.FATAL, "the web page is missing from the installation", PAGE)
 
     server = Server(root, args.port)
-    url = "http://127.0.0.1:{}/?t={}".format(server.server_port, server.token)
+    # the page carries the token itself, so the URL does not have to: a secret
+    # in one ends up in scrollback, shell history and any Referer header
+    url = "http://127.0.0.1:{}/".format(server.server_port)
     report(LogLevel.INFO, "watching", root)
     report(LogLevel.INFO, "open", url, hint="stop with Ctrl-C")
     if args.open:
