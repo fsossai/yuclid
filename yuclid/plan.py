@@ -130,6 +130,14 @@ class Plan:
         with self.lock:
             return [e for e in self.entries if e["status"] == RUNNING]
 
+    def in_flight(self, key):
+        """The entry with this key that is executing, if one is."""
+        with self.lock:
+            return next(
+                (e for e in self.entries if e["key"] == key and e["status"] == RUNNING),
+                None,
+            )
+
     def snapshot(self):
         with self.lock:
             return {

@@ -187,6 +187,56 @@ def describe(command, effect):
     return str(effect)
 
 
+def launch_replay(args, parser):
+    """Run a previous run's command again, with the steering it received.
+
+    The command is taken from the source run's manifest rather than rebuilt, so
+    a replay is the same experiment and not an approximation of it.
+    """
+    import yuclid.run
+
+    root = find_root_or_fail()
+    directory = workspace.run_directory(root, args.run)
+    manifest = workspace.read_manifest(directory)
+    if manifest is None:
+        report(
+            LogLevel.FATAL,
+            "no such run",
+            args.run,
+            hint="`yuclid runs` lists what there is to replay",
+        )
+
+    argv = list(manifest.get("argv") or [])
+    if argv[:1] != ["run"]:
+        report(
+            LogLevel.FATAL,
+            "run {} was not started by `yuclid run`".format(args.run),
+            hint="only a run can be replayed",
+        )
+    argv = strip_option(argv, "--replay")
+    if not args.no_steering:
+        argv += ["--replay", args.run]
+
+    report(LogLevel.INFO, "replaying", " ".join(argv))
+    yuclid.run.launch(parser.parse_args(argv))
+
+
+def strip_option(argv, name):
+    """Drop `name VALUE` from a command line, so replays do not accumulate."""
+    cleaned, skip = [], False
+    for token in argv:
+        if skip:
+            skip = False
+            continue
+        if token == name:
+            skip = True
+            continue
+        if token.startswith(name + "="):
+            continue
+        cleaned.append(token)
+    return cleaned
+
+
 def launch_status(args):
     root = find_root_or_fail()
     manifest = workspace.select_run(root, getattr(args, "run", None))

@@ -136,6 +136,13 @@ def get_parser():
         metavar="N",
         help="Run each point configuration N times (default: 1)",
     )
+    run_parser.add_argument(
+        "--replay",
+        default=None,
+        metavar="ID",
+        help="Apply the steering a previous run received, at the same points. "
+        "`yuclid replay` is the shorter way to ask for this",
+    )
 
     # plot subcommand — GUI
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
@@ -177,6 +184,18 @@ def get_parser():
         "stats", help="Plot the distribution of a metric"
     )
     _add_stats_args(stats_parser)
+
+    # replay subcommand
+    replay_parser = subparsers.add_parser(
+        "replay", help="Run a previous run again, steering and all"
+    )
+    replay_parser.add_argument("run", metavar="ID", help="The run to replay")
+    replay_parser.add_argument(
+        "--no-steering",
+        default=False,
+        action="store_true",
+        help="Replay the configuration alone, without the steering it received",
+    )
 
     _add_steering_parsers(subparsers)
 
@@ -512,6 +531,10 @@ def main():
 
     if args.command == "run":
         yuclid.run.launch(args)
+    elif args.command == "replay":
+        from yuclid import steer as _steer
+
+        _steer.launch_replay(args, get_parser())
     elif args.command in ("runs", "status") or args.command in STEERING:
         from yuclid import steer as _steer
 
