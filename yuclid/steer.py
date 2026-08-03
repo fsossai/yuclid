@@ -193,8 +193,12 @@ def describe(command, effect):
             "the repetition" if effect.get("scope") == "rep" else "the point", points
         )
     if command == "pause":
-        return "paused with {} point(s) still in flight".format(
-            effect.get("in_flight", 0)
+        flight = effect.get("in_flight", 0)
+        if flight == 0:
+            return "paused: nothing was running"
+        return (
+            "pausing: no new point will start, and the {} in flight will "
+            "finish their repetitions first".format(flight)
         )
     if command == "resume":
         return "resumed, {} unit(s) remain".format(remaining)

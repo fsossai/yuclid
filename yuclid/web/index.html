@@ -30,7 +30,26 @@
   header b { font-weight: 600; letter-spacing: .02em; }
   main { display: grid; grid-template-columns: 260px minmax(0, 1fr); }
   @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
-  #runs { border-right: 1px solid var(--line); min-height: 70vh; }
+  #runs {
+    border-right: 1px solid var(--line); min-height: 70vh;
+    display: flex; flex-direction: column;
+  }
+  /* the list scrolls between them, so both stay where they were put */
+  #runs .list { overflow-y: auto; }
+  #runs button.manage {
+    border-top: 1px solid var(--line); border-bottom: 0; text-align: center;
+  }
+
+  /* Above the narrow breakpoint the two panels each fill the window and
+     scroll on their own, so the foot of the run panel is the foot of the
+     window rather than the foot of whichever run is being displayed. */
+  @media (min-width: 721px) {
+    body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    main { flex: 1; min-height: 0; }
+    #runs { min-height: 0; }
+    #runs .list { flex: 1; }
+    #panes { overflow-y: auto; min-height: 0; }
+  }
   #runs button {
     display: block; width: 100%; text-align: left; padding: 10px 16px;
     background: none; border: 0; border-bottom: 1px solid var(--line);
@@ -61,6 +80,7 @@
   }
   button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   button.act:disabled { opacity: .4; cursor: not-allowed; }
+  button.act.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
   #name {
     padding: 4px 8px; border: 1px solid transparent; border-radius: 6px;
     background: none; color: inherit; font: inherit; font-weight: 600; width: 22ch;
@@ -105,13 +125,46 @@
   }
   #says { color: var(--dim); min-height: 1.5em; }
   #says[data-bad="true"] { color: var(--warn); }
+  #launch label { color: var(--dim); }
+  #launch input {
+    padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: inherit; font: inherit;
+  }
+  #runs button.new {
+    color: var(--accent); font-weight: 600;
+  }
+  #launch-repeat { width: 6ch; }
+  .free { display: block; width: 100%; max-width: 40ch; }
+  #rfile {
+    margin-top: 4px; font-size: 12.5px; color: var(--dim); cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+  }
+  #rfile:hover { color: var(--accent); }
+  header #version { margin-left: auto; color: var(--dim); font-size: 12.5px; }
 </style>
 </head>
 <body>
-<header><b>yuclid</b></header>
+<header><b>yuclid</b><span id="version">__YUCLID_VERSION__</span></header>
 <main>
   <nav id="runs"></nav>
-  <div>
+  <div id="panes">
+    <section id="launch" hidden>
+      <h2>New run — choose the subspace to cover</h2>
+      <div id="launch-body"></div>
+      <div class="row" style="margin-top: 12px">
+        <label>repeat <input id="launch-repeat" type="number" min="1" value="1"></label>
+        <label>name <input id="launch-name" placeholder="optional"></label>
+        <button class="act" id="launch-go">Start</button>
+        <span id="launch-size" style="color: var(--dim)"></span>
+      </div>
+      <p id="launch-says" style="color: var(--dim); min-height: 1.5em"></p>
+    </section>
+    <section id="manage" hidden>
+      <h2>Manage runs</h2>
+      <div id="manage-body"></div>
+    </section>
+    <div id="detail">
     <section>
       <h2>Run</h2>
       <div class="row" style="justify-content: space-between">
@@ -125,15 +178,17 @@
       <div class="bar" id="rbar" style="margin: 10px 0"><div></div></div>
       <div style="color: var(--dim)" id="rwhen"></div>
       <div style="color: var(--dim)" id="rwhere"></div>
+      <div id="rfile" title="click to copy"></div>
     </section>
     <section>
-      <h2>Steer</h2>
+      <h2>Control</h2>
       <div class="row">
         <button class="act" data-op="pause">Pause</button>
         <button class="act" data-op="resume">Resume</button>
         <button class="act" data-op="stop">Stop</button>
         <button class="act" data-op="kill" data-scope="rep">Kill repetition</button>
         <button class="act" data-op="kill" data-scope="point">Kill point</button>
+        <span id="rdelete"></span>
       </div>
       <p id="says"></p>
     </section>
@@ -151,6 +206,7 @@
       <h2>Log</h2>
       <pre id="log"></pre>
     </section>
+    </div>
   </div>
 </main>
 <script>
@@ -179,7 +235,11 @@ const describe = (op, effect) => {
   if (op.op === "add")
     return `${effect.added} point(s) added, ${effect.restored} restored, ${left} unit(s) remain`;
   if (op.op === "kill") return `abandoned ${(effect.points || []).map(p => p.join(".")).join(", ")}`;
-  if (op.op === "pause") return `paused with ${effect.in_flight} point(s) in flight`;
+  if (op.op === "pause")
+    return effect.in_flight
+      ? `pausing: no new point will start, and the ${effect.in_flight} in flight ` +
+        `will finish their repetitions first`
+      : "paused: nothing was running";
   if (op.op === "resume") return `resumed, ${left} unit(s) remain`;
   if (op.op === "stop") return `stopping, ${effect.abandoned} point(s) abandoned`;
   return JSON.stringify(effect);
@@ -193,7 +253,7 @@ const send = async op => {
   refresh();
 };
 
-document.querySelectorAll("button.act").forEach(button => {
+document.querySelectorAll("button.act[data-op]").forEach(button => {
   button.onclick = () => {
     const op = {op: button.dataset.op};
     if (button.dataset.scope) op.scope = button.dataset.scope;
@@ -260,12 +320,308 @@ const confirmChip = (dim, value) => {
   return box;
 };
 
+// -- building a run out of the space --------------------------------------
+
+// what the configuration declares, and which of it the next run should cover.
+// The gestures are the ones the Dimensions panel already uses, so a value is
+// taken out of a run the same way it is dropped from one
+let config = null;
+const chosen = {};
+const typed = {};
+
+// the pane shows one subject at a time: a run, the run being composed, or the
+// things that belong to no run in particular
+let pane = "detail";
+
+const show = which => {
+  pane = which;
+  for (const name of ["launch", "detail", "manage"]) {
+    document.getElementById(name).hidden = name !== which;
+  }
+  if (which === "launch" && !config) loadConfig();
+  if (which === "manage") renderManage();
+  renderNav(lastRuns);
+};
+
+// a point spelled out: `1024.columns.32x32` says which values but not which
+// dimensions, and the dimensions are the half worth reading
+const coords = (order, key) =>
+  order && order.length === key.length
+    ? order.map((dim, i) => `${dim}=${key[i]}`).join(", ")
+    : key.join(".");
+
+const size = bytes => {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+};
+
+const renderManage = async () => {
+  const body = document.getElementById("manage-body");
+  body.innerHTML = "";
+
+  const block = document.createElement("div");
+  const count = lastRuns.length;
+  const going = lastRuns.filter(r => r.state === "running").length;
+
+  const what = document.createElement("p");
+  what.style.color = "var(--dim)";
+  what.textContent =
+    `${count} run(s) are recorded under .yuclid/runs. Deleting them removes ` +
+    "each run's directory: the log of everything it printed, the plan and " +
+    "progress it recorded, the trial output under tmp/, and its copy of the " +
+    "results.";
+  block.append(what);
+
+  // the part that would otherwise be alarming: what is not going
+  const kept = document.createElement("p");
+  kept.style.color = "var(--dim)";
+  kept.textContent =
+    "The .jsonl results in the working directory stay.";
+  block.append(kept);
+
+  const room = document.createElement("p");
+  room.style.color = "var(--dim)";
+  block.append(room);
+  ask("/api/usage").then(usage => {
+    room.textContent = `That would free about ${size(usage.bytes)}.`;
+  });
+
+  const button = document.createElement("button");
+  button.className = "act danger";
+  button.textContent = `Delete all ${count} run(s)`;
+  button.disabled = count === 0;
+  button.onclick = () => {
+    // asked here, as part of this page, rather than on the button that led to it
+    block.innerHTML = "";
+    const question = document.createElement("p");
+    question.innerHTML = `<b>Delete the record of all ${count} run(s)?</b>`;
+    const detail = document.createElement("p");
+    detail.style.color = "var(--dim)";
+    detail.textContent = going
+      ? `${going} still going will be left alone. This cannot be undone.`
+      : "This cannot be undone.";
+    const row = document.createElement("div");
+    row.className = "row";
+    const yes = document.createElement("button");
+    yes.className = "act danger";
+    yes.style.color = "var(--warn)";
+    yes.textContent = "Delete them";
+    yes.onclick = async () => {
+      row.querySelectorAll("button").forEach(b => (b.disabled = true));
+      const answer = await ask("/api/runs", {}, "DELETE");
+      if (answer.error) {
+        detail.textContent = answer.error;
+        return;
+      }
+      current = null;
+      await refresh();
+      renderManage();
+      const said = document.createElement("p");
+      said.style.color = "var(--dim)";
+      said.textContent =
+        `${answer.deleted.length} deleted` +
+        (answer.kept.length ? `, ${answer.kept.length} still going and kept` : "");
+      document.getElementById("manage-body").append(said);
+    };
+    const no = document.createElement("button");
+    no.className = "act";
+    no.textContent = "Cancel";
+    no.onclick = renderManage;
+    row.append(yes, no);
+    block.append(question, detail, row);
+  };
+
+  block.append(button);
+  body.append(block);
+};
+
+const loadConfig = async () => {
+  config = await ask("/api/config");
+  if (config.error) {
+    document.getElementById("launch-body").textContent = config.error;
+    return;
+  }
+  for (const [dim, values] of Object.entries(config.dimensions)) {
+    if (values) chosen[dim] = new Set(values);
+  }
+  renderLaunch();
+};
+
+const renderLaunch = () => {
+  const body = document.getElementById("launch-body");
+  body.innerHTML = "";
+
+  if (config.presets.length) {
+    const row = document.createElement("div");
+    row.className = "dim-row";
+    row.innerHTML = "<b>presets</b>";
+    const zone = document.createElement("div");
+    zone.className = "zone";
+    for (const preset of config.presets) {
+      const label = document.createElement("label");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.value = preset;
+      box.className = "preset";
+      label.append(box, " " + preset);
+      zone.append(label);
+    }
+    row.append(zone);
+    body.append(row);
+  }
+
+  for (const [dim, values] of Object.entries(config.dimensions)) {
+    const row = document.createElement("div");
+    row.className = "dim-row";
+    const label = document.createElement("b");
+    label.textContent = values === null ? `${dim} — needs values` : dim;
+    row.append(label);
+
+    if (values === null) {
+      // a dimension the configuration leaves open: a run has to supply it
+      const field = document.createElement("input");
+      field.className = "free";
+      field.placeholder = "value1, value2";
+      field.value = typed[dim] || "";
+      field.oninput = () => {
+        typed[dim] = field.value;
+        showSize();
+      };
+      row.append(field);
+      body.append(row);
+      continue;
+    }
+
+    // two zones, as in the Dimensions panel: a value is clicked across or
+    // dragged across, and where it sits is what the run will cover
+    const kept = document.createElement("div");
+    kept.className = "zone";
+    const left = document.createElement("div");
+    left.className = "zone";
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = "left out:";
+
+    const move = (value, into) => {
+      into ? chosen[dim].add(value) : chosen[dim].delete(value);
+      renderLaunch();
+    };
+    for (const value of values) {
+      const inside = chosen[dim].has(value);
+      const chip = document.createElement("button");
+      chip.className = inside ? "chip" : "chip gone";
+      chip.textContent = value;
+      chip.draggable = true;
+      chip.title = inside ? `leave ${value} out` : `put ${value} back`;
+      chip.onclick = () => move(value, !inside);
+      chip.ondragstart = e => e.dataTransfer.setData("text/plain", value);
+      (inside ? kept : left).append(chip);
+    }
+    for (const [zone, into] of [[kept, true], [left, false]]) {
+      zone.ondragover = e => {
+        e.preventDefault();
+        zone.dataset.over = "true";
+      };
+      zone.ondragleave = () => (zone.dataset.over = "false");
+      zone.ondrop = e => {
+        e.preventDefault();
+        zone.dataset.over = "false";
+        const value = e.dataTransfer.getData("text/plain");
+        if (values.includes(value)) move(value, into);
+      };
+    }
+    row.append(kept);
+    // the second zone only appears once something is in it, so a dimension
+    // that is wholly in the run stays one line
+    if (left.children.length) {
+      left.prepend(hint);
+      row.append(left);
+    }
+    body.append(row);
+  }
+  showSize();
+};
+
+const selection = () => {
+  const select = {};
+  for (const [dim, values] of Object.entries(config.dimensions)) {
+    if (values === null) {
+      const list = (typed[dim] || "").split(",").map(v => v.trim()).filter(Boolean);
+      select[dim] = list;
+    } else if (chosen[dim].size !== values.length) {
+      // only what was narrowed: sending the whole space back would just be
+      // the configuration, spelled out again
+      select[dim] = [...chosen[dim]];
+    }
+  }
+  return select;
+};
+
+const showSize = () => {
+  let points = 1;
+  const empty = [];
+  for (const [dim, values] of Object.entries(config.dimensions)) {
+    const n =
+      values === null
+        ? (typed[dim] || "").split(",").filter(v => v.trim()).length
+        : chosen[dim].size;
+    if (n === 0) empty.push(dim);
+    points *= n;
+  }
+  const size = document.getElementById("launch-size");
+  const go = document.getElementById("launch-go");
+  go.disabled = empty.length > 0;
+  // conditions may still carve some of these away, so this is a ceiling
+  size.textContent = empty.length
+    ? `nothing chosen for ${empty.join(", ")}`
+    : `up to ${points} point(s)`;
+};
+
+const tell = (text, bad) => {
+  const says = document.getElementById("launch-says");
+  says.textContent = text || "";
+  says.style.color = bad ? "var(--warn)" : "var(--dim)";
+};
+
+document.getElementById("launch-go").onclick = async () => {
+  const go = document.getElementById("launch-go");
+  go.disabled = true;
+  tell("starting…");
+  const answer = await ask("/api/runs", {
+    select: selection(),
+    presets: [...document.querySelectorAll("input.preset:checked")].map(b => b.value),
+    repeat: Number(document.getElementById("launch-repeat").value) || 1,
+    name: document.getElementById("launch-name").value,
+  });
+  go.disabled = false;
+  if (answer.error) return tell(answer.error, true);
+  tell(`run ${answer.started} started`);
+  select(answer.started);
+  refresh();
+};
+
 // -- the dimensions -------------------------------------------------------
 
-let lastRun = null;
+let lastRun = null, choosing = false;
+
+let dimsShow = "";
 
 const renderDims = run => {
   const dims = document.getElementById("dims");
+
+  // the chips would otherwise be replaced under the pointer every second,
+  // losing the hover and any question being asked on one of them
+  const signature = JSON.stringify([run.id, run.dimensions, live, asking]);
+  if (signature === dimsShow) return;
+  dimsShow = signature;
+
   dims.innerHTML = "";
   for (const [dim, values] of Object.entries(run.dimensions || {})) {
     const kept = values.filter(v => !v.dropped);
@@ -337,6 +693,7 @@ const renderDims = run => {
 // -- everything else ------------------------------------------------------
 
 const select = id => {
+  if (pane !== "detail") show("detail");
   if (id === current) return;
   current = id;
   since = 0;
@@ -347,20 +704,65 @@ const select = id => {
   refresh();
 };
 
-const renderRuns = runs => {
+let lastRuns = [];
+
+let navShows = "";
+
+const renderNav = runs => {
   const nav = document.getElementById("runs");
+
+  // rebuilt only when it would look different: this runs every second, and
+  // replacing the list under someone scrolling it makes it unusable
+  const signature = JSON.stringify([
+    pane,
+    current,
+    runs.map(r => [r.id, r.name, r.state, r.completed, r.total]),
+  ]);
+  if (signature === navShows) return;
+  navShows = signature;
+
+  const previous = nav.querySelector(".list");
+  const scroll = previous ? previous.scrollTop : 0;
   nav.innerHTML = "";
+
+  // at the top, where the run it makes will appear a moment later
+  const fresh = document.createElement("button");
+  fresh.className = "new";
+  fresh.setAttribute("aria-current", pane === "launch");
+  fresh.textContent = "+ New run";
+  fresh.onclick = () => show("launch");
+  nav.append(fresh);
+
+  const list = document.createElement("div");
+  list.className = "list";
+  nav.append(list);
+
   for (const run of runs) {
     const button = document.createElement("button");
-    button.setAttribute("aria-current", run.id === current);
+    button.setAttribute("aria-current", pane === "detail" && run.id === current);
     const title = document.createElement("span");
     title.textContent = run.name || run.id;
     const sub = document.createElement("small");
     sub.textContent = `${run.name ? run.id + " · " : ""}${run.state} · ${run.completed}/${run.total}`;
     button.append(title, sub);
     button.onclick = () => select(run.id);
-    nav.append(button);
+    list.append(button);
   }
+
+  const manage = document.createElement("button");
+  manage.className = "manage";
+  manage.setAttribute("aria-current", pane === "manage");
+  manage.textContent = "Manage runs";
+  manage.onclick = () => show("manage");
+  nav.append(manage);
+
+  // a rebuild that had to happen still keeps the reader where they were
+  list.scrollTop = scroll;
+};
+
+const renderRuns = runs => {
+  lastRuns = runs;
+  renderNav(runs);
   if (!current && runs.length) select(runs[0].id);
 };
 
@@ -386,13 +788,102 @@ const renderRun = run => {
     `[${run.completed}/${run.total}] ${percent}%`;
   const bar = document.getElementById("rbar");
   bar.dataset.mood = run.mood;
-  bar.firstElementChild.style.width = `${percent}%`;
+  const fill = bar.firstElementChild;
+  if (bar.dataset.run === run.id) {
+    // the same run moving along: worth animating, because it is progress
+    fill.style.width = `${percent}%`;
+  } else {
+    // a different run entirely: sliding from one run's figure to another's
+    // animates something that never happened
+    bar.dataset.run = run.id;
+    fill.style.transition = "none";
+    fill.style.width = `${percent}%`;
+    fill.offsetHeight; // let the jump take effect before motion is allowed again
+    fill.style.transition = "";
+  }
+  // where it has got to is only true of a run that is still going: the last
+  // point it started is not where a finished run is
   document.getElementById("rwhere").textContent =
-    run.current ? "at " + run.current.join(".") : (run.output || "");
+    run.live && run.current
+      ? `currently at (${coords(run.order, run.current)})`
+      : "";
 
-  document.querySelectorAll("button.act").forEach(b => (b.disabled = !live));
+  const file = document.getElementById("rfile");
+  file.textContent = run.output || "";
+  file.onclick = () => copyPath(file, run.output);
+
+  const trash = document.getElementById("rdelete");
+  if (run.live) {
+    trash.innerHTML = "";
+  } else if (trash.dataset.run !== run.id) {
+    trash.dataset.run = run.id;
+    confirmer(trash, "Delete run", `delete the record of ${run.id}?`, async () => {
+      const answer = await ask(`/api/runs/${run.id}`, {}, "DELETE");
+      if (answer.error) return say(answer.error, true);
+      say(`${run.id} deleted — its results file is untouched`);
+      current = null;
+      trash.dataset.run = "";
+      refresh();
+    });
+  }
+
+  // only the steering controls need a live run: the launcher and the gap
+  // actions decide for themselves, and this runs every second
+  document.querySelectorAll("button.act[data-op]").forEach(b => (b.disabled = !live));
   renderDims(run);
   renderGaps(run);
+};
+
+// Deleting is asked about where it is offered, in the same words the button
+// used: no dialog, and nothing goes until the second click.
+const confirmer = (holder, label, question, act) => {
+  const render = () => {
+    holder.innerHTML = "";
+    const button = document.createElement("button");
+    button.className = "act danger";
+    button.textContent = label;
+    button.onclick = () => {
+      holder.innerHTML = "";
+      const box = document.createElement("span");
+      box.className = "confirm";
+      box.append(question);
+      const yes = document.createElement("button");
+      yes.className = "yes";
+      yes.textContent = "delete";
+      yes.onclick = async () => {
+        box.querySelectorAll("button").forEach(b => (b.disabled = true));
+        await act();
+        render();
+      };
+      const no = document.createElement("button");
+      no.className = "no";
+      no.textContent = "keep";
+      no.onclick = render;
+      box.append(yes, no);
+      holder.append(box);
+    };
+    holder.append(button);
+  };
+  render();
+};
+
+// a browser will not follow a file:// link out of an http:// page, so the path
+// is offered to be taken rather than opened: copied, it pastes straight into
+// `yuclid plot` or an editor
+const copyPath = async (element, path) => {
+  if (!path) return;
+  const was = element.textContent;
+  try {
+    await navigator.clipboard.writeText(path);
+    element.textContent = was + "   copied";
+    setTimeout(() => (element.textContent = was), 1200);
+  } catch (e) {
+    // no clipboard to write to: select it so it can be taken by hand
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+  }
 };
 
 // the id is a compact stamp and reads as one; when a run happened is easier to
@@ -413,12 +904,23 @@ const spell = run => {
   return `started ${long}, took ${took}`;
 };
 
+let gapsShow = "";
+
 const renderGaps = run => {
   const gaps = run.gaps || [];
   document.getElementById("gaps-section").hidden = gaps.length === 0;
   if (!gaps.length) return;
 
   const box = document.getElementById("gaps");
+
+  // as with the run list: redrawn only when it would differ, and the reader
+  // keeps their place when it does
+  const signature = JSON.stringify([run.id, run.order, run.completed, gaps]);
+  if (signature === gapsShow) return renderGapActions(run, gaps.length);
+  gapsShow = signature;
+
+  const previous = box.querySelector("pre");
+  const scroll = previous ? previous.scrollTop : 0;
   box.innerHTML = "";
   const counts = {};
   for (const gap of gaps) counts[gap.status] = (counts[gap.status] || 0) + 1;
@@ -434,9 +936,10 @@ const renderGaps = run => {
   const list = document.createElement("pre");
   list.style.maxHeight = "30vh";
   list.textContent = gaps
-    .map(g => `${run.order.map((d, i) => `${d}=${g.key[i]}`).join(", ")}   ${g.status}`)
+    .map(g => `${coords(run.order, g.key)}   ${g.status}`)
     .join("\n");
   box.append(list);
+  list.scrollTop = scroll;
 
   renderGapActions(run, gaps.length);
 };
@@ -446,6 +949,9 @@ const renderGaps = run => {
 const renderGapActions = (run, missing) => {
   const row = document.getElementById("gaps-actions");
   const how = document.getElementById("gaps-how");
+  // the page redraws every second, which must not snatch away a question the
+  // user is in the middle of answering
+  if (choosing) return;
   row.innerHTML = "";
   if (run.live) {
     how.textContent = "a run can only be continued once it has ended";
@@ -456,6 +962,7 @@ const renderGapActions = (run, missing) => {
   start.className = "act";
   start.textContent = "Run the missing points";
   start.onclick = () => {
+    choosing = true;
     row.innerHTML = "";
     const question = document.createElement("span");
     question.className = "confirm";
@@ -473,7 +980,7 @@ const renderGapActions = (run, missing) => {
     const no = document.createElement("button");
     no.className = "no";
     no.textContent = "cancel";
-    no.onclick = () => renderGapActions(run, missing);
+    no.onclick = () => { choosing = false; renderGapActions(run, missing); };
     question.append(no);
     row.append(question);
     how.textContent = "";
@@ -483,16 +990,18 @@ const renderGapActions = (run, missing) => {
 
   const spawn = async (mode, told) => {
     row.querySelectorAll("button").forEach(b => (b.disabled = true));
-    how.textContent = told;
-    say("starting…");
+    how.textContent = "starting…";
     const answer = await ask(`/api/runs/${current}/finish`, {mode});
+    choosing = false;
     renderGapActions(run, missing);
-    if (answer.error) return say(answer.error, true);
-    say(
+    if (answer.error) {
+      how.textContent = answer.error;
+      return;
+    }
+    how.textContent =
       mode === "finish"
         ? `run ${answer.started} is measuring the ${missing} missing point(s)`
-        : `run ${answer.started} is running the whole space again`
-    );
+        : `run ${answer.started} is running the whole space again`;
     if (mode === "restart") select(answer.started);
     refresh();
   };
@@ -536,7 +1045,7 @@ const refresh = async () => {
   try {
     const {runs} = await ask("/api/runs");
     renderRuns(runs);
-    if (!current) return;
+    if (!current || pane !== "detail") return;
     renderRun(await ask(`/api/runs/${current}`));
     renderProgress(await ask(`/api/runs/${current}/progress?since=${since}`));
   } catch (e) {

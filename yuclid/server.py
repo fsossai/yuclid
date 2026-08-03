@@ -8,6 +8,8 @@ to the run's own socket and answered with what the run said it did.
 """
 
 from yuclid.log import LogLevel, report
+from yuclid.run import remove_duplicates
+from yuclid import __version__
 import yuclid.workspace as workspace
 import yuclid.control as control
 import http.server
@@ -80,6 +82,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/runs/([^/]+)", path)
             if match:
                 return self.respond(200, self.run(match.group(1)))
+            if path == "/api/config":
+                return self.respond(200, self.configuration())
+            if path == "/api/usage":
+                return self.respond(200, self.usage())
             match = re.fullmatch(r"/api/runs/([^/]+)/progress", path)
             if match:
                 return self.respond(200, self.progress(match.group(1), query))
@@ -103,6 +109,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         path = self.path.split("?")[0]
 
+        if path == "/api/runs":
+            request = self.body()
+            if request is None:
+                return
+            return self.respond(200, self.start_run(request))
+
         match = re.fullmatch(r"/api/runs/([^/]+)/finish", path)
         if match:
             payload = self.body()
@@ -124,6 +136,51 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.respond(200, self.control(match.group(1), operation))
         except FileNotFoundError:
             return self.respond(404, {"error": "no such run"})
+
+    def do_DELETE(self):
+        if not self.permitted():
+            return
+        path = self.path.split("?")[0]
+        if path == "/api/runs":
+            return self.respond(200, self.forget_all())
+        match = re.fullmatch(r"/api/runs/([^/]+)", path)
+        if not match:
+            return self.respond(404, {"error": "no such resource"})
+        return self.respond(200, self.forget(match.group(1)))
+
+    def forget(self, run_id):
+        """Remove a run's record. The measurements it took are left alone."""
+        try:
+            manifest = self.manifest(run_id)
+        except FileNotFoundError:
+            return {"error": "no such run"}
+        if manifest["state"] == workspace.RUNNING:
+            return {"error": "run {} is still going".format(run_id)}
+        try:
+            workspace.delete_run(self.server.root, run_id)
+        except (ValueError, FileNotFoundError) as e:
+            return {"error": str(e)}
+        except OSError as e:
+            return {"error": "cannot remove run {}: {}".format(run_id, e)}
+        return {"deleted": [run_id]}
+
+    def forget_all(self):
+        """Remove every run that has ended, and say which were left.
+
+        A run still going is not removed: it is writing into the directory
+        that would be taken from under it.
+        """
+        deleted, kept = [], []
+        for manifest in workspace.list_runs(self.server.root):
+            if manifest["state"] == workspace.RUNNING:
+                kept.append(manifest["id"])
+                continue
+            try:
+                workspace.delete_run(self.server.root, manifest["id"])
+                deleted.append(manifest["id"])
+            except (OSError, ValueError, FileNotFoundError):
+                kept.append(manifest["id"])
+        return {"deleted": deleted, "kept": kept}
 
     def do_PUT(self):
         if not self.permitted():
@@ -148,7 +205,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def page(self):
         with open(PAGE, "rb") as f:
             html = f.read()
-        return html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
+        html = html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
+        return html.replace(b"__YUCLID_VERSION__", __version__.encode())
 
     def manifest(self, run_id):
         directory = workspace.run_directory(self.server.root, run_id)
@@ -229,6 +287,171 @@ class Handler(http.server.BaseHTTPRequestHandler):
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
 
+    def usage(self):
+        """How much room the run directories take, and how many are going.
+
+        Walked on request rather than reported alongside the runs: it means
+        touching every trial capture, which is not something to do once a
+        second for a figure nobody asked for.
+        """
+        total, runs, live = 0, 0, 0
+        for manifest in workspace.list_runs(self.server.root):
+            runs += 1
+            if manifest["state"] == workspace.RUNNING:
+                live += 1
+            for where, _, files in os.walk(manifest["directory"]):
+                for name in files:
+                    try:
+                        # a hard link counts once, and the results it points at
+                        # are not this directory's to give back
+                        stat = os.lstat(os.path.join(where, name))
+                        total += 0 if stat.st_nlink > 1 else stat.st_size
+                    except OSError:
+                        pass
+        return {"runs": runs, "live": live, "bytes": total}
+
+    def configuration(self):
+        """The space a new run could be built from, as the config declares it.
+
+        Read with yuclid's own normalizer so that a value written as an object,
+        or a whole dimension computed by a `:py` expression, is understood the
+        same way a run would understand it. That normalizer reports a bad
+        configuration by exiting, which must not happen inside a request, so
+        the whole read is fenced off and turned into an answer.
+        """
+        from yuclid import run as runner
+
+        directory = os.path.dirname(self.server.root)
+        inputs = [
+            name
+            for name in runner.DEFAULT_INPUTS
+            if os.path.isfile(os.path.join(directory, name))
+        ]
+        if len(inputs) == 0:
+            return {"error": "no configuration in {}".format(directory)}
+
+        try:
+            raw = runner.load_config(os.path.join(directory, inputs[0]))
+            space = runner.normalize_space_values(raw.get("space", {}))
+            presets = sorted((raw.get("presets") or {}).keys())
+        except SystemExit:
+            return {"error": "{} cannot be read; see the terminal".format(inputs[0])}
+        except Exception as e:
+            return {"error": "{}: {}".format(inputs[0], e)}
+
+        return {
+            "input": inputs[0],
+            "presets": presets,
+            "dimensions": {
+                dim: None if values is None else remove_duplicates(
+                    [str(v["name"]) for v in values]
+                )
+                for dim, values in space.items()
+            },
+        }
+
+    def start_run(self, request):
+        """Start a run of a subspace the caller chose.
+
+        Every argument is rebuilt here from names checked against the
+        configuration, so what arrives is a choice among things that exist
+        rather than a command line.
+        """
+        config = self.configuration()
+        if "error" in config:
+            return config
+
+        argv = ["run"]
+        declared = config["dimensions"]
+
+        select = request.get("select") or {}
+        if not isinstance(select, dict):
+            return {"error": "select must be an object of dimension to values"}
+        selectors = []
+        for dim, values in select.items():
+            if dim not in declared:
+                return {"error": "unknown dimension '{}'".format(dim)}
+            known = declared[dim]
+            if known is not None:
+                unknown = [v for v in values if v not in known]
+                if unknown:
+                    return {
+                        "error": "{} has no value {}".format(dim, ", ".join(unknown))
+                    }
+            if len(values) == 0:
+                return {"error": "no value chosen for {}".format(dim)}
+            if any("," in v for v in values):
+                return {"error": "a value of {} contains a comma".format(dim)}
+            selectors.append("{}={}".format(dim, ",".join(values)))
+        if selectors:
+            # one -s carrying every selector: the option takes a list, so a
+            # second -s would replace the first rather than add to it
+            argv += ["-s"] + selectors
+
+        undefined = [d for d, v in declared.items() if v is None and d not in select]
+        if undefined:
+            return {
+                "error": "these dimensions have no values of their own, so a run "
+                "has to be given some: {}".format(", ".join(undefined))
+            }
+
+        presets = request.get("presets") or []
+        unknown = [p for p in presets if p not in config["presets"]]
+        if unknown:
+            return {"error": "no such preset: {}".format(", ".join(unknown))}
+        if presets:
+            argv += ["-p"] + list(presets)
+
+        repeat = request.get("repeat")
+        repeat = 1 if repeat is None else repeat
+        if not isinstance(repeat, int) or not 1 <= repeat <= 10000:
+            return {"error": "repeat must be a whole number of repetitions"}
+        if repeat > 1:
+            argv += ["-r", str(repeat)]
+
+        name = request.get("name") or ""
+        try:
+            name = workspace.check_name(name)
+        except ValueError as e:
+            return {"error": str(e)}
+        if name:
+            argv += ["--name", name]
+
+        answer, _ = self.spawn(argv, os.path.join(self.server.root, "run.log"))
+        return answer
+
+    def spawn(self, argv, log_path):
+        """Start yuclid, and answer with the name of the run it made.
+
+        A run names itself, so the only way to say which one was started is to
+        watch for it to appear — a second or two, mostly spent importing.
+        Returns the answer and the child, which the caller may want to keep.
+        """
+        with self.server.lock:
+            before = {m["id"] for m in workspace.list_runs(self.server.root)}
+            log = open(log_path, "w")
+            child = subprocess.Popen(
+                [sys.executable, "-c", ENTRY_POINT] + argv,
+                cwd=os.path.dirname(self.server.root),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            fresh = [
+                m
+                for m in workspace.list_runs(self.server.root)
+                if m["id"] not in before
+            ]
+            if fresh:
+                return {"started": fresh[0]["id"]}, child
+            if child.poll() is not None:
+                break
+            time.sleep(0.1)
+        return {"error": "the run did not start", "log": log_path}, child
+
     def finish_run(self, run_id, mode):
         """Start a run from an old one: either completing it or repeating it.
 
@@ -265,35 +488,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         )
                     }
 
-            before = {m["id"] for m in workspace.list_runs(self.server.root)}
-            log = open(os.path.join(manifest["directory"], mode + ".log"), "w")
-            child = subprocess.Popen(
-                [sys.executable, "-c", ENTRY_POINT] + argv,
-                cwd=os.path.dirname(self.server.root),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-            self.server.finishing[run_id] = child
-
-        # the child names its own run, so the only way to say which one it is
-        # is to wait for it to appear — a second or two, mostly spent importing
-        deadline = time.monotonic() + 20.0
-        while time.monotonic() < deadline:
-            fresh = [
-                m
-                for m in workspace.list_runs(self.server.root)
-                if m["id"] not in before
-            ]
-            if fresh:
-                return {"started": fresh[0]["id"], "mode": mode}
-            if child.poll() is not None:
-                break
-            time.sleep(0.1)
-        return {
-            "error": "the run did not start",
-            "log": os.path.join(manifest["directory"], mode + ".log"),
-        }
+        answer, child = self.spawn(
+            argv, os.path.join(manifest["directory"], mode + ".log")
+        )
+        self.server.finishing[run_id] = child
+        answer["mode"] = mode
+        return answer
 
     def control(self, run_id, operation):
         manifest = self.manifest(run_id)

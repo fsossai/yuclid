@@ -13,6 +13,7 @@ authoritative answer from the process that owns the plan, which is what
 from yuclid.log import LogLevel, report
 import itertools
 import threading
+import shutil
 import socket
 import errno
 import json
@@ -176,6 +177,23 @@ def list_runs(root):
 
 def live_runs(root):
     return [m for m in list_runs(root) if m["state"] == RUNNING]
+
+
+def delete_run(root, run_id):
+    """Remove a run's directory, and only ever a run's directory.
+
+    The results themselves survive: the file in the working directory and the
+    one here are two names for one inode, so taking this one away leaves the
+    measurements where the user can still see them. What goes is the
+    bookkeeping — the manifest, the progress, the trial captures.
+    """
+    separators = [os.sep] + ([os.altsep] if os.altsep else [])
+    if run_id in ("", ".", "..") or any(s in run_id for s in separators):
+        raise ValueError("not a run name: {}".format(run_id))
+    directory = run_directory(root, run_id)
+    if read_manifest(directory) is None:
+        raise FileNotFoundError(run_id)
+    shutil.rmtree(directory)
 
 
 def read_server(root):
