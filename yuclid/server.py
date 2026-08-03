@@ -11,15 +11,20 @@ from yuclid.log import LogLevel, report
 import yuclid.workspace as workspace
 import yuclid.control as control
 import http.server
-import functools
+import subprocess
+import threading
 import secrets
 import json
+import sys
 import os
 import re
 
 
 PAGE = os.path.join(os.path.dirname(__file__), "web", "index.html")
 BODY_LIMIT = 1 << 16
+# how a run is started from here: the same interpreter, whether yuclid is
+# installed or being run from a checkout
+ENTRY_POINT = "import sys; from yuclid.cli import main; sys.exit(main())"
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -94,7 +99,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.permitted():
             return
-        match = re.fullmatch(r"/api/runs/([^/]+)/control", self.path.split("?")[0])
+        path = self.path.split("?")[0]
+
+        match = re.fullmatch(r"/api/runs/([^/]+)/finish", path)
+        if match:
+            try:
+                return self.respond(200, self.finish(match.group(1)))
+            except FileNotFoundError:
+                return self.respond(404, {"error": "no such run"})
+
+        match = re.fullmatch(r"/api/runs/([^/]+)/control", path)
         if not match:
             return self.respond(404, {"error": "no such resource"})
         operation = self.body()
@@ -209,6 +223,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
 
+    def finish(self, run_id):
+        """Start a run that measures what this one did not.
+
+        The command is built here from the run's id and nothing else, so a
+        request never becomes an argument. The new run is detached: `serve`
+        owns no run, and killing it must not take one down.
+        """
+        manifest = self.manifest(run_id)
+        if manifest["state"] == workspace.RUNNING:
+            return {"error": "run {} is still going".format(run_id)}
+
+        with self.server.lock:
+            # a run takes a moment to appear in the directory, so asking twice
+            # in that moment would start two runs appending to one file. What
+            # was spawned from here is remembered rather than looked up
+            started = self.server.finishing.get(run_id)
+            if started is not None and started.poll() is None:
+                return {"error": "already finishing run {}".format(run_id)}
+
+            output = manifest.get("output")
+            for other in workspace.live_runs(self.server.root):
+                if other.get("output") == output:
+                    return {
+                        "error": "run {} is already writing that file".format(
+                            other["id"]
+                        )
+                    }
+
+            log = open(os.path.join(manifest["directory"], "finish.log"), "w")
+            self.server.finishing[run_id] = subprocess.Popen(
+                [sys.executable, "-c", ENTRY_POINT, "finish", run_id],
+                cwd=os.path.dirname(self.server.root),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        return {"started": run_id}
+
     def control(self, run_id, operation):
         manifest = self.manifest(run_id)
         if manifest["state"] != workspace.RUNNING:
@@ -287,6 +339,9 @@ class Server(http.server.ThreadingHTTPServer):
         super().__init__(("127.0.0.1", port), Handler)
         self.root = root
         self.token = secrets.token_urlsafe(24)
+        # runs started from here, so a second request cannot start them again
+        self.finishing = dict()
+        self.lock = threading.Lock()
 
 
 def launch(args):

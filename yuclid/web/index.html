@@ -116,13 +116,14 @@
       <h2>Run</h2>
       <div class="row" style="justify-content: space-between">
         <div class="row">
-          <input id="name" placeholder="unnamed" aria-label="run name">
+          <input id="name" aria-label="run name">
           <code id="rid" style="color: var(--dim)">—</code>
           <span class="state" id="rstate"></span>
         </div>
         <div id="rcount" style="color: var(--dim)"></div>
       </div>
       <div class="bar" id="rbar" style="margin: 10px 0"><div></div></div>
+      <div style="color: var(--dim)" id="rwhen"></div>
       <div style="color: var(--dim)" id="rwhere"></div>
     </section>
     <section>
@@ -143,7 +144,10 @@
     <section id="gaps-section" hidden>
       <h2>Gaps — points of the space with no measurement</h2>
       <div id="gaps"></div>
-      <p id="gaps-how" style="color: var(--dim)"></p>
+      <div class="row" style="margin-top: 10px">
+        <button class="act" id="finish">Run the missing points</button>
+        <span id="gaps-how" style="color: var(--dim)"></span>
+      </div>
     </section>
     <section>
       <h2>Log</h2>
@@ -202,10 +206,22 @@ document.querySelectorAll("button.act").forEach(button => {
 // -- the name -------------------------------------------------------------
 
 const name = document.getElementById("name");
-name.onfocus = () => (editing = true);
+
+// a run already answers to its timestamp, so that is what an unnamed one shows
+// and what typing starts from: naming one is usually adding to it rather than
+// replacing it
+name.onfocus = () => {
+  editing = true;
+  if (name.value === "") {
+    name.value = current;
+    requestAnimationFrame(() => name.setSelectionRange(current.length, current.length));
+  }
+};
 name.onblur = async () => {
   editing = false;
-  const answer = await ask(`/api/runs/${current}/name`, {name: name.value}, "PUT");
+  // left exactly as it was handed over: that is not a name, it is the default
+  const given = name.value === current ? "" : name.value;
+  const answer = await ask(`/api/runs/${current}/name`, {name: given}, "PUT");
   if (answer.error) say(answer.error, true);
   refresh();
 };
@@ -356,6 +372,7 @@ const renderRun = run => {
   if (!editing) {
     name.value = run.name || "";
     name.dataset.saved = run.name || "";
+    name.placeholder = run.id;
   }
   document.getElementById("rid").textContent = run.id;
 
@@ -363,6 +380,8 @@ const renderRun = run => {
   state.textContent =
     (run.paused ? "paused" : run.state) + (run.replay_of ? ` · replay of ${run.replay_of}` : "");
   state.dataset.mood = run.mood;
+
+  document.getElementById("rwhen").textContent = spell(run);
 
   const percent = run.total ? Math.floor((100 * run.completed) / run.total) : 0;
   document.getElementById("rcount").textContent =
@@ -378,7 +397,23 @@ const renderRun = run => {
   renderGaps(run);
 };
 
-const GAP_LIMIT = 12;
+// the id is a compact stamp and reads as one; when a run happened is easier to
+// take in spelled out, so the header says it both ways
+const spell = run => {
+  if (!run.created) return "";
+  const started = new Date(run.created * 1000);
+  const long = started.toLocaleString(undefined, {
+    dateStyle: "long",
+    timeStyle: "medium",
+  });
+  if (!run.ended) return `started ${long}`;
+  const seconds = Math.round(run.ended - run.created);
+  const took =
+    seconds < 60
+      ? `${seconds}s`
+      : `${Math.floor(seconds / 60)}m${String(seconds % 60).padStart(2, "0")}s`;
+  return `started ${long}, took ${took}`;
+};
 
 const renderGaps = run => {
   const gaps = run.gaps || [];
@@ -396,20 +431,41 @@ const renderGaps = run => {
     Object.entries(counts).map(([s, n]) => `${n} ${s}`).join(", ");
   box.append(summary);
 
+  // every one of them: a gap you cannot see is one you cannot act on, and the
+  // list scrolls rather than being cut short
   const list = document.createElement("pre");
-  list.style.maxHeight = "20vh";
+  list.style.maxHeight = "30vh";
   list.textContent = gaps
-    .slice(0, GAP_LIMIT)
     .map(g => `${run.order.map((d, i) => `${d}=${g.key[i]}`).join(", ")}   ${g.status}`)
-    .join("\n") + (gaps.length > GAP_LIMIT ? `\n... and ${gaps.length - GAP_LIMIT} more` : "");
+    .join("\n");
   box.append(list);
 
-  document.getElementById("gaps-how").textContent =
-    `yuclid finish ${run.id}   runs what this one did not record`;
+  const button = document.getElementById("finish");
+  button.disabled = run.live;
+  button.onclick = async () => {
+    button.disabled = true;
+    say("…");
+    const answer = await ask(`/api/runs/${current}/finish`, {});
+    if (answer.error) return say(answer.error, true);
+    say(`started a run for the ${gaps.length} missing point(s)`);
+    refresh();
+  };
+  document.getElementById("gaps-how").textContent = run.live
+    ? "available once this run has ended"
+    : `same as \`yuclid finish ${run.id}\``;
+};
+
+// the same stamp yuclid's own diagnostics carry, so a line from the page and
+// a line from the terminal can be lined up
+const stamp = seconds => {
+  const d = new Date(seconds * 1000);
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
 const summarize = record => {
-  const at = new Date(record.time * 1000).toLocaleTimeString();
+  const at = stamp(record.time);
   if (record.type === "point.started") return `${at}  ${record.key.join(".")} started`;
   if (record.type === "point.finished")
     return `${at}  ${(record.key || []).join(".")} ${record.failed ? "FAILED" : "completed"} ${
