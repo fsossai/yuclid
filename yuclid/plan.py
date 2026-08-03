@@ -207,6 +207,11 @@ class Plan:
         return self._state(stopped=True, abandoned=len(remaining))
 
     def _matching(self, op):
+        """The coordinates an operation names, checked against this space.
+
+        A dimension named with no values means every value it has: naming the
+        dimension is the whole of what was meant.
+        """
         coords = op.get("coords") or {}
         if not isinstance(coords, dict) or len(coords) == 0:
             raise ControlError("name at least one dimension, as dim=value")
@@ -225,7 +230,8 @@ class Plan:
 
         def matches(entry):
             return all(
-                entry["key"][index[dim]] in values for dim, values in coords.items()
+                not values or entry["key"][index[dim]] in values
+                for dim, values in coords.items()
             )
 
         dropped = 0
@@ -260,7 +266,7 @@ class Plan:
 
     def _covers(self, coords, entry):
         return all(
-            entry["key"][self.order.index(dim)] in values
+            not values or entry["key"][self.order.index(dim)] in values
             for dim, values in coords.items()
         )
 

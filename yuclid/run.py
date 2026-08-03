@@ -366,11 +366,19 @@ def build_environment(settings, data):
     return dict() if settings["dry_run"] else resolved_env
 
 
-def parse_coordinates(pairs, what="selector"):
-    """`dim=v1,v2 dim2=v3` as {dim: [values]}, the way every command spells it."""
+def parse_coordinates(pairs, what="selector", whole=False):
+    """`dim=v1,v2 dim2=v3` as {dim: [values]}, the way every command spells it.
+
+    Where a whole dimension is a thing to name — steering, rather than
+    selecting — a bare `dim` means every value it has, and comes through as an
+    empty list for whoever knows what those values are.
+    """
     coordinates = dict()
     for pair in pairs:
         if "=" not in pair:
+            if whole:
+                coordinates.setdefault(pair, [])
+                continue
             report(
                 LogLevel.FATAL,
                 "malformed {}".format(what),
@@ -736,7 +744,57 @@ def apply_preset(data, preset_name):
     return subspace
 
 
-def run_point_command(command, execution, point, on_dims):
+def run_setup_command(execution, command, label):
+    """Run one setup command, keeping what it printed in a file of its own.
+
+    Setup output used to go straight to the terminal, so a configuration with
+    a per-point setup produced one stream in which the one that failed could
+    not be picked out. Each command writes to a pair of files named after the
+    point it belongs to, and a failure says which pair to read.
+    """
+    directory = execution["setup_dir"]
+    os.makedirs(directory, exist_ok=True)
+    stem = os.path.join(directory, label)
+
+    result = subprocess.run(
+        command,
+        shell=True,
+        universal_newlines=True,
+        capture_output=True,
+        env=execution["env"],
+    )
+    with open(stem + ".out", "w") as f:
+        f.write(result.stdout or "")
+    with open(stem + ".err", "w") as f:
+        f.write(result.stderr or "")
+
+    if result.returncode == 0:
+        return True
+
+    execution["progress"].emit(
+        "setup.failed",
+        label=label,
+        command=command,
+        code=result.returncode,
+        log=stem + ".err",
+    )
+    report(
+        LogLevel.ERROR,
+        "setup",
+        f"'{command}'",
+        f"returned {result.returncode}",
+        hint="what it printed is in {}.out and {}.err".format(stem, stem),
+    )
+    return False
+
+
+def setup_label(prefix, parts):
+    """A file name for one setup command, saying which point it belongs to."""
+    name = ".".join([prefix] + [str(p) for p in parts if str(p) != ""])
+    return re.sub(r"[^A-Za-z0-9._-]", "_", name)
+
+
+def run_point_command(command, execution, point, on_dims, label="point"):
     gcommand = substitute_global_yvars(command, execution["subspace"])
     on_dims_0 = [dim.split(".")[0] for dim in on_dims]
     suborder = [d for d in execution["order"] if d in on_dims_0]
@@ -755,23 +813,15 @@ def run_point_command(command, execution, point, on_dims):
             pcommand,
         )
     else:
-        result = subprocess.run(
+        run_setup_command(
+            execution,
             pcommand,
-            shell=True,
-            universal_newlines=True,
-            capture_output=False,
-            env=execution["env"],
+            setup_label(label, [x["name"] for x in point]),
         )
-        if result.returncode != 0:
-            report(
-                LogLevel.ERROR,
-                "point setup",
-                f"'{pcommand}'",
-                f"returned {result.returncode}",
-            )
 
 
-def run_points_sequential(command, item_plan, execution, on_dims, par_config):
+def run_points_sequential(command, item_plan, execution, on_dims, par_config,
+                          label="point"):
     sequential_space = item_plan["sequential_space"]
     parallel_dims = item_plan["parallel_dims"]
     seq_points = list(itertools.product(*sequential_space))
@@ -781,7 +831,7 @@ def run_points_sequential(command, item_plan, execution, on_dims, par_config):
     named_par_config = [(name, x) for name, x in zip(parallel_dims, par_config)]
     if len(sequential_dims) == 0:
         final_config = [x[1] for x in named_par_config]
-        run_point_command(command, execution, final_config, on_dims)
+        run_point_command(command, execution, final_config, on_dims, label)
         return
 
     for seq_config in seq_points:
@@ -790,10 +840,10 @@ def run_points_sequential(command, item_plan, execution, on_dims, par_config):
             named_par_config + named_seq_config, key=lambda x: order.index(x[0])
         )
         final_config = [x[1] for x in named_ordered_config]
-        run_point_command(command, execution, final_config, on_dims)
+        run_point_command(command, execution, final_config, on_dims, label)
 
 
-def run_point_setup_item(item, execution):
+def run_point_setup_item(item, execution, label="point"):
     command = item["command"]
     on_dims = item["on"]
     order = execution["order"]
@@ -814,7 +864,7 @@ def run_point_setup_item(item, execution):
         par_points = list(itertools.product(*parallel_space))
 
         if len(parallel_dims) == 0:
-            run_points_sequential(command, item_plan, execution, on_dims, [])
+            run_points_sequential(command, item_plan, execution, on_dims, [], label)
         else:
             futures = []
             for j, par_config in enumerate(par_points, start=1):
@@ -825,6 +875,7 @@ def run_point_setup_item(item, execution):
                     execution,
                     on_dims,
                     par_config,
+                    label,
                 )
                 futures.append(future)
             for future in concurrent.futures.as_completed(futures):
@@ -834,7 +885,7 @@ def run_point_setup_item(item, execution):
 
 
 def run_point_setup(data, execution):
-    for item in data["setup"]["point"]:
+    for number, item in enumerate(data["setup"]["point"], start=1):
         if item["on"] is None:
             item["on"] = execution["subspace"].keys()
 
@@ -856,7 +907,7 @@ def run_point_setup(data, execution):
             else:
                 report(LogLevel.INFO, "starting point setup")
 
-            run_point_setup_item(item, execution)
+            run_point_setup_item(item, execution, "point{}".format(number))
 
             if execution["script"] is not None:
                 pass
@@ -889,7 +940,7 @@ def run_global_setup(data, execution):
         report(LogLevel.INFO, "starting global setup")
 
     errors = False
-    for command in setup_commands:
+    for number, command in enumerate(setup_commands, start=1):
         if execution["script"] is not None:
             execution["script"].command(
                 substitute_global_yvars(command, subspace)
@@ -898,21 +949,10 @@ def run_global_setup(data, execution):
             report(LogLevel.INFO, "dry run", command)
         else:
             command = substitute_global_yvars(command, subspace)
-            result = subprocess.run(
-                command,
-                shell=True,
-                universal_newlines=True,
-                capture_output=False,
-                env=execution["env"],
-            )
-            if result.returncode != 0:
+            if not run_setup_command(
+                execution, command, setup_label("global", [number])
+            ):
                 errors = True
-                report(
-                    LogLevel.ERROR,
-                    "setup",
-                    f"'{command}'",
-                    f"returned {result.returncode}",
-                )
     if errors:
         report(LogLevel.WARNING, "errors have occurred during setup")
         report(LogLevel.INFO, "setup failed")
@@ -1157,6 +1197,16 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
 
             command = substitute_global_yvars(trial["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, point_id)
+            # what is about to run, as it will be run: whoever is watching
+            # should not have to work it back out of the configuration
+            progress.emit(
+                "trial.started",
+                index=i,
+                key=list(entry["key"]),
+                rep=rep,
+                trial=j,
+                command=command,
+            )
             stdout, stderr, returncode, was_killed = trials.spawn(
                 entry["key"], command, execution["env"], settings["cwd"]
             )
@@ -1863,6 +1913,7 @@ def build_run_directory(settings, args):
     settings["run_id"] = None
     settings["root"] = None
     settings["progress"] = workspace.Progress(None)
+    settings["setup_dir"] = os.path.join(workspace.DIRNAME, "setup")
     settings["trials"] = Trials()
 
     if args.compile is not None:
@@ -1898,6 +1949,7 @@ def build_run_directory(settings, args):
     else:
         settings["trials_dir"] = os.path.join(args.temp_dir, settings["now"])
     os.makedirs(settings["trials_dir"], exist_ok=True)
+    settings["setup_dir"] = os.path.join(settings["run_dir"], "setup")
     settings["progress"] = workspace.Progress(
         os.path.join(settings["run_dir"], workspace.PROGRESS)
     )
@@ -2079,7 +2131,8 @@ def make_expander(settings, data, execution):
         axes = []
         for dim in order:
             values = subspace[dim]
-            if dim in coords:
+            if coords.get(dim):
+                # named with no values means the dimension whole
                 values = [p for p in values if str(p["name"]) in coords[dim]]
             axes.append(values)
 
@@ -2224,7 +2277,7 @@ class Steering:
                 e["key"]
                 for e in plan.running()
                 if all(
-                    e["key"][plan.order.index(dim)] in values
+                    not values or e["key"][plan.order.index(dim)] in values
                     for dim, values in coords.items()
                 )
             }
@@ -2376,6 +2429,7 @@ def run_experiments(
 
     execution["trials"] = settings["trials"]
     execution["progress"] = settings["progress"]
+    execution["setup_dir"] = settings["setup_dir"]
     execution["preset"] = preset_name
     execution["plan"] = Plan(
         order,

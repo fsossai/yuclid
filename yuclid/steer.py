@@ -173,7 +173,8 @@ def launch_operation(args):
 def _coords(pairs):
     from yuclid.run import parse_coordinates
 
-    return parse_coordinates(pairs, what="coordinate")
+    # steering names parts of a space, and a dimension on its own is one
+    return parse_coordinates(pairs, what="coordinate", whole=True)
 
 
 def describe(command, effect):

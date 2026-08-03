@@ -15,6 +15,7 @@ import yuclid.control as control
 import http.server
 import subprocess
 import threading
+import getpass
 import signal
 import secrets
 import json
@@ -219,11 +220,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return manifest
 
     def summaries(self):
-        from yuclid.steer import progress_counts
-
         summaries = []
         for manifest in workspace.list_runs(self.server.root):
-            counts = progress_counts(manifest["directory"])
+            seen = scan(manifest["directory"])
+            live = manifest["state"] == workspace.RUNNING
             summaries.append(
                 {
                     "id": manifest["id"],
@@ -231,33 +231,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "state": manifest["state"],
                     "created": manifest.get("created"),
                     "output": manifest.get("output"),
-                    "completed": counts[0] if counts else 0,
-                    "total": counts[1] if counts else 0,
+                    "completed": seen["completed"],
+                    "total": seen["total"],
+                    "live": live,
+                    "paused": bool(seen["plan"].get("paused")) if seen["plan"] and live
+                    else False,
+                    "in_flight": seen["in_flight"] if live else 0,
+                    "mood": mood(manifest["state"], seen["plan"], live, seen["failed"]),
                 }
             )
         return summaries
 
     def run(self, run_id):
         manifest = self.manifest(run_id)
-        records = workspace.read_progress(manifest["directory"])
-
-        # the last snapshot, not the first: the plan changes shape as points are
-        # dropped and added, and one is written whenever it does
-        plan = None
-        completed, total, current, failed = 0, 0, None, False
-        for record in records:
-            if record["type"] == "plan":
-                plan = record
-            if record.get("total") is not None:
-                total = record["total"]
-            if record["type"] in ("point.finished", "point.skipped"):
-                completed += record.get("repetitions", 1)
-                failed = failed or bool(record.get("failed"))
-            if record["type"] == "point.started":
-                current = record["key"]
-
-        if plan is not None:
-            failed = failed or any(p["status"] == "failed" for p in plan["points"])
+        seen = scan(manifest["directory"])
+        plan = seen["plan"]
+        completed, total = seen["completed"], seen["total"]
+        current, failed, in_flight = seen["current"], seen["failed"], seen["in_flight"]
 
         live = manifest["state"] == workspace.RUNNING
         return {
@@ -274,7 +264,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "completed": completed,
             "total": total,
             "current": current,
+            "command": seen["command"] if live else None,
+            "setup_failures": seen["setup_failures"],
             "live": live,
+            "in_flight": in_flight if live else 0,
             "paused": bool(plan.get("paused")) if plan and live else False,
             "failed": failed,
             "mood": mood(manifest["state"], plan, live, failed),
@@ -333,22 +326,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         try:
             raw = runner.load_config(os.path.join(directory, inputs[0]))
             space = runner.normalize_space_values(raw.get("space", {}))
-            presets = sorted((raw.get("presets") or {}).keys())
+            declared = {
+                dim: None if values is None else remove_duplicates(
+                    [str(v["name"]) for v in values]
+                )
+                for dim, values in space.items()
+            }
+            presets = {
+                name: resolve_preset(declared, preset)
+                for name, preset in sorted((raw.get("presets") or {}).items())
+            }
         except SystemExit:
             return {"error": "{} cannot be read; see the terminal".format(inputs[0])}
         except Exception as e:
             return {"error": "{}: {}".format(inputs[0], e)}
 
-        return {
-            "input": inputs[0],
-            "presets": presets,
-            "dimensions": {
-                dim: None if values is None else remove_duplicates(
-                    [str(v["name"]) for v in values]
-                )
-                for dim, values in space.items()
-            },
-        }
+        return {"input": inputs[0], "presets": presets, "dimensions": declared}
 
     def start_run(self, request):
         """Start a run of a subspace the caller chose.
@@ -508,6 +501,87 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return {"error": "cannot reach the run: {}".format(e)}
 
 
+def ssh_target():
+    """`user@host` as it would be typed from somewhere else.
+
+    `hostname -f` rather than the short name, because the machine has to be
+    reachable from the laptop doing the forwarding. It resolves names, so it
+    can be slow or absent: it gets a moment, and then the short name will do.
+    """
+    host = ""
+    try:
+        finished = subprocess.run(
+            ["hostname", "-f"], capture_output=True, text=True, timeout=2
+        )
+        host = finished.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    host = host or workspace.hostname()
+
+    try:
+        return "{}@{}".format(getpass.getuser(), host)
+    except Exception:
+        # no account to name: the host alone is still worth having
+        return host
+
+
+def scan(directory):
+    """Everything a run's progress file says, in one pass over it.
+
+    Both the list and the run being displayed need the same answers, and the
+    file has to be read either way, so it is read once and read for all of it.
+    """
+    plan = None
+    completed, total, current, failed = 0, 0, None, False
+    command, broken = None, []
+    # a point is in flight between the start of a repetition and its end;
+    # repetitions of one point are sequential, so counting them per point says
+    # which points are still going without the run having to announce it
+    running = dict()
+
+    for record in workspace.read_progress(directory):
+        kind = record["type"]
+        if kind == "plan":
+            plan = record
+        if record.get("total") is not None:
+            total = record["total"]
+        if kind in ("point.finished", "point.skipped"):
+            completed += record.get("repetitions", 1)
+            failed = failed or bool(record.get("failed"))
+        if kind == "point.started":
+            current = record["key"]
+            command = None
+        if kind == "trial.started":
+            command = record.get("command")
+        if kind == "setup.failed":
+            broken.append(
+                {"label": record.get("label"), "command": record.get("command"),
+                 "log": record.get("log")}
+            )
+
+        key = tuple(record.get("key") or ())
+        if kind == "point.started":
+            running[key] = running.get(key, 0) + 1
+        elif kind == "point.finished":
+            running[key] = max(0, running.get(key, 0) - 1)
+        elif kind == "point.killed":
+            running[key] = 0
+
+    if plan is not None:
+        failed = failed or any(p["status"] == "failed" for p in plan["points"])
+
+    return {
+        "plan": plan,
+        "completed": completed,
+        "total": total,
+        "current": current,
+        "failed": failed,
+        "command": command,
+        "setup_failures": broken,
+        "in_flight": sum(1 for count in running.values() if count > 0),
+    }
+
+
 def mood(state, plan, live, failed):
     """How the run is doing, in one word, worst news first.
 
@@ -522,6 +596,34 @@ def mood(state, plan, live, failed):
     if live and plan is not None and plan.get("paused"):
         return "paused"
     return "fine"
+
+
+def resolve_preset(declared, preset):
+    """The values a preset names, per dimension, as a run would read them.
+
+    A preset entry is a name, a `*` pattern over the names a dimension has, or
+    — where the space leaves a dimension open — a value the preset supplies.
+    Resolving it here means the page can say what a preset comes to without
+    re-implementing the rule. A dimension the preset does not name is not in
+    the result: the preset leaves that one whole.
+    """
+    resolved = {}
+    for dim, items in (preset or {}).items():
+        if dim not in declared:
+            continue
+        known = declared[dim]
+        values = []
+        for item in items if isinstance(items, list) else [items]:
+            text = str(item)
+            if known is None:
+                values.append(text)
+            elif "*" in text:
+                pattern = re.compile("^" + re.escape(text).replace("\\*", ".*") + "$")
+                values += [name for name in known if pattern.match(name)]
+            elif text in known:
+                values.append(text)
+        resolved[dim] = remove_duplicates(values)
+    return resolved
 
 
 def gaps_of(plan, live):
@@ -547,21 +649,30 @@ def dimensions_of(plan):
     """Each dimension's values, in the order the space puts them.
 
     A value counts as dropped once every point carrying it has been: that is
-    what makes it something the page can offer to put back.
+    what makes it something the page can offer to put back. The pending count
+    is what dropping it would actually cost, which is worth knowing before
+    being asked to confirm it.
     """
     if plan is None:
         return {}
     seen = {dim: [] for dim in plan["order"]}
     dropped = {dim: {} for dim in plan["order"]}
+    pending = {dim: {} for dim in plan["order"]}
     for point in plan["points"]:
         for dim, name in zip(plan["order"], point["key"]):
             if name not in seen[dim]:
                 seen[dim].append(name)
                 dropped[dim][name] = True
+                pending[dim][name] = 0
             if point["status"] != "dropped":
                 dropped[dim][name] = False
+            if point["status"] in ("pending", "running"):
+                pending[dim][name] += 1
     return {
-        dim: [{"value": name, "dropped": dropped[dim][name]} for name in names]
+        dim: [
+            {"value": name, "dropped": dropped[dim][name], "pending": pending[dim][name]}
+            for name in names
+        ]
         for dim, names in seen.items()
     }
 
@@ -613,7 +724,17 @@ def launch(args):
     # in one ends up in scrollback, shell history and any Referer header
     url = "http://127.0.0.1:{}/".format(server.server_port)
     report(LogLevel.INFO, "watching", root)
-    report(LogLevel.INFO, "open", url, hint="stop with Ctrl-C")
+    hints = ["stop with Ctrl-C"]
+    # bound to loopback, so a machine reached over ssh needs the port brought
+    # to where the browser is. Only worth saying when that is the situation:
+    # sitting at the machine, the URL above is already the whole story
+    if os.environ.get("SSH_CONNECTION"):
+        hints.append(
+            "forward the port to reach it: ssh -N -L {0}:127.0.0.1:{0} {1}".format(
+                server.server_port, ssh_target()
+            )
+        )
+    report(LogLevel.INFO, "open", url, hint=hints)
     if args.open:
         import webbrowser
 
