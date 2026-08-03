@@ -178,9 +178,77 @@ def get_parser():
     )
     _add_stats_args(stats_parser)
 
+    _add_steering_parsers(subparsers)
+
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
 
     return parser
+
+
+STEERING = ["pause", "resume", "stop", "kill", "drop", "add", "repeat", "order"]
+
+
+def _add_steering_parsers(subparsers):
+    """The commands that change a run while it is under way.
+
+    Each one addresses the run in progress, which is why none of them takes a
+    file: `--run` is only needed when more than one is going at once.
+    """
+    status_parser = subparsers.add_parser(
+        "status", help="Show how far the run in progress has got"
+    )
+    status_parser.add_argument(
+        "--watch",
+        default=False,
+        action="store_true",
+        help="Keep the line up to date until the run ends",
+    )
+
+    described = {
+        "pause": "Stop starting new points, without interrupting those in flight",
+        "resume": "Carry on after a pause",
+        "stop": "End the run once the points in flight are done",
+        "kill": "Abandon what is running right now",
+        "drop": "Take points out of what is left to run",
+        "add": "Put points into what is left to run",
+        "repeat": "Change how many repetitions the remaining points ask for",
+        "order": "Reorder the points that have not run yet",
+    }
+    parsers = {"status": status_parser}
+    for name in STEERING:
+        parsers[name] = subparsers.add_parser(name, help=described[name])
+
+    parsers["kill"].add_argument(
+        "scope",
+        choices=["point", "rep"],
+        help="'point' abandons the point entirely, 'rep' only the repetition "
+        "in flight. There is no default: a kill says what it abandons",
+    )
+    parsers["kill"].add_argument(
+        "point",
+        nargs="*",
+        default=[],
+        help="Which point to kill, as dim=value pairs. Defaults to whatever is "
+        "running, which is all there is unless trials run in parallel",
+    )
+    for name in ("drop", "add"):
+        parsers[name].add_argument(
+            "coords",
+            metavar="DIM=VALUES",
+            nargs="+",
+            help="The points to {}, as dim=value1,value2. Naming one dimension "
+            "means a whole slice, naming them all means a single point".format(name),
+        )
+    parsers["repeat"].add_argument("value", type=int, metavar="N")
+    parsers["order"].add_argument("dimensions", metavar="DIM", nargs="+")
+
+    for name, p in parsers.items():
+        p.add_argument(
+            "--run",
+            default=None,
+            metavar="ID",
+            help="Which run to address. Needed only when several are in progress",
+        )
 
 
 def _add_plot_args(p):
@@ -444,9 +512,15 @@ def main():
 
     if args.command == "run":
         yuclid.run.launch(args)
-    elif args.command == "runs":
+    elif args.command in ("runs", "status") or args.command in STEERING:
         from yuclid import steer as _steer
-        _steer.launch_runs(args)
+
+        if args.command == "runs":
+            _steer.launch_runs(args)
+        elif args.command == "status":
+            _steer.launch_status(args)
+        else:
+            _steer.launch_operation(args)
     elif args.command == "plot":
         yuclid.plot.launch(args)
     elif args.command == "tplot":

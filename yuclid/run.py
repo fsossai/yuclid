@@ -272,10 +272,25 @@ def build_environment(settings, data):
     return env
 
 
+def parse_coordinates(pairs, what="selector"):
+    """`dim=v1,v2 dim2=v3` as {dim: [values]}, the way every command spells it."""
+    coordinates = dict()
+    for pair in pairs:
+        if "=" not in pair:
+            report(
+                LogLevel.FATAL,
+                "malformed {}".format(what),
+                pair,
+                hint="write it as dim=value or dim=value1,value2",
+            )
+        dim, values = pair.split("=", 1)
+        coordinates.setdefault(dim, []).extend(values.split(","))
+    return coordinates
+
+
 def apply_user_selectors(settings, subspace):
-    all_selectors = dict(pair.split("=") for pair in settings["select"])
-    for dim, csv_selection in all_selectors.items():
-        selectors = csv_selection.split(",")
+    all_selectors = parse_coordinates(settings["select"])
+    for dim, selectors in all_selectors.items():
         if dim not in subspace:
             report(
                 LogLevel.FATAL,
@@ -1972,7 +1987,9 @@ class Steering:
         else:
             effect = self.execution["plan"].apply(message)
         report(LogLevel.INFO, "steered", describe_op(message, effect))
-        self.progress.emit("op.applied", op=message, effect=effect)
+        self.progress.emit(
+            "op.applied", op=message, effect=effect, total=effect.get("total")
+        )
         return effect
 
     def status(self):

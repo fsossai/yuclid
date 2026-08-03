@@ -9,6 +9,6 @@
   "no_results_file": true,
   "stdout_contains": [
     "invalid choice: 'panorama'",
-    "{run,plot,tplot,describe,runs,stats}"
+    "choose from 'run', 'plot', 'tplot', 'describe'"
   ]
 }
