@@ -1,13 +1,16 @@
 from yuclid.log import LogLevel, report
+from yuclid.plan import Plan
 from datetime import datetime
 import concurrent.futures
 import yuclid.workspace as workspace
+import yuclid.control as control
 import threading
 import pandas as pd
 import subprocess
 import itertools
 import json
 import csv
+import signal
 import sys
 import time
 import re
@@ -812,6 +815,97 @@ def run_setup(settings, data, execution):
     run_point_setup(data, execution)
 
 
+def terminate(process, grace=2.0):
+    """End a shell command and everything it started, politely then not."""
+    try:
+        group = os.getpgid(process.pid)
+        os.killpg(group, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            return
+        time.sleep(0.05)
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except OSError:
+        pass
+
+
+class Trials:
+    """The shell commands in flight, so that a kill can reach them.
+
+    Each command runs in a session of its own, so terminating it reaches a whole
+    pipeline rather than only the shell that started it. That also detaches it
+    from yuclid's own terminal signals, which is why Ctrl-C is handled here
+    instead of being left to the kernel.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.active = dict()
+        self.abandoned = set()
+        self.skipped = set()
+        self.terminated = set()
+
+    def spawn(self, key, command, env, cwd):
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            env=env,
+            cwd=cwd,
+            universal_newlines=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        with self.lock:
+            self.active.setdefault(key, set()).add(process)
+        try:
+            stdout, stderr = process.communicate()
+        finally:
+            with self.lock:
+                self.active.get(key, set()).discard(process)
+                killed = process.pid in self.terminated
+                self.terminated.discard(process.pid)
+        return stdout, stderr, process.returncode, killed
+
+    def kill(self, scope, keys=None):
+        """Abandon what is running: this repetition of it, or the point.
+
+        Returns the points it reached, so that whoever asked is told what was
+        actually in flight rather than what they hoped was.
+        """
+        with self.lock:
+            targets = [k for k in self.active if self.active[k]]
+            if keys is not None:
+                targets = [k for k in targets if k in keys]
+            if scope == "point":
+                self.abandoned.update(targets)
+            else:
+                self.skipped.update(targets)
+            processes = [p for k in targets for p in self.active.get(k, ())]
+            self.terminated.update(p.pid for p in processes)
+        for process in processes:
+            terminate(process)
+        return targets, len(processes)
+
+    def kill_everything(self):
+        self.kill("point")
+
+    def is_abandoned(self, key):
+        with self.lock:
+            return key in self.abandoned
+
+    def take_skip(self, key):
+        with self.lock:
+            if key in self.skipped:
+                self.skipped.discard(key)
+                return True
+            return False
+
+
 def point_to_string(point):
     return ".".join([str(x["name"]) for x in point])
 
@@ -830,25 +924,59 @@ def get_progress(unit, total):
     return "[{}/{}]".format(unit, total)
 
 
-def progress_units(settings, execution, i):
-    """The total number of units, and the ones before point `i`."""
-    repeat = settings["repeat"]
-    return execution["subspace_size"] * repeat, (i - 1) * repeat
+def progress_units(execution, entry):
+    """The total number of units, and the ones before this point.
+
+    Both are read from the plan rather than from the size of the subspace, so
+    they stay truthful once points have been dropped or added.
+    """
+    plan = execution["plan"]
+    total, _ = plan.units()
+    return total, plan.units_before(entry)
 
 
-def run_point_trials(
-    settings, data, execution, writer, i, point, file_lock=None, repeat=None
-):
+def abandon_repetition(execution, entry, rep):
+    """Give up the repetition in flight and let the point carry on."""
+    execution["trials"].take_skip(entry["key"])
+    execution["plan"].abandon_repetition(entry)
+    report(
+        LogLevel.WARNING,
+        point_to_string(entry["point"]),
+        "repetition abandoned, nothing recorded",
+    )
+    execution["progress"].emit(
+        "point.killed",
+        index=entry["seq"],
+        key=list(entry["key"]),
+        rep=rep,
+        scope="rep",
+    )
+
+
+def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     os.makedirs(settings["trials_dir"], exist_ok=True)
 
+    plan = execution["plan"]
+    trials = execution["trials"]
+    progress = execution["progress"]
+    point = entry["point"]
+    i = entry["seq"]
+
     point_map = {key: x for key, x in zip(execution["order"], point)}
-    total, base = progress_units(settings, execution, i)
-    done = settings["repeat"] - (repeat if repeat is not None else settings["repeat"])
+    total, base = progress_units(execution, entry)
     report(
         LogLevel.INFO,
-        get_progress(base + done + 1, total),
+        get_progress(base + entry["done"] + 1, total),
         point_to_string(point),
         "started",
+    )
+    progress.emit(
+        "point.started",
+        index=i,
+        key=list(entry["key"]),
+        rep=entry["done"],
+        completed=base + entry["done"],
+        total=total,
     )
 
     compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
@@ -866,13 +994,16 @@ def run_point_trials(
             hint="try relaxing your trial conditions or adding more trials.",
         )
 
-    i_padded = str(i).zfill(len(str(execution["subspace_size"])))
+    i_padded = str(i).zfill(plan.width())
     # with --resume, only the repetitions still missing are run, and their
     # numbering continues where the recorded ones left off
     requested = settings["repeat"]
-    repeat = requested if repeat is None else repeat
+    killed = False
 
-    for rep in range(requested - repeat, requested):
+    while entry["done"] < entry["target"] and not killed:
+        if trials.is_abandoned(entry["key"]):
+            break
+        rep = entry["done"]
         rep_suffix = f"_rep{rep}" if requested > 1 else ""
 
         # every trial gets its own captures, and a metric must be evaluated
@@ -891,56 +1022,63 @@ def run_point_trials(
 
             command = substitute_global_yvars(trial["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, point_id)
-            command_output = subprocess.run(
-                command,
-                shell=True,
-                env=execution["env"],
-                universal_newlines=True,
-                capture_output=True,
-                cwd=settings["cwd"],
+            stdout, stderr, returncode, was_killed = trials.spawn(
+                entry["key"], command, execution["env"], settings["cwd"]
             )
 
             with open(f"{point_id}.out", "w") as output_file:
-                if command_output.stdout:
-                    output_file.write(command_output.stdout)
+                if stdout:
+                    output_file.write(stdout)
 
             with open(f"{point_id}.err", "w") as error_file:
-                if command_output.stderr:
-                    error_file.write(command_output.stderr)
+                if stderr:
+                    error_file.write(stderr)
 
-            if command_output.returncode != 0:
+            if was_killed:
+                # a command we terminated ourselves did not fail: it was
+                # abandoned, and saying otherwise would end the run
+                killed = True
+                break
+
+            if returncode != 0:
                 hint = "check the following files for more details:\n"
                 hint += f"{point_id}.out\n{point_id}.err"
                 report(
                     LogLevel.ERROR,
                     point_to_string(point),
-                    f"failed trial command '{command}' (code {command_output.returncode})",
+                    f"failed trial command '{command}' (code {returncode})",
                     hint=hint,
                 )
+
+        if killed:
+            if trials.is_abandoned(entry["key"]):
+                break
+            abandon_repetition(execution, entry, rep)
+            killed = False
+            continue
 
         collected_metrics = dict()
         for metric in compatible_metrics:
             metric_point_id = metric_point_ids[metric["name"]]
             command = substitute_global_yvars(metric["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, metric_point_id)
-            command_output = subprocess.run(
-                command,
-                shell=True,
-                universal_newlines=True,
-                capture_output=True,
-                env=execution["env"],
-                cwd=settings["cwd"],
+            stdout, _, returncode, was_killed = trials.spawn(
+                entry["key"], command, execution["env"], settings["cwd"]
             )
-            text = command_output.stdout.strip()
+            text = stdout.strip()
 
-            if command_output.returncode != 0:
+            if was_killed:
+                killed = True
+                break
+
+            if returncode != 0:
                 hint = "check the following files for more details:\n"
                 hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
                 report(
                     LogLevel.ERROR,
                     point_to_string(point),
                     "metric {} failed with return code {}".format(
-                        metric["name"], command_output.returncode
+                        metric["name"], returncode
                     ),
                 )
             elif text == "":
@@ -992,6 +1130,15 @@ def run_point_trials(
                     " ".join(NaNs),
                 )
 
+        if killed or trials.take_skip(entry["key"]):
+            # a kill that landed once the commands had already run: the
+            # measurement is still one nobody asked to keep
+            if trials.is_abandoned(entry["key"]):
+                break
+            abandon_repetition(execution, entry, rep)
+            killed = False
+            continue
+
         result = {k: x["name"] for k, x in point_map.items()}
         if file_lock is not None:
             file_lock.acquire()
@@ -1008,14 +1155,26 @@ def run_point_trials(
             if file_lock is not None:
                 file_lock.release()
 
+        plan.repetition_done(entry)
+        total, base = progress_units(execution, entry)
         completion = [
-            get_progress(base + rep + 1, total),
+            get_progress(base + entry["done"], total),
             point_to_string(point),
             "completed",
         ]
         if len(collected_metrics) > 0:
             completion.append(metrics_to_string(collected_metrics))
         report(LogLevel.INFO, *completion)
+        progress.emit(
+            "point.finished",
+            index=i,
+            key=list(entry["key"]),
+            rep=rep,
+            repetitions=1,
+            metrics={k: v for k, v in collected_metrics.items()},
+            completed=base + entry["done"],
+            total=total,
+        )
 
         for metric_name, values in collected_metrics.items():
             if len(values) > 1:
@@ -1032,6 +1191,12 @@ def run_point_trials(
                     f"{pd.Series(values).std():.3f}",
                 )
 
+    if killed or trials.is_abandoned(entry["key"]):
+        report(LogLevel.WARNING, point_to_string(point), "abandoned")
+        progress.emit("point.killed", index=i, key=list(entry["key"]), scope="point")
+        plan.finish(entry, "killed")
+    else:
+        plan.finish(entry, "done")
 
 
 def valid_conditions(point, order):
@@ -1233,51 +1398,48 @@ def load_recorded_points(path, order, metric_names, fmt):
     return recorded
 
 
-def report_skipped(settings, execution, i, point):
-    total, base = progress_units(settings, execution, i)
+def report_skipped(execution, entry):
+    total, base = progress_units(execution, entry)
     report(
         LogLevel.INFO,
-        get_progress(base + settings["repeat"], total),
-        point_to_string(point),
+        get_progress(base + entry["target"], total),
+        point_to_string(entry["point"]),
         "already recorded. Skipping",
     )
 
 
-def remaining_repetitions(settings, execution, point):
-    recorded = execution["recorded"]
-    if recorded is None:
-        return settings["repeat"]
-    key = tuple(str(x["name"]) for x in point)
-    return max(0, settings["repeat"] - recorded.get(key, 0))
-
-
 def run_subspace_trials(settings, data, execution):
+    plan = execution["plan"]
     if execution["script"] is not None:
         from yuclid.compile import compile_subspace_trials
 
         compile_subspace_trials(settings, data, execution, execution["script"])
-    elif settings["dry_run"]:
-        for i, point in enumerate(execution["subspace_points"], start=1):
-            point_map = {key: x for key, x in zip(execution["order"], point)}
-            if valid_conditions(point, execution["order"]):
-                compatible_trials, compatible_metrics = (
-                    get_compatible_trials_and_metrics(data, point, execution)
-                )
-                total, base = progress_units(settings, execution, i)
-                if remaining_repetitions(settings, execution, point) == 0:
-                    report(
-                        LogLevel.INFO,
-                        get_progress(base + settings["repeat"], total),
-                        point_to_string(point),
-                        "already recorded. Skipping",
-                    )
-                    continue
-                report(
-                    LogLevel.INFO,
-                    get_progress(base + settings["repeat"], total),
-                    "dry run",
-                    point_to_string(point),
-                )
+        return
+
+    for entry in plan.skipped():
+        report_skipped(execution, entry)
+
+    if settings["dry_run"]:
+        for entry in plan.pending():
+            get_compatible_trials_and_metrics(data, entry["point"], execution)
+            total, base = progress_units(execution, entry)
+            report(
+                LogLevel.INFO,
+                get_progress(base + entry["target"], total),
+                "dry run",
+                point_to_string(entry["point"]),
+            )
+            execution["progress"].emit(
+                "point.finished",
+                index=entry["seq"],
+                key=list(entry["key"]),
+                repetitions=entry["target"],
+                completed=base + entry["target"],
+                total=total,
+            )
+            for _ in range(entry["target"] - entry["done"]):
+                plan.repetition_done(entry)
+            plan.finish(entry)
     else:
         output_dir = os.path.dirname(settings["output"])
         if output_dir and not os.path.exists(output_dir):
@@ -1308,43 +1470,31 @@ def run_subspace_trials(settings, data, execution):
                 )
                 file_lock = threading.Lock()
                 with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=max_workers
+                    max_workers=max(1, max_workers)
                 ) as executor:
                     futures = []
-                    for i, point in enumerate(
-                        execution["subspace_points"], start=1
-                    ):
-                        repeat = remaining_repetitions(settings, execution, point)
-                        if repeat == 0:
-                            report_skipped(settings, execution, i, point)
-                            continue
-                        future = executor.submit(
-                            run_point_trials,
-                            settings,
-                            data,
-                            execution,
-                            writer,
-                            i,
-                            point,
-                            file_lock,
-                            repeat,
+                    # submitted as the plan yields them rather than all at once,
+                    # so that a pause drains the pool and a point dropped while
+                    # the run is under way is never started
+                    for entry in plan.pending():
+                        futures.append(
+                            executor.submit(
+                                run_point_trials,
+                                settings,
+                                data,
+                                execution,
+                                writer,
+                                entry,
+                                file_lock,
+                            )
                         )
-                        futures.append(future)
                     for future in concurrent.futures.as_completed(futures):
                         exc = future.exception()
                         if exc is not None:
                             report(LogLevel.ERROR, "trial failed", str(exc))
             else:
-                for i, point in enumerate(
-                    execution["subspace_points"], start=1
-                ):
-                    repeat = remaining_repetitions(settings, execution, point)
-                    if repeat == 0:
-                        report_skipped(settings, execution, i, point)
-                        continue
-                    run_point_trials(
-                        settings, data, execution, writer, i, point, repeat=repeat
-                    )
+                for entry in plan.pending():
+                    run_point_trials(settings, data, execution, writer, entry)
                     writer.flush()
 
 
@@ -1529,6 +1679,7 @@ def build_settings(args):
     settings["timing"] = {"setup": 0.0, "experiments": 0.0}
     settings["cwd"] = os.getcwd()
     build_run_directory(settings, args)
+    settings["steering"] = Steering(settings, settings["progress"])
 
     report(LogLevel.INFO, "working directory", settings["cwd"])
     report(LogLevel.INFO, "input configurations", ", ".join(requested))
@@ -1546,6 +1697,8 @@ def build_run_directory(settings, args):
     settings["run_dir"] = None
     settings["run_id"] = None
     settings["root"] = None
+    settings["progress"] = workspace.Progress(None)
+    settings["trials"] = Trials()
 
     if args.compile is not None:
         settings["trials_dir"] = os.path.join(
@@ -1569,6 +1722,9 @@ def build_run_directory(settings, args):
     else:
         settings["trials_dir"] = os.path.join(args.temp_dir, settings["now"])
     os.makedirs(settings["trials_dir"], exist_ok=True)
+    settings["progress"] = workspace.Progress(
+        os.path.join(settings["run_dir"], workspace.PROGRESS)
+    )
 
 
 def normalize_point_setup(point_setup, space):
@@ -1691,6 +1847,184 @@ def print_subspace(subspace):
         report(LogLevel.INFO, "subspace.{}: {}".format(dim, ", ".join(names)))
 
 
+def make_expander(settings, data, execution):
+    """Turn coordinates named by a steering command into points to run.
+
+    A value the space never had is admitted here, which is what lets a run be
+    extended rather than only pruned. Its own setup commands run at that moment,
+    since the setup phase is long past; the global setup is not run again.
+    """
+
+    def expand(coords):
+        subspace = execution["subspace"]
+        order = execution["order"]
+
+        for dim, names in coords.items():
+            known = {str(p["name"]) for p in subspace[dim]}
+            fresh = [normalize_point(name) for name in names if name not in known]
+            if len(fresh) > 0:
+                subspace[dim] = list(subspace[dim]) + fresh
+                for value in fresh:
+                    run_value_setup(execution, value)
+
+        axes = []
+        for dim in order:
+            values = subspace[dim]
+            if dim in coords:
+                values = [p for p in values if str(p["name"]) in coords[dim]]
+            axes.append(values)
+
+        execution["subspace_values"] = {
+            key: [x["value"] for x in subspace[key]] for key in subspace
+        }
+        execution["subspace_names"] = {
+            key: [x["name"] for x in subspace[key]] for key in subspace
+        }
+        return [p for p in itertools.product(*axes) if valid_conditions(p, order)]
+
+    return expand
+
+
+def run_value_setup(execution, value):
+    for command in value["setup"]:
+        command = substitute_global_yvars(command, execution["subspace"])
+        report(LogLevel.INFO, "setup for a value just added", command)
+        result = subprocess.run(
+            command, shell=True, universal_newlines=True, env=execution["env"]
+        )
+        if result.returncode != 0:
+            report(LogLevel.WARNING, "setup", f"'{command}'", f"returned {result.returncode}")
+
+
+def describe_op(op, effect):
+    """What an operation did, in the words the person who asked would use."""
+    kind = op.get("op")
+    if kind == "drop":
+        return "dropped {} point(s), {} unit(s) remain".format(
+            effect.get("dropped", 0), effect["total"] - effect["completed"]
+        )
+    if kind == "add":
+        return "added {} point(s), restored {}".format(
+            effect.get("added", 0), effect.get("restored", 0)
+        )
+    if kind == "kill":
+        return "killed {} point(s), {} command(s)".format(
+            effect.get("killed", 0), effect.get("commands", 0)
+        )
+    if kind == "stop":
+        return "stopping, {} point(s) abandoned".format(effect.get("abandoned", 0))
+    if kind == "repeat":
+        return "{} point(s) now ask for {} repetition(s)".format(
+            effect.get("retargeted", 0), effect.get("repeat")
+        )
+    if kind == "order":
+        return "reordered {} pending point(s)".format(effect.get("reordered", 0))
+    return kind
+
+
+class Steering:
+    """What the run answers when somebody asks it to change course.
+
+    A run with several presets executes one plan after another, so the current
+    one is held here rather than passed around: a command always addresses what
+    is running now.
+    """
+
+    def __init__(self, settings, progress):
+        self.settings = settings
+        self.progress = progress
+        self.execution = None
+        self.server = None
+        self.lock = threading.Lock()
+
+    def attach(self, execution):
+        self.execution = execution
+
+    def start(self, path):
+        self.server = control.Server(path, self.handle)
+        failure = self.server.start()
+        if failure is not None:
+            # a run must never be lost to a socket that could not be bound
+            report(LogLevel.WARNING, "this run cannot be steered", failure)
+
+    def close(self):
+        # a request being answered outlives the run by a moment: killing the
+        # last point ends the run, and whoever asked for it deserves the answer
+        with self.lock:
+            if self.server is not None:
+                self.server.close()
+                self.server = None
+
+    def handle(self, message):
+        with self.lock:
+            if self.server is None:
+                raise control.ControlError("the run has ended")
+            return self.dispatch(message)
+
+    def dispatch(self, message):
+        kind = message.get("op")
+        if kind == "status":
+            return self.status()
+        if self.execution is None:
+            raise control.ControlError("this run has not started its experiments yet")
+        if kind == "kill":
+            effect = self.kill(message)
+        else:
+            effect = self.execution["plan"].apply(message)
+        report(LogLevel.INFO, "steered", describe_op(message, effect))
+        self.progress.emit("op.applied", op=message, effect=effect)
+        return effect
+
+    def status(self):
+        if self.execution is None:
+            return {"state": "preparing"}
+        plan = self.execution["plan"]
+        total, completed = plan.units()
+        return {
+            "state": "paused" if plan.paused else "running",
+            "completed": completed,
+            "total": total,
+            "in_flight": [list(e["key"]) for e in plan.running()],
+        }
+
+    def kill(self, message):
+        scope = message.get("scope")
+        if scope not in ("point", "rep"):
+            raise control.ControlError(
+                "kill needs a scope: 'point' abandons it entirely, "
+                "'rep' only the repetition in flight"
+            )
+        plan = self.execution["plan"]
+        keys = None
+        if message.get("coords"):
+            coords = message["coords"]
+            unknown = [d for d in coords if d not in plan.order]
+            if unknown:
+                raise control.ControlError(
+                    "unknown dimension(s) {}".format(", ".join(unknown))
+                )
+            keys = {
+                e["key"]
+                for e in plan.running()
+                if all(
+                    e["key"][plan.order.index(dim)] in values
+                    for dim, values in coords.items()
+                )
+            }
+        targets, commands = self.settings["trials"].kill(scope, keys)
+        if len(targets) == 0:
+            raise control.ControlError("nothing is running to kill")
+        total, completed = plan.units()
+        return {
+            "killed": len(targets),
+            "commands": commands,
+            "scope": scope,
+            "points": [list(k) for k in targets],
+            "completed": completed,
+            "total": total,
+        }
+
+
 def run_experiments(
     settings, data, order, env, preset_name=None, recorded=None, script=None
 ):
@@ -1707,6 +2041,21 @@ def run_experiments(
         repeat=settings["repeat"], recorded=recorded, script=script,
     )
     validate_execution(execution, data)
+
+    execution["trials"] = settings["trials"]
+    execution["progress"] = settings["progress"]
+    execution["plan"] = Plan(
+        order,
+        execution["subspace_points"],
+        settings["repeat"],
+        recorded=recorded,
+        expand=make_expander(settings, data, execution),
+    )
+    settings["steering"].attach(execution)
+    execution["progress"].emit(
+        "plan", preset=preset_name, **execution["plan"].snapshot()
+    )
+
     if not settings["no_setup"]:
         started = time.monotonic()
         run_setup(settings, data, execution)
@@ -1749,6 +2098,11 @@ def launch(args):
     if settings["run_dir"] is None:
         execute(settings)
         return
+
+    steering = settings["steering"]
+    steering.start(os.path.join(settings["run_dir"], workspace.CONTROL))
+    previous = install_interrupt_handler(settings["trials"])
+
     state = workspace.FAILED
     try:
         execute(settings)
@@ -1760,8 +2114,31 @@ def launch(args):
         state = workspace.FINISHED if not e.code else workspace.FAILED
         raise
     finally:
+        settings["progress"].emit("run.finished", state=state)
+        steering.close()
+        settings["progress"].close()
+        if previous is not None:
+            signal.signal(signal.SIGINT, previous)
         # nothing is watching a run, so it records its own ending
         workspace.set_state(settings["run_dir"], state)
+
+
+def install_interrupt_handler(trials):
+    """Take the trials down with the run when Ctrl-C arrives.
+
+    Each trial runs in a session of its own so that a kill can reach a whole
+    pipeline, which also means the terminal's own interrupt no longer reaches
+    it. Forwarding it here keeps Ctrl-C meaning what it always meant.
+    """
+
+    def handler(signum, frame):
+        trials.kill_everything()
+        raise KeyboardInterrupt
+
+    try:
+        return signal.signal(signal.SIGINT, handler)
+    except ValueError:
+        return None
 
 
 def execute(settings):

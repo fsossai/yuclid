@@ -239,20 +239,26 @@ class Progress:
 
     def __init__(self, path):
         self.lock = threading.Lock()
-        self.stream = open(path, "a")
+        # compiling a script is not a run and has nothing to record
+        self.stream = open(path, "a") if path is not None else None
         self.seq = 0
 
     def emit(self, kind, **fields):
+        if self.stream is None:
+            return
         with self.lock:
             self.seq += 1
             record = {"seq": self.seq, "time": time.time(), "type": kind}
             record.update(fields)
-            self.stream.write(json.dumps(record) + "\n")
+            self.stream.write(json.dumps(record, default=str) + "\n")
             self.stream.flush()
 
     def close(self):
+        if self.stream is None:
+            return
         with self.lock:
             self.stream.close()
+            self.stream = None
 
 
 def read_progress(directory, since=0):

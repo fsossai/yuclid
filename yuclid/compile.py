@@ -179,7 +179,8 @@ def compile_point_trials(settings, data, execution, i, point, script):
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
     repeat = settings["repeat"]
-    total, base = run.progress_units(settings, execution, i)
+    # a compiled script has no plan to steer, so its counter is plain arithmetic
+    total, base = execution["subspace_size"] * repeat, (i - 1) * repeat
 
     for rep in range(repeat):
         rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
