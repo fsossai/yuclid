@@ -126,19 +126,21 @@
   }
   .preset button.plus:hover { color: var(--accent); font-weight: 600; }
   .preset button.minus:hover { color: var(--warn); font-weight: 600; }
-  /* A question is not bad news. Red is kept for the questions that end with
+  /* Being asked something is a pause in what you were doing, and it is
+     coloured like one. Green is what a run doing well looks like and would say
+     the answer is already yes; red is kept for the questions that end with
      something being deleted, so that the colour still means something when it
      does appear. */
   .confirm {
     display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    padding: 2px 4px 2px 10px; border: 1px solid var(--accent);
+    padding: 2px 4px 2px 10px; border: 1px solid var(--pause);
     border-radius: 999px; font-size: 13px;
   }
   .confirm button {
     border: 0; background: none; color: inherit; font: inherit; font-size: 13px;
     cursor: pointer; padding: 1px 6px; border-radius: 999px;
   }
-  .confirm .yes { color: var(--accent); font-weight: 600; }
+  .confirm .yes { color: var(--pause); font-weight: 600; }
   .confirm .no { color: var(--dim); }
   .confirm.danger { border-color: var(--warn); }
   .confirm.danger .yes { color: var(--warn); }
@@ -156,7 +158,7 @@
   #runs button.new {
     color: var(--accent); font-weight: 600;
   }
-  #launch-repeat { width: 6ch; }
+  #launch-repeat, #launch-parallel { width: 6ch; }
   /* the selection is one thing, and the buttons that act on it are not part
      of it: the rules say where it begins and ends */
   .selection {
@@ -237,13 +239,6 @@
       color-mix(in srgb, var(--dim) 25%, transparent) 4px,
       color-mix(in srgb, var(--dim) 25%, transparent) 5px);
   }
-  #space-legend .swatch {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
-    color: var(--dim);
-  }
-  #space-legend .swatch i {
-    width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--line);
-  }
   /* wide screens keep the alternation; narrow ones turn the outermost level
      down the page, so nothing is ever pushed off the side */
   @media (max-width: 720px) {
@@ -261,6 +256,8 @@
       <div id="launch-body"></div>
       <div class="row" style="margin-top: 12px">
         <label>repeat <input id="launch-repeat" type="number" min="1" value="1"></label>
+        <label title="how many trials may be running at once; 1 runs them one after another"
+          >at once <input id="launch-parallel" type="number" min="1" value="1"></label>
         <label>name <input id="launch-name" placeholder="optional"></label>
         <button class="act" id="launch-go">Start</button>
         <span id="launch-size" style="color: var(--dim)"></span>
@@ -276,7 +273,6 @@
         <button class="act" id="space-back">← the run</button>
         <h2 style="margin: 0">Space — every point of the run, nested by dimension</h2>
       </div>
-      <div class="row" id="space-legend"></div>
       <div class="row" style="margin: 8px 0">
         <span id="space-says" style="color: var(--dim)"></span>
       </div>
@@ -299,6 +295,10 @@
       <div id="rcommand"></div>
       <div id="rsetup"></div>
     </section>
+    <section id="wrong-section" hidden>
+      <h2>What went wrong</h2>
+      <div id="rwrong"></div>
+    </section>
     <section>
       <h2>Control</h2>
       <div class="row">
@@ -307,6 +307,7 @@
         <button class="act" data-op="stop">Stop</button>
         <button class="act" data-op="kill" data-scope="rep">Kill repetition</button>
         <button class="act" data-op="kill" data-scope="point">Kill point</button>
+        <span id="rreplay"></span>
         <span id="rdelete"></span>
       </div>
       <p id="says"></p>
@@ -827,7 +828,17 @@ const showSize = () => {
   size.textContent = empty.length
     ? `nothing chosen for ${empty.join(", ")}`
     : `up to ${points} point(s)`;
+  // running several trials at once is a different experiment — they share the
+  // machine they are being timed on — so the button says which one is about to
+  // start rather than leaving it to a number field
+  const at = parallelism();
+  go.textContent = at > 1 ? `Start ${at} at a time` : "Start";
 };
+
+const parallelism = () =>
+  Math.max(1, Number(document.getElementById("launch-parallel").value) || 1);
+
+document.getElementById("launch-parallel").oninput = showSize;
 
 const tell = (text, bad) => {
   const says = document.getElementById("launch-says");
@@ -842,6 +853,7 @@ document.getElementById("launch-go").onclick = async () => {
   const answer = await ask("/api/runs", {
     select: selection(),
     repeat: Number(document.getElementById("launch-repeat").value) || 1,
+    parallel: parallelism(),
     name: document.getElementById("launch-name").value,
   });
   go.disabled = false;
@@ -1097,10 +1109,39 @@ const renderRun = run => {
 
   renderCommand(run);
   renderSetupTrouble(run);
+  renderFailures(run);
+
+  // both of these act on a run that has ended, so while one is going there is
+  // nothing to offer — and the run each was built for is remembered, so that a
+  // question half asked is not swept away by the next second's redraw
+  const again = document.getElementById("rreplay");
+  if (run.live) {
+    again.innerHTML = "";
+    again.dataset.run = "";
+  } else if (again.dataset.run !== run.id) {
+    again.dataset.run = run.id;
+    // the steering it was given comes with it: a run half of whose space was
+    // dropped is replayed as the run it turned out to be, not as the one it
+    // set out to be
+    confirmer(
+      again,
+      "Replay run",
+      `do ${run.id} again as a new run?`,
+      async () => {
+        const answer = await ask(`/api/runs/${run.id}/finish`, {mode: "replay"});
+        if (answer.error) return say(answer.error, true);
+        say(`run ${answer.started} is doing ${run.id} again`);
+        select(answer.started);
+        refresh();
+      },
+      {yes: "replay", no: "not now", danger: false}
+    );
+  }
 
   const trash = document.getElementById("rdelete");
   if (run.live) {
     trash.innerHTML = "";
+    trash.dataset.run = "";
   } else if (trash.dataset.run !== run.id) {
     trash.dataset.run = run.id;
     confirmer(trash, "Delete run", `delete the record of ${run.id}?`, async () => {
@@ -1133,22 +1174,25 @@ const renderRun = run => {
   renderGaps(run);
 };
 
-// Deleting is asked about where it is offered, in the same words the button
-// used: no dialog, and nothing goes until the second click.
-const confirmer = (holder, label, question, act) => {
+// Something that cannot be taken back is asked about where it is offered, in
+// the same words the button used: no dialog, and nothing happens until the
+// second click. `danger` is for the ones that destroy something; the rest are
+// merely asked, and coloured as questions.
+const confirmer = (holder, label, question, act, words = {}) => {
+  const {yes: yesWord = "delete", no: noWord = "keep", danger = true} = words;
   const render = () => {
     holder.innerHTML = "";
     const button = document.createElement("button");
-    button.className = "act danger";
+    button.className = danger ? "act danger" : "act";
     button.textContent = label;
     button.onclick = () => {
       holder.innerHTML = "";
       const box = document.createElement("span");
-      box.className = "confirm danger";
+      box.className = danger ? "confirm danger" : "confirm";
       box.append(question);
       const yes = document.createElement("button");
       yes.className = "yes";
-      yes.textContent = "delete";
+      yes.textContent = yesWord;
       yes.onclick = async () => {
         box.querySelectorAll("button").forEach(b => (b.disabled = true));
         await act();
@@ -1156,7 +1200,7 @@ const confirmer = (holder, label, question, act) => {
       };
       const no = document.createElement("button");
       no.className = "no";
-      no.textContent = "keep";
+      no.textContent = noWord;
       no.onclick = render;
       box.append(yes, no);
       holder.append(box);
@@ -1218,8 +1262,55 @@ const renderSetupTrouble = run => {
   const list = document.createElement("pre");
   list.style.color = "var(--warn)";
   list.style.maxHeight = "20vh";
-  list.textContent = trouble.map(t => `${t.label}   ${t.log}`).join("\n");
+  list.textContent = trouble
+    .map(t => `${t.label}   ${t.log}\n${t.said || "it printed nothing"}`)
+    .join("\n\n");
   box.append(said, list);
+};
+
+// A point that failed is a hole in the results, and the reason it failed was
+// printed to a terminal the person looking at this page may not have. The run
+// records what the command said along with the fact that it said it, so the
+// answer to "what went wrong" is here rather than in a file somewhere.
+const renderFailures = run => {
+  const section = document.getElementById("wrong-section");
+  const box = document.getElementById("rwrong");
+  const wrong = run.failures || [];
+  const signature = JSON.stringify([run.id, run.failure_count, wrong.length]);
+  if (box.dataset.of === signature) return;
+  box.dataset.of = signature;
+
+  section.hidden = wrong.length === 0;
+  box.innerHTML = "";
+  if (!wrong.length) return;
+
+  const said = document.createElement("div");
+  said.style.color = "var(--fail)";
+  // only the last few are sent, so the count is what says how bad it was
+  said.textContent =
+    run.failure_count > wrong.length
+      ? `${run.failure_count} failures — the last ${wrong.length}:`
+      : `${run.failure_count} failure${run.failure_count === 1 ? "" : "s"}:`;
+  box.append(said);
+
+  for (const bad of wrong) {
+    const what = bad.kind === "metric" ? `metric ${bad.what}` : `trial ${bad.what}`;
+    const item = document.createElement("pre");
+    item.style.maxHeight = "24vh";
+    item.style.marginTop = "8px";
+    item.textContent = [
+      `(${coords(run.order, bad.key)})   ${what}` +
+        (bad.code ? `   exited ${bad.code}` : ""),
+      bad.command,
+      "",
+      bad.said || "it printed nothing at all",
+      "",
+      // for a metric these are the captures of the trial it was measuring,
+      // which is where the rest of the story is
+      `captures: ${bad.log}`,
+    ].join("\n");
+    box.append(item);
+  }
 };
 
 // a browser will not follow a file:// link out of an http:// page, so the path
@@ -1333,8 +1424,8 @@ const renderGapActions = (run, missing) => {
     question.className = "confirm";
     question.append(`${missing} point(s) missing:`);
     for (const [mode, label, told] of [
-      ["finish", "complete this run", `same as \`yuclid finish ${run.id}\``],
-      ["restart", "start a new one", `same as \`yuclid replay ${run.id} --no-steering\``],
+      ["finish", "complete this run", `yuclid finish ${run.id}`],
+      ["restart", "measure it all again", `yuclid replay ${run.id} --no-steering`],
     ]) {
       const choice = document.createElement("button");
       choice.className = "yes";
@@ -1355,7 +1446,9 @@ const renderGapActions = (run, missing) => {
 
   const spawn = async (mode, told) => {
     row.querySelectorAll("button").forEach(b => (b.disabled = true));
-    how.textContent = "starting…";
+    // the command it comes to, so that the next one can be typed rather than
+    // clicked for
+    how.textContent = `starting… (${told})`;
     const answer = await ask(`/api/runs/${current}/finish`, {mode});
     choosing = false;
     renderGapActions(run, missing);
@@ -1472,18 +1565,6 @@ const stateOf = point =>
     ? "skipped"
     : point.status || "pending";
 
-const LEGEND = [
-  ["done", "done"],
-  ["running", "running"],
-  ["pending", "to do"],
-  ["failed", "failed"],
-  ["killed", "killed"],
-  ["dropped", "dropped"],
-  ["skipped", "already recorded"],
-  ["aside", "another part of the run"],
-  ["absent", "not in the space"],
-];
-
 let spaceShows = "";
 let spaceLeaves = new Map();
 
@@ -1513,7 +1594,6 @@ const renderSpace = () => {
     spaceLeaves = new Map();
     body.innerHTML = "";
     body.append(buildNest(roster.order, values, sizes, 0, [], 0));
-    renderLegend();
   }
 
   const held = roster.points.size;
@@ -1590,20 +1670,6 @@ const fillLeaf = (leaf, point, state) => {
   leaf.title = point
     ? `${leaf.dataset.of}\n${state}${wanted > 1 ? `  ${done}/${wanted}` : ""}`
     : `${leaf.dataset.of}\nnot in the space`;
-};
-
-const renderLegend = () => {
-  const legend = document.getElementById("space-legend");
-  legend.innerHTML = "";
-  for (const [state, label] of LEGEND) {
-    const swatch = document.createElement("span");
-    swatch.className = "swatch";
-    const box = document.createElement("i");
-    box.className = "leaf";
-    box.dataset.state = state;
-    swatch.append(box, label);
-    legend.append(swatch);
-  }
 };
 
 document.getElementById("rspace").onclick = () => show("space");

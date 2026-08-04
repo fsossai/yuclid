@@ -744,6 +744,23 @@ def apply_preset(data, preset_name):
     return subspace
 
 
+EXCERPT = 2000
+
+
+def excerpt(text):
+    """The tail of what a command printed, short enough to record.
+
+    A failure is only useful if you can see what it said, and the person who
+    wants to see it is usually not at the terminal the run is printing to. The
+    end rather than the beginning: an error message comes last, after whatever
+    the command had been saying until it went wrong.
+    """
+    text = (text or "").strip()
+    if len(text) <= EXCERPT:
+        return text
+    return "…\n" + text[-EXCERPT:]
+
+
 def run_setup_command(execution, command, label):
     """Run one setup command, keeping what it printed in a file of its own.
 
@@ -777,6 +794,7 @@ def run_setup_command(execution, command, label):
         command=command,
         code=result.returncode,
         log=stem + ".err",
+        said=excerpt(result.stderr or result.stdout),
     )
     report(
         LogLevel.ERROR,
@@ -1227,6 +1245,20 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
 
             if returncode != 0:
                 failed = True
+                # what it printed goes into the progress file as well as the
+                # terminal: whoever is watching from elsewhere gets the reason
+                # rather than only the fact
+                progress.emit(
+                    "trial.failed",
+                    index=i,
+                    key=list(entry["key"]),
+                    rep=rep,
+                    trial=j,
+                    command=command,
+                    code=returncode,
+                    log=point_id + ".err",
+                    said=excerpt(stderr or stdout),
+                )
                 hint = "check the following files for more details:\n"
                 hint += f"{point_id}.out\n{point_id}.err"
                 report(
@@ -1249,7 +1281,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             metric_point_id = metric_point_ids[metric["name"]]
             command = substitute_global_yvars(metric["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, metric_point_id)
-            stdout, _, returncode, was_killed = trials.spawn(
+            stdout, stderr, returncode, was_killed = trials.spawn(
                 entry["key"], command, execution["env"], settings["cwd"]
             )
             text = stdout.strip()
@@ -1258,8 +1290,22 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 killed = True
                 break
 
+            def note(said):
+                progress.emit(
+                    "metric.failed",
+                    index=i,
+                    key=list(entry["key"]),
+                    rep=rep,
+                    metric=metric["name"],
+                    command=command,
+                    code=returncode,
+                    log=metric_point_id + ".err",
+                    said=said,
+                )
+
             if returncode != 0:
                 failed = True
+                note(excerpt(stderr or stdout))
                 hint = "check the following files for more details:\n"
                 hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
                 report(
@@ -1273,6 +1319,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 )
             elif text == "":
                 failed = True
+                note("the command printed nothing at all")
                 report(
                     LogLevel.ERROR,
                     point_to_string(point),
@@ -1289,6 +1336,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                         try:
                             return float(x)
                         except ValueError:
+                            note("printed something that is not a number:\n" + excerpt(text))
                             report(
                                 LogLevel.ERROR,
                                 "cannot parse result of metric {}".format(metric["name"]),

@@ -27,6 +27,8 @@ import re
 
 PAGE = os.path.join(os.path.dirname(__file__), "web", "index.html")
 BODY_LIMIT = 1 << 16
+# how many failures the page is sent; the rest are in the terminal and the logs
+FAILURES = 20
 # how a run is started from here: the same interpreter, whether yuclid is
 # installed or being run from a checkout
 ENTRY_POINT = "import sys; from yuclid.cli import main; sys.exit(main())"
@@ -266,6 +268,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "current": current,
             "command": seen["command"] if live else None,
             "setup_failures": seen["setup_failures"],
+            "failures": seen["failures"],
+            "failure_count": seen["failure_count"],
             "live": live,
             "in_flight": in_flight if live else 0,
             "paused": bool(plan.get("paused")) if plan and live else False,
@@ -402,6 +406,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if repeat > 1:
             argv += ["-r", str(repeat)]
 
+        parallel = request.get("parallel")
+        parallel = 1 if parallel is None else parallel
+        if not isinstance(parallel, int) or not 1 <= parallel <= 1024:
+            return {"error": "parallel must be a whole number of trials at once"}
+        if parallel > 1:
+            argv += ["--parallel-trials", str(parallel)]
+
         name = request.get("name") or ""
         try:
             name = workspace.check_name(name)
@@ -446,16 +457,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return {"error": "the run did not start", "log": log_path}, child
 
     def finish_run(self, run_id, mode):
-        """Start a run from an old one: either completing it or repeating it.
+        """Start a run from an old one: completing it, or doing it again.
 
         `finish` resumes into the same results file, so only the points that
-        went unmeasured are run. `restart` runs the whole configuration again
-        as a run of its own. The command is built here from the run's id and a
-        mode this method knows, so nothing in a request becomes an argument.
+        went unmeasured are run. `replay` does the run again as a run of its
+        own, with the steering it was given, and `restart` does it again
+        without — the difference matters for a run half of whose space was
+        dropped while it went. The command is built here from the run's id and
+        a mode this method knows, so nothing in a request becomes an argument.
         The new run is detached: `serve` owns no run, and killing it must not
         take one down.
         """
-        if mode not in ("finish", "restart"):
+        if mode not in ("finish", "replay", "restart"):
             return {"error": "unknown mode '{}'".format(mode)}
 
         manifest = self.manifest(run_id)
@@ -464,13 +477,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         argv = {
             "finish": ["finish", run_id],
+            "replay": ["replay", run_id],
             "restart": ["replay", run_id, "--no-steering"],
         }[mode]
 
         with self.server.lock:
             started = self.server.finishing.get(run_id)
             if started is not None and started.poll() is None:
-                return {"error": "run {} is already being restarted".format(run_id)}
+                return {"error": "run {} was already started again".format(run_id)}
 
             output = manifest.get("output")
             for other in workspace.live_runs(self.server.root):
@@ -533,7 +547,7 @@ def scan(directory):
     """
     plan = None
     completed, total, current, failed = 0, 0, None, False
-    command, broken = None, []
+    command, broken, wrong = None, [], []
     # a point is in flight between the start of a repetition and its end;
     # repetitions of one point are sequential, so counting them per point says
     # which points are still going without the run having to announce it
@@ -556,7 +570,23 @@ def scan(directory):
         if kind == "setup.failed":
             broken.append(
                 {"label": record.get("label"), "command": record.get("command"),
-                 "log": record.get("log")}
+                 "code": record.get("code"), "log": record.get("log"),
+                 "said": record.get("said")}
+            )
+        if kind in ("trial.failed", "metric.failed"):
+            wrong.append(
+                {
+                    "kind": "metric" if kind == "metric.failed" else "trial",
+                    "key": record.get("key") or [],
+                    "rep": record.get("rep"),
+                    "what": record.get("metric") if kind == "metric.failed"
+                    else record.get("trial"),
+                    "command": record.get("command"),
+                    "code": record.get("code"),
+                    "log": record.get("log"),
+                    "said": record.get("said"),
+                    "time": record.get("time"),
+                }
             )
 
         key = tuple(record.get("key") or ())
@@ -578,6 +608,11 @@ def scan(directory):
         "failed": failed,
         "command": command,
         "setup_failures": broken,
+        # a run where nothing works fails once per point, and every one of them
+        # carries what it printed: the most recent are the ones worth sending,
+        # and the count says how many there were
+        "failures": wrong[-FAILURES:],
+        "failure_count": len(wrong),
         "in_flight": sum(1 for count in running.values() if count > 0),
     }
 
