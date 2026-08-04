@@ -262,6 +262,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "argv": manifest.get("argv"),
             "replay_of": manifest.get("replay_of"),
             "order": plan["order"] if plan else [],
+            "undefined": plan.get("undefined", []) if plan else [],
             "dimensions": dimensions_of(plan),
             "completed": completed,
             "total": total,

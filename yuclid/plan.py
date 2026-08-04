@@ -26,11 +26,15 @@ FINISHED = {DONE, DROPPED, KILLED, FAILED}
 
 
 class Plan:
-    def __init__(self, order, points, repeat, recorded=None, expand=None):
+    def __init__(self, order, points, repeat, recorded=None, expand=None, undefined=None):
         self.lock = threading.RLock()
         self.order = list(order)
         self.repeat = repeat
         self.expand = expand
+        # These dimensions had no domain in the configuration. Their values
+        # came from a selector or preset, so they are the ones the web UI can
+        # sensibly invite someone to extend while this run is under way.
+        self.undefined = list(undefined or [])
         self.stopped = False
         self.paused = False
         self.resumed = threading.Event()
@@ -187,6 +191,7 @@ class Plan:
         with self.lock:
             return {
                 "order": list(self.order),
+                "undefined": list(self.undefined),
                 "paused": self.paused,
                 "total": sum(
                     e["target"] for e in self.entries if e["status"] != DROPPED

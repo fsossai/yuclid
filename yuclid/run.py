@@ -2484,6 +2484,10 @@ def run_experiments(
     else:
         subspace = apply_preset(data, preset_name)
 
+    # Keep this before selectors turn an undefined dimension into its chosen
+    # values. It describes the nature of the run, rather than its first set of
+    # points, and is persisted in the plan for the web UI to use later.
+    undefined = [dim for dim, values in subspace.items() if values is None]
     subspace = apply_user_selectors(settings, subspace)
     validate_dimensions(subspace)
     print_subspace(subspace)
@@ -2503,6 +2507,7 @@ def run_experiments(
         settings["repeat"],
         recorded=recorded,
         expand=make_expander(settings, data, execution),
+        undefined=undefined,
     )
     if settings.get("replay") is not None:
         # a replay is the previous run's result, not its command line: whatever

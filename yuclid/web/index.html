@@ -113,6 +113,13 @@
     opacity: .55; text-decoration: line-through; cursor: grab;
   }
   .chip.gone:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .dim-add { display: inline-flex; gap: 4px; align-items: center; }
+  .dim-add input {
+    width: 14ch; padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--panel); color: inherit; font: inherit; font-size: 13px;
+  }
+  .dim-add input:focus { border-color: var(--accent); outline: none; }
+  .dim-add button { padding: 3px 9px; }
   /* the same height as the buttons below the selection, so the two rows of
      controls read as the same kind of thing */
   .preset {
@@ -962,6 +969,32 @@ const renderDims = run => {
     }
     row.append(zone);
 
+    // A dimension that began undefined has no fixed menu of values. The
+    // runner already knows how to expand it safely; this is the small UI for
+    // naming the next value rather than making someone reach for the CLI.
+    if (live && (run.undefined || []).includes(dim)) {
+      const form = document.createElement("form");
+      form.className = "dim-add";
+      const input = document.createElement("input");
+      input.placeholder = "new value";
+      input.setAttribute("aria-label", `add a value for ${dim}`);
+      const add = document.createElement("button");
+      add.className = "act";
+      add.type = "submit";
+      add.textContent = "add";
+      form.append(input, add);
+      form.onsubmit = event => {
+        event.preventDefault();
+        const value = input.value.trim();
+        if (!value) return say(`name a value for ${dim}`, true);
+        if (values.some(item => item.value === value))
+          return say(`${dim}=${value} is already in this run`, true);
+        input.value = "";
+        send({op: "add", coords: {[dim]: [value]}});
+      };
+      row.append(form);
+    }
+
     if (gone.length) {
       const away = document.createElement("div");
       away.className = "zone";
@@ -1207,7 +1240,6 @@ const renderRun = run => {
       // nothing is selected now, so the panel says so rather than going on
       // describing a run that is not there any more
       clearRun();
-      tellNothing(`${run.id} deleted — its results file is untouched`);
       refresh();
     });
   }
