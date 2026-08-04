@@ -126,19 +126,21 @@
   }
   .preset button.plus:hover { color: var(--accent); font-weight: 600; }
   .preset button.minus:hover { color: var(--warn); font-weight: 600; }
-  /* A question is not bad news. Red is kept for the questions that end with
+  /* Being asked something is a pause in what you were doing, and it is
+     coloured like one. Green is what a run doing well looks like and would say
+     the answer is already yes; red is kept for the questions that end with
      something being deleted, so that the colour still means something when it
      does appear. */
   .confirm {
     display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    padding: 2px 4px 2px 10px; border: 1px solid var(--accent);
+    padding: 2px 4px 2px 10px; border: 1px solid var(--pause);
     border-radius: 999px; font-size: 13px;
   }
   .confirm button {
     border: 0; background: none; color: inherit; font: inherit; font-size: 13px;
     cursor: pointer; padding: 1px 6px; border-radius: 999px;
   }
-  .confirm .yes { color: var(--accent); font-weight: 600; }
+  .confirm .yes { color: var(--pause); font-weight: 600; }
   .confirm .no { color: var(--dim); }
   .confirm.danger { border-color: var(--warn); }
   .confirm.danger .yes { color: var(--warn); }
@@ -147,6 +149,8 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
   }
   #says { color: var(--dim); min-height: 1.5em; }
+  #nothing { border-bottom: 0; }
+  #nothing-says { margin: 0; color: var(--dim); }
   #says[data-bad="true"] { color: var(--warn); }
   #launch label { color: var(--dim); }
   #launch input {
@@ -156,7 +160,7 @@
   #runs button.new {
     color: var(--accent); font-weight: 600;
   }
-  #launch-repeat { width: 6ch; }
+  #launch-repeat, #launch-parallel { width: 6ch; }
   /* the selection is one thing, and the buttons that act on it are not part
      of it: the rules say where it begins and ends */
   .selection {
@@ -188,6 +192,60 @@
     overflow-wrap: anywhere;
   }
   header #version { margin-left: auto; color: var(--dim); font-size: 12.5px; }
+
+  /* The space, drawn as boxes inside boxes. Each level lays its children out
+     across the other axis from its parent, and every child takes an equal
+     share of it, so the picture is the product itself rather than a summary
+     of it. Depth reads from the border, the padding and a background that
+     lifts a step each time. */
+  .nest { display: flex; gap: 4px; flex: 1; min-width: 0; min-height: 0; }
+  .nest[data-across="true"] { flex-direction: row; }
+  .nest[data-across="false"] { flex-direction: column; }
+  .branch {
+    display: flex; flex-direction: column; flex: 1 1 0; min-width: 0;
+    border: 1px solid var(--line); border-radius: 6px; padding: 3px;
+  }
+  .branch[data-depth="0"] { border-width: 2px; padding: 5px; }
+  .branch[data-depth="1"] { background: color-mix(in srgb, var(--chip) 45%, transparent); }
+  .branch[data-depth="3"] { background: color-mix(in srgb, var(--chip) 45%, transparent); }
+  .branch > .head {
+    font-size: 11.5px; color: var(--dim); font-weight: 600;
+    padding: 0 3px 3px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* a point is its repetitions, side by side and filled as they are measured */
+  .leaf {
+    display: flex; gap: 2px; flex: 1 1 0; min-width: 0; min-height: 18px;
+    padding: 3px; border: 1px solid var(--line); border-radius: 5px;
+    overflow: hidden;
+  }
+  .leaf .rep {
+    flex: 1 1 0; min-width: 2px; border-radius: 2px;
+    background: color-mix(in srgb, var(--dim) 18%, transparent);
+  }
+  .leaf .rep[data-done="true"] { background: currentColor; }
+
+  .leaf[data-state="done"] { border-color: var(--accent); color: var(--accent); }
+  .leaf[data-state="running"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .leaf[data-state="pending"] { color: var(--dim); }
+  .leaf[data-state="failed"] { border-color: var(--fail); color: var(--fail); }
+  .leaf[data-state="killed"] { border-color: var(--warn); color: var(--warn); }
+  .leaf[data-state="dropped"] { opacity: .4; border-style: dashed; color: var(--dim); }
+  .leaf[data-state="skipped"], .leaf[data-state="aside"] { opacity: .45; color: var(--dim); }
+  .leaf[data-state="aside"] { border-style: dashed; }
+  /* a cell the space never had: drawn, because the hole is the information */
+  .leaf[data-state="absent"] {
+    border-style: dotted; opacity: .3;
+    background: repeating-linear-gradient(
+      45deg, transparent, transparent 4px,
+      color-mix(in srgb, var(--dim) 25%, transparent) 4px,
+      color-mix(in srgb, var(--dim) 25%, transparent) 5px);
+  }
+  /* wide screens keep the alternation; narrow ones turn the outermost level
+     down the page, so nothing is ever pushed off the side */
+  @media (max-width: 720px) {
+    #space-body > .nest { flex-direction: column; }
+  }
 </style>
 </head>
 <body>
@@ -200,6 +258,8 @@
       <div id="launch-body"></div>
       <div class="row" style="margin-top: 12px">
         <label>repeat <input id="launch-repeat" type="number" min="1" value="1"></label>
+        <label title="how many trials may be running at once; 1 runs them one after another"
+          >at once <input id="launch-parallel" type="number" min="1" value="1"></label>
         <label>name <input id="launch-name" placeholder="optional"></label>
         <button class="act" id="launch-go">Start</button>
         <span id="launch-size" style="color: var(--dim)"></span>
@@ -210,6 +270,19 @@
       <h2>Manage runs</h2>
       <div id="manage-body"></div>
     </section>
+    <section id="space" hidden>
+      <div class="row" style="margin-bottom: 10px">
+        <button class="act" id="space-back">← the run</button>
+        <h2 style="margin: 0">Space — every point of the run, nested by dimension</h2>
+      </div>
+      <div class="row" style="margin: 8px 0">
+        <span id="space-says" style="color: var(--dim)"></span>
+      </div>
+      <div id="space-body"></div>
+    </section>
+    <section id="nothing" hidden>
+      <p id="nothing-says">select a run</p>
+    </section>
     <div id="detail">
     <section>
       <h2>Run</h2>
@@ -218,6 +291,7 @@
         <code id="rid" style="color: var(--dim)">—</code>
         <span class="state" id="rstate"></span>
         <span id="rcount" style="color: var(--dim)"></span>
+        <button class="act" id="rspace">Space</button>
       </div>
       <div class="bar" id="rbar" style="margin: 10px 0"><div></div></div>
       <div id="rfile" title="click to copy"></div>
@@ -225,6 +299,10 @@
       <div style="color: var(--dim)" id="rwhere"></div>
       <div id="rcommand"></div>
       <div id="rsetup"></div>
+    </section>
+    <section id="wrong-section" hidden>
+      <h2>What went wrong</h2>
+      <div id="rwrong"></div>
     </section>
     <section>
       <h2>Control</h2>
@@ -234,6 +312,7 @@
         <button class="act" data-op="stop">Stop</button>
         <button class="act" data-op="kill" data-scope="rep">Kill repetition</button>
         <button class="act" data-op="kill" data-scope="point">Kill point</button>
+        <span id="rreplay"></span>
         <span id="rdelete"></span>
       </div>
       <p id="says"></p>
@@ -284,10 +363,12 @@ const describe = (op, effect) => {
   if (op.op === "pause")
     return effect.in_flight
       ? `pausing: no new point will start, and the ${effect.in_flight} in flight ` +
-        "will finish their repetitions first"
+        "will stop as soon as the command they are running is done"
       : "paused: nothing was running";
   if (op.op === "resume") return `resumed, ${left} unit(s) remain`;
-  if (op.op === "stop") return `stopping, ${effect.abandoned} point(s) abandoned`;
+  if (op.op === "stop")
+    return `stopped: ${effect.abandoned} point(s) abandoned, ` +
+      `${effect.interrupted || 0} interrupted`;
   return JSON.stringify(effect);
 };
 
@@ -348,29 +429,25 @@ document.addEventListener("click", e => {
   if (asking && !e.target.closest(".confirm") && !e.target.closest(".chip")) cancel();
 });
 
-// Dropping one value and dropping the dimension it belongs to are both
-// reasonable things to mean by clicking it, and they differ by a lot — every
-// point carries a value in every dimension, so the second empties the run.
-// The question names both, with what each would cost.
+// Clicking a value means one thing: the points still to run that carry it are
+// not going to run. The question says how many those are — counted from a plan
+// brought up to date rather than from the snapshot the run started with — and
+// then does it.
 const confirmChip = (dim, value) => {
   const values = (lastRun.dimensions || {})[dim] || [];
   const here = values.find(v => v.value === value);
-  const one = here ? here.pending : 0;
-  const all = values.reduce((total, v) => total + v.pending, 0);
+  const many = here ? here.pending : 0;
 
   const box = document.createElement("span");
   box.className = "confirm";
-  box.append(`drop ${dim}=${value}?`);
+  box.append(`drop ${dim}=${value}? (${many} point${many === 1 ? "" : "s"})`);
 
-  const choose = (label, coords) => {
-    const button = document.createElement("button");
-    button.className = "yes";
-    button.textContent = label;
-    button.onclick = () => {
-      asking = null;
-      send({op: "drop", coords});
-    };
-    return button;
+  const yes = document.createElement("button");
+  yes.className = "yes";
+  yes.textContent = "drop";
+  yes.onclick = () => {
+    asking = null;
+    send({op: "drop", coords: {[dim]: [value]}});
   };
 
   const no = document.createElement("button");
@@ -378,14 +455,7 @@ const confirmChip = (dim, value) => {
   no.textContent = "cancel";
   no.onclick = cancel;
 
-  box.append(
-    choose(`just this value (${one} point${one === 1 ? "" : "s"})`, {[dim]: [value]}),
-    choose(
-      `the whole ${dim} dimension (${all} point${all === 1 ? "" : "s"})`,
-      {[dim]: values.map(v => v.value)}
-    ),
-    no
-  );
+  box.append(yes, no);
   return box;
 };
 
@@ -442,13 +512,49 @@ const applyPreset = (name, adding) => {
 // things that belong to no run in particular
 let pane = "detail";
 
+// which pane is up, and whether there is a run for it to be about: a pane that
+// describes a run has nothing to describe once that run is gone, and showing
+// the last one it drew would be showing something that no longer exists
+const paint = () => {
+  for (const name of ["launch", "detail", "manage", "space"]) {
+    document.getElementById(name).hidden = name !== pane;
+  }
+  const bare = !current && pane === "detail";
+  if (bare) document.getElementById("detail").hidden = true;
+  document.getElementById("nothing").hidden = !bare;
+};
+
+// Forget the run being displayed: it has been deleted, or was never chosen.
+// Everything kept about it goes with it, so that selecting another one does
+// not start from the last one's log, roster or name.
+const clearRun = () => {
+  current = null;
+  lastRun = null;
+  since = 0;
+  lines = [];
+  asking = null;
+  editing = false;
+  live = false;
+  forget();
+  document.getElementById("log").textContent = "";
+  name.value = "";
+  say("");
+  tellNothing("select a run");
+  paint();
+};
+
+// what the empty panel says: usually an invitation, but just after a deletion
+// it is worth saying what became of the run that was there
+const tellNothing = words => {
+  document.getElementById("nothing-says").textContent = words;
+};
+
 const show = which => {
   pane = which;
-  for (const name of ["launch", "detail", "manage"]) {
-    document.getElementById(name).hidden = name !== which;
-  }
+  paint();
   if (which === "launch" && !config) loadConfig();
   if (which === "manage") renderManage();
+  if (which === "space") renderSpace();
   renderNav(lastRuns);
 };
 
@@ -557,8 +663,10 @@ const loadConfig = async () => {
     document.getElementById("launch-body").textContent = config.error;
     return;
   }
+  // nothing is chosen to begin with: a new run is built by saying what it
+  // should cover, not by paring back a space you never asked for
   for (const [dim, values] of Object.entries(config.dimensions)) {
-    if (values) chosen[dim] = new Set(values);
+    if (values) chosen[dim] = new Set();
   }
   renderLaunch();
 };
@@ -632,14 +740,17 @@ const renderLaunch = () => {
     }
 
     // two zones, as in the Dimensions panel: a value is clicked across or
-    // dragged across, and where it sits is what the run will cover
+    // dragged across, and the top one is what the run will cover
     const kept = document.createElement("div");
     kept.className = "zone";
     const left = document.createElement("div");
     left.className = "zone";
     const hint = document.createElement("span");
     hint.className = "hint";
-    hint.textContent = "left out:";
+    hint.textContent = "not in the run:";
+    const nothing = document.createElement("span");
+    nothing.className = "hint";
+    nothing.textContent = "click a value below to add it";
 
     const move = (value, into) => {
       into ? chosen[dim].add(value) : chosen[dim].delete(value);
@@ -651,7 +762,7 @@ const renderLaunch = () => {
       chip.className = inside ? "chip" : "chip gone";
       chip.textContent = value;
       chip.draggable = true;
-      chip.title = inside ? `leave ${value} out` : `put ${value} back`;
+      chip.title = inside ? `take ${value} out of the run` : `add ${value} to the run`;
       chip.onclick = () => move(value, !inside);
       chip.ondragstart = e => e.dataTransfer.setData("text/plain", value);
       (inside ? kept : left).append(chip);
@@ -669,9 +780,11 @@ const renderLaunch = () => {
         if (values.includes(value)) move(value, into);
       };
     }
+    // the chosen values sit on top, saying what the run covers; a dimension
+    // with nothing chosen yet says how to choose rather than showing a gap
+    if (!kept.children.length) kept.append(nothing);
     row.append(kept);
-    // the second zone only appears once something is in it, so a dimension
-    // that is wholly in the run stays one line
+    // and the rest below, to be picked from — gone once they are all in
     if (left.children.length) {
       left.prepend(hint);
       row.append(left);
@@ -753,7 +866,17 @@ const showSize = () => {
   size.textContent = empty.length
     ? `nothing chosen for ${empty.join(", ")}`
     : `up to ${points} point(s)`;
+  // running several trials at once is a different experiment — they share the
+  // machine they are being timed on — so the button says which one is about to
+  // start rather than leaving it to a number field
+  const at = parallelism();
+  go.textContent = at > 1 ? `Start ${at} at a time` : "Start";
 };
+
+const parallelism = () =>
+  Math.max(1, Number(document.getElementById("launch-parallel").value) || 1);
+
+document.getElementById("launch-parallel").oninput = showSize;
 
 const tell = (text, bad) => {
   const says = document.getElementById("launch-says");
@@ -768,6 +891,7 @@ document.getElementById("launch-go").onclick = async () => {
   const answer = await ask("/api/runs", {
     select: selection(),
     repeat: Number(document.getElementById("launch-repeat").value) || 1,
+    parallel: parallelism(),
     name: document.getElementById("launch-name").value,
   });
   go.disabled = false;
@@ -865,14 +989,18 @@ const renderDims = run => {
 // -- everything else ------------------------------------------------------
 
 const select = id => {
-  if (pane !== "detail") show("detail");
+  if (pane !== "detail" && pane !== "space") show("detail");
   if (id === current) return;
   current = id;
+  landed = true;
   since = 0;
   lines = [];
   asking = null;
+  forget();
   document.getElementById("log").textContent = "";
   say("");
+  // there is a run again, so the panel goes back to being about it
+  paint();
   refresh();
 };
 
@@ -956,10 +1084,25 @@ const renderNav = runs => {
   list.scrollTop = scroll;
 };
 
+// the first run is opened for you when the page loads, and only then: after
+// that, having nothing selected is a state the reader asked for — by deleting
+// what they were looking at — and jumping them to another run would undo it
+let landed = false;
+
 const renderRuns = runs => {
   lastRuns = runs;
   renderNav(runs);
-  if (!current && runs.length) select(runs[0].id);
+  if (current && !runs.some(run => run.id === current)) {
+    // gone, whether from this page, another tab, or the terminal
+    clearRun();
+    return;
+  }
+  if (!current && !landed && runs.length) {
+    landed = true;
+    select(runs[0].id);
+    return;
+  }
+  paint();
 };
 
 const renderRun = run => {
@@ -1022,18 +1165,49 @@ const renderRun = run => {
 
   renderCommand(run);
   renderSetupTrouble(run);
+  renderFailures(run);
+
+  // both of these act on a run that has ended, so while one is going there is
+  // nothing to offer — and the run each was built for is remembered, so that a
+  // question half asked is not swept away by the next second's redraw
+  const again = document.getElementById("rreplay");
+  if (run.live) {
+    again.innerHTML = "";
+    again.dataset.run = "";
+  } else if (again.dataset.run !== run.id) {
+    again.dataset.run = run.id;
+    // the steering it was given comes with it: a run half of whose space was
+    // dropped is replayed as the run it turned out to be, not as the one it
+    // set out to be
+    confirmer(
+      again,
+      "Replay run",
+      `run ${run.id} again?`,
+      async () => {
+        const answer = await ask(`/api/runs/${run.id}/finish`, {mode: "replay"});
+        if (answer.error) return say(answer.error, true);
+        say(`run ${answer.started} is doing ${run.id} again`);
+        select(answer.started);
+        refresh();
+      },
+      {yes: "replay", no: "cancel", danger: false}
+    );
+  }
 
   const trash = document.getElementById("rdelete");
   if (run.live) {
     trash.innerHTML = "";
+    trash.dataset.run = "";
   } else if (trash.dataset.run !== run.id) {
     trash.dataset.run = run.id;
     confirmer(trash, "Delete run", `delete the record of ${run.id}?`, async () => {
       const answer = await ask(`/api/runs/${run.id}`, {}, "DELETE");
       if (answer.error) return say(answer.error, true);
-      say(`${run.id} deleted — its results file is untouched`);
-      current = null;
       trash.dataset.run = "";
+      // nothing is selected now, so the panel says so rather than going on
+      // describing a run that is not there any more
+      clearRun();
+      tellNothing(`${run.id} deleted — its results file is untouched`);
       refresh();
     });
   }
@@ -1058,22 +1232,25 @@ const renderRun = run => {
   renderGaps(run);
 };
 
-// Deleting is asked about where it is offered, in the same words the button
-// used: no dialog, and nothing goes until the second click.
-const confirmer = (holder, label, question, act) => {
+// Something that cannot be taken back is asked about where it is offered, in
+// the same words the button used: no dialog, and nothing happens until the
+// second click. `danger` is for the ones that destroy something; the rest are
+// merely asked, and coloured as questions.
+const confirmer = (holder, label, question, act, words = {}) => {
+  const {yes: yesWord = "delete", no: noWord = "cancel", danger = true} = words;
   const render = () => {
     holder.innerHTML = "";
     const button = document.createElement("button");
-    button.className = "act danger";
+    button.className = danger ? "act danger" : "act";
     button.textContent = label;
     button.onclick = () => {
       holder.innerHTML = "";
       const box = document.createElement("span");
-      box.className = "confirm danger";
+      box.className = danger ? "confirm danger" : "confirm";
       box.append(question);
       const yes = document.createElement("button");
       yes.className = "yes";
-      yes.textContent = "delete";
+      yes.textContent = yesWord;
       yes.onclick = async () => {
         box.querySelectorAll("button").forEach(b => (b.disabled = true));
         await act();
@@ -1081,7 +1258,7 @@ const confirmer = (holder, label, question, act) => {
       };
       const no = document.createElement("button");
       no.className = "no";
-      no.textContent = "keep";
+      no.textContent = noWord;
       no.onclick = render;
       box.append(yes, no);
       holder.append(box);
@@ -1143,8 +1320,55 @@ const renderSetupTrouble = run => {
   const list = document.createElement("pre");
   list.style.color = "var(--warn)";
   list.style.maxHeight = "20vh";
-  list.textContent = trouble.map(t => `${t.label}   ${t.log}`).join("\n");
+  list.textContent = trouble
+    .map(t => `${t.label}   ${t.log}\n${t.said || "it printed nothing"}`)
+    .join("\n\n");
   box.append(said, list);
+};
+
+// A point that failed is a hole in the results, and the reason it failed was
+// printed to a terminal the person looking at this page may not have. The run
+// records what the command said along with the fact that it said it, so the
+// answer to "what went wrong" is here rather than in a file somewhere.
+const renderFailures = run => {
+  const section = document.getElementById("wrong-section");
+  const box = document.getElementById("rwrong");
+  const wrong = run.failures || [];
+  const signature = JSON.stringify([run.id, run.failure_count, wrong.length]);
+  if (box.dataset.of === signature) return;
+  box.dataset.of = signature;
+
+  section.hidden = wrong.length === 0;
+  box.innerHTML = "";
+  if (!wrong.length) return;
+
+  const said = document.createElement("div");
+  said.style.color = "var(--fail)";
+  // only the last few are sent, so the count is what says how bad it was
+  said.textContent =
+    run.failure_count > wrong.length
+      ? `${run.failure_count} failures — the last ${wrong.length}:`
+      : `${run.failure_count} failure${run.failure_count === 1 ? "" : "s"}:`;
+  box.append(said);
+
+  for (const bad of wrong) {
+    const what = bad.kind === "metric" ? `metric ${bad.what}` : `trial ${bad.what}`;
+    const item = document.createElement("pre");
+    item.style.maxHeight = "24vh";
+    item.style.marginTop = "8px";
+    item.textContent = [
+      `(${coords(run.order, bad.key)})   ${what}` +
+        (bad.code ? `   exited ${bad.code}` : ""),
+      bad.command,
+      "",
+      bad.said || "it printed nothing at all",
+      "",
+      // for a metric these are the captures of the trial it was measuring,
+      // which is where the rest of the story is
+      `captures: ${bad.log}`,
+    ].join("\n");
+    box.append(item);
+  }
 };
 
 // a browser will not follow a file:// link out of an http:// page, so the path
@@ -1258,8 +1482,8 @@ const renderGapActions = (run, missing) => {
     question.className = "confirm";
     question.append(`${missing} point(s) missing:`);
     for (const [mode, label, told] of [
-      ["finish", "complete this run", `same as \`yuclid finish ${run.id}\``],
-      ["restart", "start a new one", `same as \`yuclid replay ${run.id} --no-steering\``],
+      ["finish", "fill them in", `yuclid finish ${run.id}`],
+      ["restart", "redo it all", `yuclid replay ${run.id} --no-steering`],
     ]) {
       const choice = document.createElement("button");
       choice.className = "yes";
@@ -1280,20 +1504,27 @@ const renderGapActions = (run, missing) => {
 
   const spawn = async (mode, told) => {
     row.querySelectorAll("button").forEach(b => (b.disabled = true));
-    how.textContent = "starting…";
+    // the command it comes to, so that the next one can be typed rather than
+    // clicked for
+    how.textContent = `starting… (${told})`;
     const answer = await ask(`/api/runs/${current}/finish`, {mode});
     choosing = false;
-    renderGapActions(run, missing);
     if (answer.error) {
+      renderGapActions(run, missing);
       how.textContent = answer.error;
       return;
     }
-    how.textContent =
+    // Both modes make a run of their own, and that run is the one worth
+    // watching: filling the gaps in leaves this one exactly as it was, so
+    // staying here shows nothing happening. The word goes in the run's own
+    // message rather than under the gaps, which the next poll rewrites.
+    const started = answer.started;
+    select(started);
+    say(
       mode === "finish"
-        ? `run ${answer.started} is measuring the ${missing} missing point(s)`
-        : `run ${answer.started} is running the whole space again`;
-    if (mode === "restart") select(answer.started);
-    refresh();
+        ? `run ${started} is measuring the ${missing} missing point(s)`
+        : `run ${started} is running the whole space again`
+    );
   };
 };
 
@@ -1305,6 +1536,207 @@ const stamp = seconds => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
+
+// -- the space, as the run has come to know it ----------------------------
+
+// The progress records the Log is already fetching say everything the picture
+// needs: a `plan` record is the roster of points, and the records after it say
+// what became of each one. Kept per run and rebuilt from that run's history.
+let roster = null;
+
+const forget = () => {
+  roster = null;
+  spaceShows = "";
+};
+
+const at = key => key.join(" ");
+
+const remember = record => {
+  if (record.type === "plan") {
+    if (!roster) roster = {order: record.order, points: new Map()};
+    roster.order = record.order;
+    // merged, never emptied: a run over several presets writes one plan each,
+    // and a point that belonged to an earlier one was still part of this run
+    const named = new Set();
+    for (const point of record.points) {
+      const id = at(point.key);
+      named.add(id);
+      const known = roster.points.get(id) || {key: point.key};
+      Object.assign(known, {
+        target: point.target,
+        done: point.done,
+        status: point.status,
+        aside: false,
+      });
+      roster.points.set(id, known);
+    }
+    // whatever this plan does not name belongs to another part of the run
+    for (const [id, point] of roster.points) {
+      if (!named.has(id)) point.aside = true;
+    }
+    return;
+  }
+
+  if (!roster || !record.key) return;
+  const point = roster.points.get(at(record.key));
+  if (!point) return;
+
+  if (record.type === "point.started") {
+    point.status = "running";
+  } else if (record.type === "point.finished") {
+    point.done = (point.done || 0) + (record.repetitions || 1);
+    if (record.failed) point.failed = true;
+    point.status = point.failed
+      ? "failed"
+      : point.done >= point.target
+      ? "done"
+      : "pending";
+  } else if (record.type === "point.killed") {
+    // a repetition abandoned is one fewer to do; a point abandoned is over
+    if (record.scope === "rep") {
+      point.target = Math.max(point.done, point.target - 1);
+      point.status = point.done >= point.target ? "done" : "pending";
+    } else {
+      point.status = "killed";
+    }
+  } else if (record.type === "point.skipped") {
+    // remembered rather than set, because the plan the run writes when it ends
+    // calls this point done — which it is, but it was another run that did it
+    point.done = record.repetitions || point.done;
+    point.skipped = true;
+  }
+};
+
+// every value each dimension takes, in the order the run first mentions it, so
+// the same run always draws the same picture
+const axes = () => {
+  const found = roster.order.map(() => []);
+  for (const point of roster.points.values()) {
+    point.key.forEach((value, i) => {
+      if (!found[i].includes(value)) found[i].push(value);
+    });
+  }
+  return found;
+};
+
+const stateOf = point =>
+  !point
+    ? "absent"
+    : point.aside
+    ? "aside"
+    : point.skipped
+    ? "skipped"
+    : point.status || "pending";
+
+let spaceShows = "";
+let spaceLeaves = new Map();
+
+const renderSpace = () => {
+  const body = document.getElementById("space-body");
+  const says = document.getElementById("space-says");
+
+  if (!current) {
+    body.innerHTML = "";
+    says.textContent = "no run selected";
+    return;
+  }
+  if (!roster || !roster.order.length) {
+    body.innerHTML = "";
+    says.textContent = "this run recorded no plan to draw";
+    return;
+  }
+
+  const values = axes();
+  const sizes = values.map(v => v.length);
+  const points = sizes.reduce((a, b) => a * b, 1);
+
+  // rebuilt only when the shape changes; a change of state patches the leaves
+  const shape = JSON.stringify([current, roster.order, values]);
+  if (shape !== spaceShows) {
+    spaceShows = shape;
+    spaceLeaves = new Map();
+    body.innerHTML = "";
+    body.append(buildNest(roster.order, values, sizes, 0, [], 0));
+  }
+
+  const held = roster.points.size;
+  says.textContent =
+    `${points} point(s) in the product of ${roster.order.length} dimension(s)` +
+    (held < points ? `, ${points - held} not in the space` : "");
+
+  for (const [id, leaf] of spaceLeaves) {
+    const point = roster.points.get(id);
+    const state = stateOf(point);
+    if (leaf.dataset.state !== state) leaf.dataset.state = state;
+    fillLeaf(leaf, point, state);
+  }
+};
+
+const buildNest = (order, values, sizes, depth, prefix, base) => {
+  const nest = document.createElement("div");
+  nest.className = "nest";
+  // depth 0 across, depth 1 down, alternating the rest of the way
+  nest.dataset.across = String(depth % 2 === 0);
+
+  // the stride of this dimension in the flattened index of the product
+  const stride = sizes.slice(depth + 1).reduce((a, b) => a * b, 1);
+
+  values[depth].forEach((value, i) => {
+    const branch = document.createElement("div");
+    branch.className = "branch";
+    branch.dataset.depth = String(depth);
+
+    const head = document.createElement("div");
+    head.className = "head";
+    head.textContent = `${order[depth]}=${value}`;
+    branch.append(head);
+
+    const key = [...prefix, value];
+    const index = base + i * stride;
+    branch.append(
+      depth + 1 === order.length
+        ? buildLeaf(order, key, index)
+        : buildNest(order, values, sizes, depth + 1, key, index)
+    );
+    nest.append(branch);
+  });
+  return nest;
+};
+
+// A point is one bar per repetition, filled as each is measured. At a glance
+// the picture is the run's progress across the whole space; the tuple, its
+// joined form and its place in the product are on the leaf itself, for
+// whoever wants to know which point they are looking at.
+const buildLeaf = (order, key, index) => {
+  const leaf = document.createElement("div");
+  leaf.className = "leaf";
+  leaf.dataset.of = `${coords(order, key)}  ·  ${key.join(".")}  ·  #${index}`;
+  spaceLeaves.set(at(key), leaf);
+  return leaf;
+};
+
+const fillLeaf = (leaf, point, state) => {
+  const wanted = point ? Math.max(1, point.target || 1) : 0;
+  if (leaf.childElementCount !== wanted) {
+    leaf.innerHTML = "";
+    for (let i = 0; i < wanted; i += 1) {
+      const rep = document.createElement("span");
+      rep.className = "rep";
+      leaf.append(rep);
+    }
+  }
+  const done = point ? point.done || 0 : 0;
+  [...leaf.children].forEach((rep, i) => {
+    const filled = String(i < done);
+    if (rep.dataset.done !== filled) rep.dataset.done = filled;
+  });
+  leaf.title = point
+    ? `${leaf.dataset.of}\n${state}${wanted > 1 ? `  ${done}/${wanted}` : ""}`
+    : `${leaf.dataset.of}\nnot in the space`;
+};
+
+document.getElementById("rspace").onclick = () => show("space");
+document.getElementById("space-back").onclick = () => show("detail");
 
 const summarize = record => {
   const at = stamp(record.time);
@@ -1320,14 +1752,20 @@ const summarize = record => {
   return `${at}  ${record.type}`;
 };
 
-const renderProgress = payload => {
+const absorb = payload => {
   if (!payload.records.length) return;
   since = payload.seq;
   lines.push(...payload.records.map(summarize));
   lines = lines.slice(-300);
+  for (const record of payload.records) remember(record);
+};
+
+const drawLog = () => {
   const log = document.getElementById("log");
+  const wanted = lines.join("\n");
+  if (log.textContent === wanted) return;
   const stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-  log.textContent = lines.join("\n");
+  log.textContent = wanted;
   if (stuck) log.scrollTop = log.scrollHeight;
 };
 
@@ -1335,9 +1773,17 @@ const refresh = async () => {
   try {
     const {runs} = await ask("/api/runs");
     renderRuns(runs);
-    if (!current || pane !== "detail") return;
-    renderRun(await ask(`/api/runs/${current}`));
-    renderProgress(await ask(`/api/runs/${current}/progress?since=${since}`));
+    if (!current || (pane !== "detail" && pane !== "space")) return;
+    lastRun = await ask(`/api/runs/${current}`);
+    // the records feed both the log and the space, so they are taken in
+    // whichever of the two is being looked at
+    absorb(await ask(`/api/runs/${current}/progress?since=${since}`));
+    if (pane === "detail") {
+      renderRun(lastRun);
+      drawLog();
+    } else {
+      renderSpace();
+    }
   } catch (e) {
     say(String(e), true);
   }

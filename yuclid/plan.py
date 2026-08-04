@@ -59,6 +59,36 @@ class Plan:
         for i, entry in enumerate(self.entries, start=1):
             entry["seq"] = i
 
+    def conform(self, wanted):
+        """Cut this plan down to what a previous run measured.
+
+        A replay is that run again: the points it ran, each for as many
+        repetitions as it managed, and the ones it skipped skipped again.
+        Everything else is dropped — a point the original never reached is not
+        part of what it did, whether it was dropped, killed, or simply left
+        when the run was stopped.
+
+        Returns the keys it recognised, so a caller covering several presets
+        can tell which of them nothing here accounts for.
+        """
+        with self.lock:
+            matched = set()
+            for entry in self.entries:
+                want = wanted.get(entry["key"])
+                if want is None:
+                    entry["status"] = DROPPED
+                    continue
+                matched.add(entry["key"])
+                entry["target"] = want["repetitions"]
+                if want.get("skipped"):
+                    # skipped is not measured: it is counted as done and left
+                    # alone, which is what the original run did with it
+                    entry["resumed"] = entry["target"]
+                    entry["done"] = entry["target"]
+                if entry["done"] >= entry["target"]:
+                    entry["status"] = DONE
+            return matched
+
     # -- what the run asks -------------------------------------------------
 
     def skipped(self):
@@ -93,6 +123,16 @@ class Plan:
     def finish(self, entry, status=DONE):
         with self.lock:
             entry["status"] = status
+
+    def hold(self, entry):
+        """Put a point back in the queue with the repetitions it managed.
+
+        A pause stops the run between one repetition and the next, so a point
+        may be left part measured. It is pending again, not finished: resuming
+        carries on from where it stopped rather than starting it over.
+        """
+        with self.lock:
+            entry["status"] = PENDING
 
     def repetition_done(self, entry):
         with self.lock:
@@ -204,7 +244,13 @@ class Plan:
         # a stop while paused has to wake the loop up to let it end
         self.resumed.set()
         remaining = [e for e in self.entries if e["status"] == PENDING]
-        return self._state(stopped=True, abandoned=len(remaining))
+        # what is in flight is killed by the caller, which is the only one that
+        # can reach the commands; here it is enough that they are counted
+        return self._state(
+            stopped=True,
+            abandoned=len(remaining),
+            interrupted=len(self.running()),
+        )
 
     def _matching(self, op):
         """The coordinates an operation names, checked against this space.
