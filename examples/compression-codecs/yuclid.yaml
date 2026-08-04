@@ -10,7 +10,7 @@ space:
     - name: 32MiB
       value: 32
   codec: [gzip, bz2, lzma]
-  level: [1, 6, 9]
+  level: null
 setup:
   global: [mkdir -p data]
   point:

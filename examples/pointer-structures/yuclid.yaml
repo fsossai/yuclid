@@ -1,0 +1,61 @@
+env:
+  - CFLAGS: -std=c11 -Wall -Wextra -pedantic
+    KEY_SEED: '20260804'
+    BUDGET_MS: '300'
+space:
+  structure: [list, tree, hash]
+  operation: [build, lookup, absent, traverse, churn]
+  nodes:
+    - name: 10k
+      value: 10000
+    - name: 100k
+      value: 100000
+    - name: 1M
+      value: 1000000
+  opt: [O2, O3]
+setup:
+  point:
+    - command: mkdir -p build/${yuclid.opt}
+      'on': [opt]
+      parallel: true
+    - command: cc $CFLAGS -${yuclid.opt} structures.c -o build/${yuclid.opt}/structures
+      'on': [opt]
+      parallel: true
+trials:
+  - command:
+      - perf stat -x, -e cycles,instructions,cache-references,cache-misses,branches,branch-misses
+      - -- ./build/${yuclid.opt}/structures ${yuclid.structure} ${yuclid.operation} ${yuclid.nodes} $KEY_SEED
+      - 2>&1
+    metrics:
+      - ops
+      - ipc
+      - cache_hit_rate
+      - branch_miss_rate
+      - visits_per_op
+  - command:
+      - strace -c -e trace=mmap,munmap,brk,mremap
+      - ./build/${yuclid.opt}/structures ${yuclid.structure} ${yuclid.operation} ${yuclid.nodes} $KEY_SEED
+      - 2>&1
+    metrics:
+      - alloc_syscalls
+metrics:
+  - name: ops
+    command: awk '$1=="ops"{print $2}' ${yuclid.@}.out
+  - name: ipc
+    command: awk -F, '$3=="instructions"{i=$1+0} $3=="cycles"{c=$1+0} END{print (c>0)?i/c:0}' ${yuclid.@}.out
+  - name: cache_hit_rate
+    command: awk -F, '$3=="cache-references"{r=$1+0} $3=="cache-misses"{m=$1+0} END{print (r>0)?100*(1-m/r):0}' ${yuclid.@}.out
+  - name: branch_miss_rate
+    command: awk -F, '$3=="branches"{b=$1+0} $3=="branch-misses"{m=$1+0} END{print (b>0)?100*m/b:0}' ${yuclid.@}.out
+  - name: visits_per_op
+    command: awk '$1=="visits"{v=$2} $1=="ops"{n=$2} END{print (n>0)?v/n:0}' ${yuclid.@}.out
+    condition: yuclid.operation in ['lookup', 'absent']
+  - name: alloc_syscalls
+    command: awk '$1 ~ /^[0-9]/ && $NF != "total" {c += $4} END{print c+0}' ${yuclid.@}.out
+presets:
+  quick:
+    nodes: [10k]
+    operation: [lookup, traverse]
+  searches:
+    operation: [lookup, absent]
+order: [operation, nodes, structure, opt]

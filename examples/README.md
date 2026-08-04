@@ -1,19 +1,19 @@
 # Examples
 
-Five experiments, each in its own directory, written to teach one part of
+Three experiments, each in its own directory, written to teach one part of
 yuclid at a time. Every directory holds a `yuclid.json` with an equivalent
-`yuclid.yaml` beside it, the workload it measures, and no third-party
-dependencies.
+`yuclid.yaml` beside it, and the workload it measures.
 
 | Example | Goal |
 |---|---|
 | [matrix-multiplication](matrix-multiplication/) | Teach a plain space, point setup on one dimension, and presets |
-| [cache-traversal](cache-traversal/) | Teach conditions, several metrics from one trial, and wrapping a workload |
-| [compression-codecs](compression-codecs/) | Teach point setup shared across a subspace, and metrics that are not timings |
-| [sqlite-ingestion](sqlite-ingestion/) | Teach conditions over other dimensions, and a private file per point |
-| [parallel-prime-sieve](parallel-prime-sieve/) | Teach repetitions, and what to do about a noisy measurement |
+| [compression-codecs](compression-codecs/) | Teach point setup shared across a subspace, a dimension the user supplies, and metrics that are not timings |
+| [pointer-structures](pointer-structures/) | Teach one program run two ways, derived metrics, and hardware counters |
 
 Read them in that order if you are new to yuclid.
+
+The first two need only a C compiler and Python. `pointer-structures` measures
+hardware counters, so it needs Linux with `perf` and `strace`.
 
 ## The usual loop
 

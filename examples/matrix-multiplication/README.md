@@ -5,7 +5,7 @@ fastest. There are three loop orders to try, each of them with and without
 cache blocking, on matrices of several sizes. That is one program run per
 combination, and a number to collect from each.
 
-## What to look at in `yuclid.json`
+## The space
 
 The space has three dimensions: `size`, `variant` and `tile`. Every
 combination of the three is a point, and yuclid runs the trial once per point.
