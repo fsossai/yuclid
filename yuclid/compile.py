@@ -194,6 +194,7 @@ def compile_point_trials(settings, data, execution, i, point, script):
     compatible_trials, compatible_metrics = run.get_compatible_trials_and_metrics(
         data, point, execution
     )
+    defaults = run.defaulted_metrics(data, point, execution)
     coordinates = [(key, x["name"]) for key, x in point_map.items()]
 
     i_padded = str(i).zfill(len(str(execution["subspace_size"])))
@@ -242,6 +243,13 @@ def compile_point_trials(settings, data, execution, i, point, script):
                     command, k
                 )
             )
+        # a metric conditioned away here is not measured, and its default is
+        # written straight into the slot the measurement would have filled
+        for name, value in defaults.items():
+            script.command(
+                'printf \'%s\\n\' {} > "$R".m{}'.format(sh_quote(str(value)), len(names))
+            )
+            names.append(name)
         compile_record(
             script,
             coordinates,

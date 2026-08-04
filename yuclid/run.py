@@ -689,7 +689,7 @@ def apply_user_selectors(settings, subspace):
 
 
 def normalize_metrics(metrics):
-    valid = {"name", "command", "condition"}
+    valid = {"name", "command", "condition", "default"}
     normalized = []
     if isinstance(metrics, list):
         for metric in metrics:
@@ -713,6 +713,7 @@ def normalize_metrics(metrics):
                     "name": metric["name"],
                     "command": normalize_command(metric["command"]),
                     "condition": metric.get("condition", "True"),
+                    "default": normalize_default(metric),
                 }
             )
     elif isinstance(metrics, dict):
@@ -724,9 +725,54 @@ def normalize_metrics(metrics):
                     "name": name,
                     "command": normalize_command(command),
                     "condition": "True",
+                    "default": None,
                 }
             )
+    validate_defaults(normalized)
     return normalized
+
+
+def normalize_default(metric):
+    """The value to record where a metric's conditions leave a point uncovered.
+
+    A measurement, so it has to be a number: the column it lands in is the same
+    column the command's output lands in, and half a column of text is not a
+    column anybody can plot.
+    """
+    if "default" not in metric:
+        return None
+    value = metric["default"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        report(
+            LogLevel.FATAL,
+            "metric '{}': default must be a number".format(metric["name"]),
+            repr(value),
+            hint="it is recorded in place of a measurement, so it has to be one",
+        )
+    return value
+
+
+def validate_defaults(metrics):
+    """A default that can never be reached is a mistake worth naming.
+
+    It only stands in where no declaration of that name applies, so a name that
+    is unconditional somewhere always has a measurement and never a default.
+    """
+    conditioned = dict()
+    defaulted = dict()
+    for metric in metrics:
+        name = metric["name"]
+        conditioned[name] = conditioned.get(name, True) and metric["condition"] != "True"
+        if metric["default"] is not None:
+            defaulted[name] = metric["default"]
+    unreachable = sorted(name for name in defaulted if not conditioned[name])
+    if len(unreachable) > 0:
+        report(
+            LogLevel.WARNING,
+            "default will never be used for {}".format(", ".join(unreachable)),
+            hint="a default stands in where every condition on that metric is "
+            "false, and this one is measured at every point",
+        )
 
 
 def normalize_command(cmd):
@@ -1417,11 +1463,13 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
         data, point, execution
     )
+    # what this point gets without being measured for it
+    defaults = defaulted_metrics(data, point, execution)
 
-    if len(compatible_metrics) == 0:
+    if len(compatible_metrics) == 0 and len(defaults) == 0:
         report(LogLevel.WARNING, point_to_string(point), "no compatible metrics found")
 
-    if len(compatible_trials) == 0 or len(compatible_metrics) == 0:
+    if len(compatible_metrics) > 0 and len(compatible_trials) == 0:
         report(
             LogLevel.WARNING,
             point_to_string(point),
@@ -1608,6 +1656,14 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         # ones leave gaps. Kept as plain lists so that an integer metric is not
         # widened to float by a float metric of the same point.
         samples = max((len(v) for v in collected_metrics.values()), default=0)
+        # A default is a constant for the point, so it stands for every sample
+        # the measured metrics produced rather than for the first one and a row
+        # of NaNs. Where nothing was measured at all, the point is still worth
+        # a row: one sample of nothing but defaults.
+        if len(defaults) > 0:
+            samples = max(samples, 1)
+            for name, value in defaults.items():
+                collected_metrics[name] = [value] * samples
         padded = {
             name: values + [float("nan")] * (samples - len(values))
             for name, values in collected_metrics.items()
@@ -1793,7 +1849,11 @@ def validate_execution(execution, data):
             enablers = enablers_of(name, compatible_trials)
             if len(enablers) > 1:
                 ambiguous[name] = (len(enablers), point)
-        if len(compatible_trials) == 0:
+        defaults = defaulted_metrics(data, point, execution)
+        # a point every one of whose metrics is a default needs no trial: there
+        # is nothing to measure, and what to record is already known
+        measurable = len(compatible_metrics) > 0
+        if len(compatible_trials) == 0 and (measurable or len(defaults) == 0):
             report(
                 LogLevel.ERROR,
                 "no compatible trials found for point",
@@ -1803,7 +1863,9 @@ def validate_execution(execution, data):
         if len(execution["metrics"] or []) > 0:
             compatible_metric_names = {m["name"] for m in compatible_metrics}
             incompatible = [
-                m for m in execution["metrics"] if m not in compatible_metric_names
+                m
+                for m in execution["metrics"]
+                if m not in compatible_metric_names and m not in defaults
             ]
             if len(incompatible) > 0:
                 report(
@@ -1857,6 +1919,33 @@ def get_compatible_trials_and_metrics(data, point, execution):
         )
     ]
     return compatible_trials, compatible_metrics
+
+
+def defaulted_metrics(data, point, execution):
+    """The metrics this point has no measurement for, and what to record.
+
+    A metric every one of whose declarations is conditioned away here is not
+    measured: there is no command to run for it. `default` is what to write in
+    the column anyway, so that a point conditions carved out of one metric
+    still has a row as complete as the others.
+
+    Nothing in here can cause a trial to run. A default is what a point is
+    worth when nothing was executed for it, which is precisely why it needs no
+    execution.
+    """
+    selected = execution["metrics"] or {metric["name"] for metric in data["metrics"]}
+    measured, defaults = set(), dict()
+    for metric in data["metrics"]:
+        name = metric["name"]
+        if name not in selected:
+            continue
+        if valid_condition(metric["condition"], point, execution["order"]):
+            measured.add(name)
+        elif name not in defaults and metric["default"] is not None:
+            defaults[name] = metric["default"]
+    return {
+        name: value for name, value in defaults.items() if name not in measured
+    }
 
 
 def read_records(path, fmt):
