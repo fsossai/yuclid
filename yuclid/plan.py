@@ -76,6 +76,24 @@ class Plan:
         can tell which of them nothing here accounts for.
         """
         with self.lock:
+            # A previous run may have acquired a value through live steering.
+            # It is absent from the source configuration that built this plan,
+            # so make its exact point before deciding what to keep. Naming
+            # every coordinate prevents an added value from expanding into
+            # unrelated points; `expand` still applies its setup and
+            # conditions just as it did the first time.
+            known = {entry["key"] for entry in self.entries}
+            for key in wanted:
+                if key not in known and self.expand is not None:
+                    self._add(
+                        {
+                            "coords": {
+                                dim: [value] for dim, value in zip(self.order, key)
+                            }
+                        }
+                    )
+                    known = {entry["key"] for entry in self.entries}
+
             matched = set()
             for entry in self.entries:
                 want = wanted.get(entry["key"])
