@@ -63,54 +63,6 @@ class Plan:
         for i, entry in enumerate(self.entries, start=1):
             entry["seq"] = i
 
-    def conform(self, wanted):
-        """Cut this plan down to what a previous run measured.
-
-        A replay is that run again: the points it ran, each for as many
-        repetitions as it managed, and the ones it skipped skipped again.
-        Everything else is dropped — a point the original never reached is not
-        part of what it did, whether it was dropped, killed, or simply left
-        when the run was stopped.
-
-        Returns the keys it recognised, so a caller covering several presets
-        can tell which of them nothing here accounts for.
-        """
-        with self.lock:
-            # A previous run may have acquired a value through live steering.
-            # It is absent from the source configuration that built this plan,
-            # so make its exact point before deciding what to keep. Naming
-            # every coordinate prevents an added value from expanding into
-            # unrelated points; `expand` still applies its setup and
-            # conditions just as it did the first time.
-            known = {entry["key"] for entry in self.entries}
-            for key in wanted:
-                if key not in known and self.expand is not None:
-                    self._add(
-                        {
-                            "coords": {
-                                dim: [value] for dim, value in zip(self.order, key)
-                            }
-                        }
-                    )
-                    known = {entry["key"] for entry in self.entries}
-
-            matched = set()
-            for entry in self.entries:
-                want = wanted.get(entry["key"])
-                if want is None:
-                    entry["status"] = DROPPED
-                    continue
-                matched.add(entry["key"])
-                entry["target"] = want["repetitions"]
-                if want.get("skipped"):
-                    # skipped is not measured: it is counted as done and left
-                    # alone, which is what the original run did with it
-                    entry["resumed"] = entry["target"]
-                    entry["done"] = entry["target"]
-                if entry["done"] >= entry["target"]:
-                    entry["status"] = DONE
-            return matched
-
     # -- what the run asks -------------------------------------------------
 
     def skipped(self):

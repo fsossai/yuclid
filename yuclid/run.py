@@ -390,6 +390,251 @@ def parse_coordinates(pairs, what="selector", whole=False):
     return coordinates
 
 
+def load_points(path):
+    """The points a run was asked to cover, read from a file.
+
+    A list of coordinate specs, each one a small sub-product; a run covers
+    their union. It is the way to run an experiment that is not a product at
+    all — a handful of configurations that were interesting, and nothing else.
+    """
+    if not os.path.isfile(path):
+        report(
+            LogLevel.FATAL,
+            "no such points file",
+            path,
+            hint="`yuclid describe RESULTS --points` writes one from a result "
+            "file, and every run started from one keeps a copy",
+        )
+    with open(path, "r") as f:
+        raw = load_yaml(f) if path.lower().endswith((".yaml", ".yml")) else load_json(f)
+    return normalize_points(raw, path)
+
+
+def normalize_points(raw, where):
+    """Check a point list and put every value into the same shape.
+
+    A file that a run wrote wraps the list in an object, so that it can carry
+    which run it came from; a file a person wrote is usually just the list.
+    """
+    hint = (
+        'a list of objects, e.g. [{"size": ["*"], "impl": ["dot"]}]: each one '
+        "names a set of points, and the run covers all of them"
+    )
+    if isinstance(raw, dict):
+        raw = raw.get("points")
+    if not isinstance(raw, list):
+        report(LogLevel.FATAL, "malformed points file", where, hint=hint)
+
+    specs = []
+    for i, entry in enumerate(raw, start=1):
+        if not isinstance(entry, dict):
+            report(
+                LogLevel.FATAL,
+                "point {} of {} is not an object".format(i, where),
+                hint=hint,
+            )
+        spec = dict()
+        for dim, values in entry.items():
+            if isinstance(values, (str, int, float, bool)):
+                # a single value need not be written as a list of one
+                values = [values]
+            if not isinstance(values, list):
+                report(
+                    LogLevel.FATAL,
+                    "point {} of {}: '{}' must be a value or a list".format(
+                        i, where, dim
+                    ),
+                    hint=hint,
+                )
+            spec[str(dim)] = [str(v) for v in values]
+        specs.append(spec)
+
+    if len(specs) == 0:
+        report(LogLevel.FATAL, "no points in {}".format(where), hint=hint)
+    return specs
+
+
+def resolve_points(specs, subspace, order):
+    """The points a list of coordinate specs names, in the order given.
+
+    Each spec is a product of its own; the run is their union, so a point named
+    twice is run once. A dimension left out, or given `*`, means every value the
+    configuration declares for it — the whole of that axis, which is what makes
+    a slice short to write.
+    """
+    known = set(subspace)
+    chosen, seen, excluded = [], set(), []
+
+    for i, spec in enumerate(specs, start=1):
+        unknown = [dim for dim in spec if dim not in known]
+        if unknown:
+            report(
+                LogLevel.FATAL,
+                "point {}: unknown dimension(s) {}".format(i, ", ".join(unknown)),
+                hint="this configuration has {}".format(", ".join(sorted(known))),
+            )
+
+        axes = []
+        for dim in order:
+            wanted = spec.get(dim)
+            declared = subspace[dim]
+            # naming nothing is naming all of it
+            whole = wanted is None or any(value == "*" for value in wanted)
+
+            if declared is None:
+                if whole:
+                    report(
+                        LogLevel.FATAL,
+                        "point {}: '{}' has no values of its own".format(i, dim),
+                        hint="the configuration leaves it open, so a point has "
+                        "to supply them: {}=value".format(dim),
+                    )
+                axes.append([normalize_point(value) for value in wanted])
+                continue
+
+            by_name = {str(value["name"]): value for value in declared}
+            if whole:
+                axes.append(list(declared))
+                continue
+            missing = [value for value in wanted if value not in by_name]
+            if missing:
+                report(
+                    LogLevel.FATAL,
+                    "point {}: {} has no value {}".format(i, dim, ", ".join(missing)),
+                    hint="available: {}".format(", ".join(by_name)),
+                )
+            axes.append([by_name[value] for value in wanted])
+
+        for point in itertools.product(*axes):
+            key = tuple(str(value["name"]) for value in point)
+            if key in seen:
+                continue
+            seen.add(key)
+            if not valid_conditions(point, order):
+                excluded.append(key)
+                continue
+            chosen.append(point)
+
+    if len(excluded) > 0:
+        shown = ", ".join(".".join(key) for key in excluded[:6])
+        if len(excluded) > 6:
+            shown += ", …"
+        report(
+            LogLevel.WARNING,
+            "{} named point(s) a condition excludes".format(len(excluded)),
+            shown,
+        )
+    if len(chosen) == 0:
+        report(LogLevel.FATAL, "the points name nothing this configuration can run")
+    return chosen
+
+
+def subspace_of_points(order, points, declared):
+    """The values these points use, in the order the configuration declares.
+
+    Setup commands, `${yuclid.dim}` substitution and the plots downstream all
+    read the subspace, and with an explicit point list the subspace is whatever
+    those points happen to touch rather than everything on offer.
+    """
+    used = {dim: set() for dim in order}
+    fresh = {dim: [] for dim in order}
+    for point in points:
+        for dim, value in zip(order, point):
+            name = str(value["name"])
+            if name in used[dim]:
+                continue
+            used[dim].add(name)
+            fresh[dim].append(value)
+
+    narrowed = dict()
+    for dim in order:
+        values = declared.get(dim)
+        # a dimension the configuration leaves open has no declared order to
+        # keep, so the points themselves give it one
+        narrowed[dim] = (
+            fresh[dim]
+            if values is None
+            else [v for v in values if str(v["name"]) in used[dim]]
+        )
+    return narrowed
+
+
+def record_points(run_dir, order, points):
+    """Keep the resolved list with the run, so it says what it covered."""
+    if run_dir is None:
+        return
+    listed = [
+        {dim: [str(value["name"])] for dim, value in zip(order, point)}
+        for point in points
+    ]
+    with open(os.path.join(run_dir, workspace.POINTS), "w") as f:
+        json.dump({"points": listed}, f, indent=2)
+        f.write("\n")
+
+
+def measured_points(directory):
+    """The points a recorded run ran, in the order it ran them.
+
+    Read from the run's own progress rather than from its results file: a run
+    that resumed into a file shares it with the runs before it, and only its
+    progress says which of those points were this run's doing.
+    """
+    ordered, seen = [], set()
+    for record in workspace.read_progress(directory):
+        if record["type"] != "point.finished":
+            continue
+        key = tuple(record.get("key") or ())
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(key)
+    return ordered
+
+
+def points_of_keys(order, keys):
+    """Keys as coordinate specs, which is what a points file holds."""
+    return [{dim: [value] for dim, value in zip(order, key)} for key in keys]
+
+
+def points_of_run(root, run_id):
+    """The points a recorded run measured, as a point list.
+
+    This is what replaying one comes to: `--replay` is `--points` with the list
+    read from a run rather than from a file, so a replay runs through exactly
+    the same machinery as any other explicit set of points.
+    """
+    directory = workspace.run_directory(root, run_id)
+    if workspace.read_manifest(directory) is None:
+        report(
+            LogLevel.FATAL,
+            "no such run",
+            run_id,
+            hint="`yuclid runs` lists what there is to replay",
+        )
+
+    order = None
+    for record in workspace.read_progress(directory):
+        if record["type"] == "plan":
+            order = list(record["order"])
+    if order is None:
+        report(
+            LogLevel.FATAL,
+            "run {} never recorded a plan".format(run_id),
+            hint="it stopped before it knew what it was going to do, so there "
+            "are no points to replay",
+        )
+
+    keys = measured_points(directory)
+    if len(keys) == 0:
+        report(
+            LogLevel.FATAL,
+            "run {} measured nothing to replay".format(run_id),
+            hint="`yuclid replay {} --no-steering` runs the command it was "
+            "given instead".format(run_id),
+        )
+    return points_of_keys(order, keys)
+
+
 def apply_user_selectors(settings, subspace):
     all_selectors = parse_coordinates(settings["select"])
     for dim, selectors in all_selectors.items():
@@ -1834,15 +2079,20 @@ def validate_dimensions(subspace):
 
 
 def prepare_subspace_execution(
-    subspace, order, env, metrics, dry_run, repeat=1, recorded=None, script=None
+    subspace, order, env, metrics, dry_run, repeat=1, recorded=None, script=None,
+    points=None,
 ):
-    ordered_subspace = [subspace[x] for x in order]
-
     execution = dict()
-    execution["subspace_points"] = []
-    for point in itertools.product(*ordered_subspace):
-        if valid_conditions(point, order):
-            execution["subspace_points"].append(point)
+    if points is None:
+        ordered_subspace = [subspace[x] for x in order]
+        points = [
+            point
+            for point in itertools.product(*ordered_subspace)
+            if valid_conditions(point, order)
+        ]
+    # an explicit point list has already been resolved and checked: what is
+    # left of the product here is the shape of the space, not what runs
+    execution["subspace_points"] = list(points)
     execution["subspace_size"] = len(execution["subspace_points"])
 
     execution["subspace_values"] = {
@@ -2003,9 +2253,47 @@ def build_settings(args):
                 "script it writes is sequential",
             )
 
+    # A run covers a configured space or a list of points, never both: the two
+    # answer the same question, and a rule for combining them would be a rule
+    # nobody could remember.
+    settings["points"] = None
+    if getattr(args, "points", None) is not None:
+        clashing = [
+            name
+            for name, given in [
+                ("--select", args.select),
+                ("--presets", args.presets),
+            ]
+            if given
+        ]
+        if len(clashing) > 0:
+            report(
+                LogLevel.FATAL,
+                "--points cannot be combined with {}".format(", ".join(clashing)),
+                hint="a run covers either the configured space, narrowed by "
+                "those, or the points named in the file — not both",
+            )
+        settings["points"] = load_points(args.points)
+
     settings["timing"] = {"setup": 0.0, "experiments": 0.0}
     settings["cwd"] = os.getcwd()
     build_run_directory(settings, args)
+
+    # `--replay ID` is `--points` with the list taken from a run: the points it
+    # measured, whatever it was told along the way. Given both, the file wins —
+    # that is a replay somebody has edited, and the id is left as the record of
+    # where it came from
+    if (
+        settings["points"] is None
+        and getattr(args, "replay", None) is not None
+        and settings["root"] is not None
+    ):
+        settings["points"] = points_of_run(settings["root"], args.replay)
+        report(
+            LogLevel.INFO,
+            "replaying run {}".format(args.replay),
+            "{} point(s)".format(len(settings["points"])),
+        )
     settings["steering"] = Steering(settings, settings["progress"])
 
     report(LogLevel.INFO, "working directory", settings["cwd"])
@@ -2058,7 +2346,6 @@ def build_run_directory(settings, args):
     )
     if args.name is not None:
         workspace.write_name(settings["run_dir"], args.name)
-    build_replay_outcome(settings, args)
 
     if args.temp_dir is None:
         settings["trials_dir"] = os.path.join(settings["run_dir"], workspace.TRIALS)
@@ -2068,82 +2355,6 @@ def build_run_directory(settings, args):
     settings["setup_dir"] = os.path.join(settings["run_dir"], "setup")
     settings["progress"] = workspace.Progress(
         os.path.join(settings["run_dir"], workspace.PROGRESS)
-    )
-
-
-def report_unreplayed(settings):
-    """Say which of the original's points this space could not offer.
-
-    A point the previous run was given by `yuclid add` may name a value the
-    configuration does not have, in which case there is nothing here to run for
-    it. Better said than silently missing from the results.
-    """
-    if settings.get("replay") is None:
-        return
-    missing = set(settings["replay"]) - settings.get("replayed", set())
-    if not missing:
-        return
-    report(
-        LogLevel.WARNING,
-        "{} point(s) of the replayed run are not in this space".format(len(missing)),
-        ", ".join(".".join(key) for key in sorted(missing)),
-        hint="they were probably added to that run while it was going",
-    )
-
-
-def build_replay_outcome(settings, args):
-    """Work out what the run being replayed measured, and write it down here.
-
-    The outcome lives in the new run's directory, so a replay says what it
-    replayed and can itself be replayed in turn.
-    """
-    settings["replay"] = None
-    if args.replay is None:
-        return
-
-    source = workspace.run_directory(settings["root"], args.replay)
-    if workspace.read_manifest(source) is None:
-        report(
-            LogLevel.FATAL,
-            "no such run",
-            args.replay,
-            hint="`yuclid runs` lists what there is to replay",
-        )
-
-    points = derive_outcome(source)
-    manifest = workspace.read_manifest(source) or {}
-    failed_before_plan = (
-        workspace.state_of(manifest) in (workspace.FAILED, workspace.INTERRUPTED)
-        and not any(
-            record["type"] == "plan" for record in workspace.read_progress(source)
-        )
-    )
-    with open(os.path.join(settings["run_dir"], workspace.REPLAY), "w") as f:
-        json.dump(
-            {
-                "replay_of": args.replay,
-                # None means the failed run never got far enough to say what
-                # its plan was, so the original command is tried in full.
-                "points": None if failed_before_plan else points,
-            },
-            f,
-            indent=2,
-        )
-        f.write("\n")
-    settings["replay"] = (
-        None if failed_before_plan else {tuple(p["key"]): p for p in points}
-    )
-
-    units = sum(p["repetitions"] for p in points)
-    report(
-        LogLevel.INFO,
-        "replaying",
-        args.replay,
-        (
-            "the whole configured space (the failed run recorded no plan)"
-            if failed_before_plan
-            else "{} point(s), {} repetition(s)".format(len(points), units)
-        ),
     )
 
 
@@ -2460,84 +2671,37 @@ class Steering:
         }
 
 
-def derive_outcome(directory):
-    """What a run should optimistically measure again.
-
-    A replay repeats the intended outcome, not the timing of the instructions
-    the run received. Re-applying a drop here and a kill there, each anchored
-    to how far the run had got, reproduces the steering rather than the result:
-    a drop that landed during a pause has no such window when there is no pause
-    to land in, and the point it removed gets measured after all.
-
-    Errors are not outcomes worth reproducing. A point that ran and failed is
-    tried again, and if the run itself failed or was interrupted, every point
-    it still intended to run is recovered from its last plan. Deliberately
-    dropped or killed points remain absent. A point skipped as already recorded
-    is remembered as skipped, so a replay skips it too.
-    """
-    outcome = dict()
-    plans = dict()
-    records = workspace.read_progress(directory)
-
-    for record in records:
-        kind = record["type"]
-        if kind == "plan":
-            # Runs over several presets have one live plan per preset. Keep the
-            # last version of each, since steering may have changed its shape.
-            plans[record.get("preset")] = record
-            continue
-        if kind not in ("point.finished", "point.skipped"):
-            continue
-        key = tuple(record.get("key") or ())
-        point = outcome.setdefault(key, {"repetitions": 0, "skipped": False})
-        if kind == "point.skipped":
-            point["skipped"] = True
-            point["repetitions"] = max(
-                point["repetitions"], record.get("repetitions", 0)
-            )
-        else:
-            point["repetitions"] += record.get("repetitions", 1)
-
-    manifest = workspace.read_manifest(directory) or {}
-    if workspace.state_of(manifest) in (workspace.FAILED, workspace.INTERRUPTED):
-        for plan in plans.values():
-            for entry in plan.get("points", []):
-                if entry.get("status") in ("dropped", "killed"):
-                    continue
-                key = tuple(entry.get("key") or ())
-                point = outcome.setdefault(
-                    key, {"repetitions": 0, "skipped": False}
-                )
-                # Replay means doing the point again, not merely finishing the
-                # repetition at which the old process died.
-                point["repetitions"] = max(
-                    point["repetitions"], entry.get("target", 1)
-                )
-
-    return [
-        {"key": list(key), **point}
-        for key, point in sorted(outcome.items())
-    ]
-
-
 def run_experiments(
     settings, data, order, env, preset_name=None, recorded=None, script=None
 ):
-    if preset_name is None:
+    chosen = None
+    if settings.get("points") is not None:
+        # a list of points instead of a product: the configuration still says
+        # what exists, and the points say which of it to run
         subspace = data["space"].copy()
+        chosen = resolve_points(settings["points"], subspace, order)
+        subspace = subspace_of_points(order, chosen, subspace)
+        undefined = []
+        report(LogLevel.INFO, "running a list of points", len(chosen))
+        record_points(settings.get("run_dir"), order, chosen)
     else:
-        subspace = apply_preset(data, preset_name)
+        if preset_name is None:
+            subspace = data["space"].copy()
+        else:
+            subspace = apply_preset(data, preset_name)
 
-    # Keep this before selectors turn an undefined dimension into its chosen
-    # values. It describes the nature of the run, rather than its first set of
-    # points, and is persisted in the plan for the web UI to use later.
-    undefined = [dim for dim, values in subspace.items() if values is None]
-    subspace = apply_user_selectors(settings, subspace)
+        # Keep this before selectors turn an undefined dimension into its
+        # chosen values. It describes the nature of the run, rather than its
+        # first set of points, and is persisted in the plan for the web UI to
+        # use later.
+        undefined = [dim for dim, values in subspace.items() if values is None]
+        subspace = apply_user_selectors(settings, subspace)
+
     validate_dimensions(subspace)
     print_subspace(subspace)
     execution = prepare_subspace_execution(
         subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"],
-        repeat=settings["repeat"], recorded=recorded, script=script,
+        repeat=settings["repeat"], recorded=recorded, script=script, points=chosen,
     )
     validate_execution(execution, data)
 
@@ -2553,12 +2717,6 @@ def run_experiments(
         expand=make_expander(settings, data, execution),
         undefined=undefined,
     )
-    if settings.get("replay") is not None:
-        # a replay is the previous run's result, not its command line: whatever
-        # this preset would have covered, it covers what was measured
-        settings.setdefault("replayed", set()).update(
-            execution["plan"].conform(settings["replay"])
-        )
     settings["steering"].attach(execution)
     execution["progress"].emit(
         "plan", preset=preset_name, **execution["plan"].snapshot()
@@ -2699,8 +2857,6 @@ def execute(settings):
             report(LogLevel.INFO, "completed preset", preset_name)
     else:
         run_experiments(settings, data, order, env, preset_name=None, recorded=recorded)
-
-    report_unreplayed(settings)
 
     report(
         LogLevel.INFO,

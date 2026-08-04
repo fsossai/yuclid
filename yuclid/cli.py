@@ -69,6 +69,15 @@ def get_parser():
         help="Select a list of name=csv_values pairs for each dimension. E.g. dim1=val1,val2 dim2=val3,val4",
     )
     run_parser.add_argument(
+        "--points",
+        default=None,
+        metavar="FILE",
+        help="Run exactly the points this file names, instead of the product "
+        "of the configured space. Each entry is a set of coordinates, e.g. "
+        '{"size": ["*"], "impl": ["dot"]}, and the run covers all of them. '
+        "Cannot be combined with --select or --presets",
+    )
+    run_parser.add_argument(
         "--fold",
         default=False,
         action="store_true",
@@ -148,8 +157,8 @@ def get_parser():
         "--replay",
         default=None,
         metavar="ID",
-        help="Apply the steering a previous run received, at the same points. "
-        "`yuclid replay` is the shorter way to ask for this",
+        help="Run the points a previous run measured. Same as --points with "
+        "that run's points; `yuclid replay` is the shorter way to ask for it",
     )
 
     # plot subcommand — GUI
@@ -232,14 +241,41 @@ def get_parser():
 
     # replay subcommand
     replay_parser = subparsers.add_parser(
-        "replay", help="Run a previous run again, steering and all"
+        "replay", help="Run the points a previous run measured, again"
     )
     replay_parser.add_argument("run", metavar="ID", help="The run to replay")
     replay_parser.add_argument(
         "--no-steering",
         default=False,
         action="store_true",
-        help="Replay the configuration alone, without the steering it received",
+        help="Run the original command in full, rather than the points it "
+        "ended up measuring",
+    )
+    replay_parser.add_argument(
+        "-r",
+        "--repeat",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Repeat each point N times, instead of as many times as the "
+        "original asked for",
+    )
+    replay_parser.add_argument(
+        "-s",
+        "--select",
+        nargs="*",
+        default=None,
+        help="Keep only the points matching these dim=values, so a replay can "
+        "cover part of what the original did",
+    )
+    replay_parser.add_argument(
+        "--parallel-trials",
+        type=int,
+        default=None,
+        nargs="?",
+        const=-1,
+        metavar="N",
+        help="Run trials in parallel, instead of as the original did",
     )
 
     # skills subcommand
@@ -516,6 +552,20 @@ def _add_describe_args(p):
         action="store_true",
         default=False,
         help="List every missing combination instead of summarizing them",
+    )
+    p.add_argument(
+        "--points",
+        action="store_true",
+        default=False,
+        help="Write the points these results hold, as a file `yuclid run "
+        "--points` can take, instead of describing them",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        metavar="FILE",
+        help="Write --points here rather than to standard output",
     )
     p.add_argument(
         "--no-merge-inputs",

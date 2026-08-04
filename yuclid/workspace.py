@@ -30,7 +30,11 @@ NAME = "name"
 PROGRESS = "progress.jsonl"
 CONTROL = "control.sock"
 RESULTS = "results.yuclid.jsonl"
-REPLAY = "replay.json"
+POINTS = "points.json"
+# point lists handed to a run on its command line live here rather than in the
+# run's own directory: the command has to name a file that exists before the
+# run does, and has to keep working once it has ended
+POINT_SETS = "points"
 TRIALS = "tmp"
 
 RUNNING = "running"
@@ -194,6 +198,25 @@ def delete_run(root, run_id):
     if read_manifest(directory) is None:
         raise FileNotFoundError(run_id)
     shutil.rmtree(directory)
+
+
+def write_point_set(root, stamp, points, replay_of=None):
+    """Keep a point list where a command line can name it, and say where.
+
+    The file outlives the run that was started from it, so the run's recorded
+    command stays runnable: finishing or replaying it later reads the same
+    list rather than a path that has gone.
+    """
+    directory = os.path.join(root, POINT_SETS)
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "{}.json".format(stamp))
+    body = {"points": points}
+    if replay_of is not None:
+        body["replay_of"] = replay_of
+    with open(path, "w") as f:
+        json.dump(body, f, indent=2)
+        f.write("\n")
+    return path
 
 
 def read_server(root):

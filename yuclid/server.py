@@ -8,16 +8,18 @@ to the run's own socket and answered with what the run said it did.
 """
 
 from yuclid.log import LogLevel, report
-from yuclid.run import DEFAULT_INPUTS, remove_duplicates
+from yuclid.run import DEFAULT_INPUTS, measured_points, remove_duplicates
 from yuclid import __version__
 import yuclid.workspace as workspace
 import yuclid.control as control
+from datetime import datetime
 import http.server
 import subprocess
 import threading
 import getpass
 import signal
 import secrets
+import errno
 import json
 import time
 import sys
@@ -29,6 +31,9 @@ PAGE = os.path.join(os.path.dirname(__file__), "web", "index.html")
 BODY_LIMIT = 1 << 16
 # how many failures the page is sent; the rest are in the terminal and the logs
 FAILURES = 20
+# a point list arrives in one request, and a request is not the place to hand
+# over an unbounded one
+POINT_LIMIT = 20000
 # how a run is started from here: the same interpreter, whether yuclid is
 # installed or being run from a checkout
 ENTRY_POINT = "import sys; from yuclid.cli import main; sys.exit(main())"
@@ -277,6 +282,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "failed": failed,
             "mood": mood(manifest["state"], plan, live, failed),
             "gaps": gaps_of(plan, live),
+            # what a replay of this run would cover, and how it would be asked
+            # for: the page offers these for editing before starting anything
+            "measured": [list(key) for key in measured_points(manifest["directory"])],
+            "repeat": max(
+                [p["target"] for p in plan["points"]] or [1]
+            ) if plan else 1,
         }
 
     def progress(self, run_id, query):
@@ -362,7 +373,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         argv = ["run"]
         declared = config["dimensions"]
 
-        select = request.get("select") or {}
+        # a point list says exactly what to run, so it stands in for the
+        # selection rather than joining it
+        points = request.get("points")
+        if points is not None:
+            checked = check_points(points, declared)
+            if isinstance(checked, dict):
+                return checked
+            if request.get("select") or request.get("presets"):
+                return {
+                    "error": "a run covers a chosen subspace or a list of "
+                    "points, not both"
+                }
+            path = workspace.write_point_set(
+                self.server.root,
+                "{:%Y%m%d-%H%M%S}".format(datetime.now()),
+                checked,
+            )
+            argv += ["--points", path]
+
+        select = {} if points is not None else (request.get("select") or {})
         if not isinstance(select, dict):
             return {"error": "select must be an object of dimension to values"}
         selectors = []
@@ -386,14 +416,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # second -s would replace the first rather than add to it
             argv += ["-s"] + selectors
 
-        undefined = [d for d, v in declared.items() if v is None and d not in select]
+        undefined = [
+            d
+            for d, v in declared.items()
+            if v is None and d not in select and points is None
+        ]
         if undefined:
             return {
                 "error": "these dimensions have no values of their own, so a run "
                 "has to be given some: {}".format(", ".join(undefined))
             }
 
-        presets = request.get("presets") or []
+        presets = [] if points is not None else (request.get("presets") or [])
         unknown = [p for p in presets if p not in config["presets"]]
         if unknown:
             return {"error": "no such preset: {}".format(", ".join(unknown))}
@@ -514,6 +548,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return {"error": str(e)}
         except OSError as e:
             return {"error": "cannot reach the run: {}".format(e)}
+
+
+def check_points(points, declared):
+    """A point list from a request, checked against the configuration.
+
+    Returns the list to write, or an error object. Nothing here becomes a
+    command-line argument: the file is written from names that were found in
+    the configuration, and only its path is passed on.
+    """
+    if not isinstance(points, list) or len(points) == 0:
+        return {"error": "points must be a non-empty list of coordinate sets"}
+    if len(points) > POINT_LIMIT:
+        return {"error": "at most {} points at a time".format(POINT_LIMIT)}
+
+    checked = []
+    for entry in points:
+        if not isinstance(entry, dict) or len(entry) == 0:
+            return {"error": "each point must be an object of dimension to values"}
+        spec = dict()
+        for dim, values in entry.items():
+            if dim not in declared:
+                return {"error": "unknown dimension '{}'".format(dim)}
+            if isinstance(values, str):
+                values = [values]
+            if not isinstance(values, list) or len(values) == 0:
+                return {"error": "no value chosen for {} in a point".format(dim)}
+            values = [str(v) for v in values]
+            known = declared[dim]
+            if known is not None:
+                # `*` is every value, and needs no checking against them
+                unknown = [v for v in values if v != "*" and v not in known]
+                if unknown:
+                    return {
+                        "error": "{} has no value {}".format(dim, ", ".join(unknown))
+                    }
+            spec[dim] = values
+        checked.append(spec)
+    return checked
 
 
 def ssh_target():
@@ -781,6 +853,66 @@ class Server(http.server.ThreadingHTTPServer):
         self.lock = threading.Lock()
 
 
+# below this, a port belongs to the system and only root may listen on one
+RESERVED_PORT = 1024
+# a suggestion has to be a port somebody may actually have, and one that is
+# not the first thing everything else on the machine tries
+SUGGESTED_PORT = 8787
+PORT_HINT = "pick a free one above {}, e.g. --port {}".format(
+    RESERVED_PORT - 1, SUGGESTED_PORT
+)
+
+
+def bind(root, port):
+    """Take the port, or say why it could not be had.
+
+    Failing to listen is the whole command failing, and a traceback is a poor
+    way to say so when the reason is one of a few knowable ones: the port is
+    taken, it is one only root may have, or it is not a port at all.
+    """
+    if not isinstance(port, int) or not 0 <= port <= 65535:
+        report(
+            LogLevel.FATAL,
+            "not a port number: {}".format(port),
+            hint=["a port is between 0 and 65535", PORT_HINT],
+        )
+    try:
+        return Server(root, port)
+    except PermissionError:
+        report(
+            LogLevel.FATAL,
+            "not allowed to listen on port {}".format(port),
+            hint=[
+                "ports below {} are reserved for root".format(RESERVED_PORT),
+                PORT_HINT,
+            ],
+        )
+    except OSError as e:
+        if e.errno == errno.EADDRINUSE:
+            existing = workspace.read_server(root)
+            hints = ["something is already listening on {}".format(port)]
+            if existing is not None and existing.get("port") == port:
+                hints.append("it is the yuclid server with pid {}".format(existing["pid"]))
+            hints.append(PORT_HINT)
+            hints.append("or let one be chosen for you: yuclid serve")
+            report(
+                LogLevel.FATAL, "port {} is already in use".format(port), hint=hints
+            )
+        if e.errno == errno.EADDRNOTAVAIL:
+            report(
+                LogLevel.FATAL,
+                "cannot listen on 127.0.0.1:{}".format(port),
+                str(e),
+                hint="the loopback interface is not available on this machine",
+            )
+        report(
+            LogLevel.FATAL,
+            "cannot listen on port {}".format(port),
+            str(e),
+            hint=PORT_HINT,
+        )
+
+
 def launch(args):
     # Serving an empty directory is useful: it can launch the first run from
     # the browser. Use the same workspace creation path as `yuclid run` rather
@@ -808,7 +940,7 @@ def launch(args):
             hint="open that one, or `yuclid serve --force` to start another anyway",
         )
 
-    server = Server(root, args.port)
+    server = bind(root, args.port)
     if workspace.read_server(root) is None:
         # a forced second server does not take the note over: it stays with
         # the one that was here first, which is the one worth pointing at

@@ -15,6 +15,8 @@ from yuclid.plot import (
 )
 import itertools
 import glob
+import json
+import sys
 import os
 import numpy as np
 import pandas as pd
@@ -166,6 +168,44 @@ def suggest_files():
     report(LogLevel.FATAL, "no file to describe", hint=hints)
 
 
+def write_points(df, dimensions, args):
+    """The points this dataset holds, as a file `yuclid run --points` takes.
+
+    A result file is a record of which points were actually measured, so it is
+    the natural place to get a point list from: what came out of a run is what
+    another run would have to do to produce the same dataset. Rows are grouped
+    by their coordinates and written in the order they first appear.
+    """
+    if len(dimensions) == 0:
+        report(
+            LogLevel.FATAL,
+            "these results have no dimensions to make points from",
+            hint="every column looks like a metric; name the metrics with -y "
+            "so that the rest can be read as coordinates",
+        )
+
+    seen, points = set(), []
+    for row in df[dimensions].itertuples(index=False, name=None):
+        key = tuple(str(value) for value in row)
+        if key in seen:
+            continue
+        seen.add(key)
+        points.append({dim: [value] for dim, value in zip(dimensions, key)})
+
+    body = json.dumps({"points": points}, indent=2) + "\n"
+    if args.output is None:
+        sys.stdout.write(body)
+        return
+    with open(args.output, "w") as f:
+        f.write(body)
+    report(
+        LogLevel.INFO,
+        "{} point(s) written to".format(len(points)),
+        args.output,
+        hint="run them with `yuclid run --points {}`".format(args.output),
+    )
+
+
 def launch(args):
     if len(args.files) == 0:
         suggest_files()
@@ -189,6 +229,10 @@ def launch(args):
             )
         metrics = list(args.y)
     dimensions = [c for c in df.columns if c not in metrics]
+
+    if getattr(args, "points", False):
+        write_points(df, dimensions, args)
+        return
 
     lines = []
     def counted(n, word):

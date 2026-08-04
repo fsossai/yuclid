@@ -8,6 +8,7 @@ answers.
 from yuclid.log import LogLevel, report
 import yuclid.workspace as workspace
 import yuclid.control as control
+from datetime import datetime
 import os
 import time
 
@@ -271,25 +272,143 @@ def launch_finish(args, parser):
 
 
 def launch_replay(args, parser):
-    """Run a previous run's command again, measuring what it measured.
+    """Run the points a previous run measured, again.
 
-    The command is taken from the source run's manifest rather than rebuilt, so
-    a replay is the same experiment and not an approximation of it. Where it
-    wrote is not part of that: a replay is a run of its own and gets a results
-    file of its own, rather than resuming into one that is already complete.
+    A replay is that run's result rather than its instructions: whatever it was
+    told along the way — a slice dropped, a point killed, the whole thing
+    stopped early — the points it came to are the points to do again. Those go
+    into a file and the run is an ordinary `--points` run, which is also what
+    makes a replay something the caller can edit before starting it.
+
+    The command comes from the source run's manifest, so the trials, the
+    repetitions and the environment are the same experiment and not an
+    approximation of it. Where it wrote is not part of that: a replay is a run
+    of its own and gets a results file of its own.
     """
     import yuclid.run
 
-    _, argv = source_run(args.run)
+    manifest, argv = source_run(args.run)
     argv = strip_option(argv, "--replay")
+    argv = strip_option(argv, "--points")
     argv = strip_option(argv, "-o")
     argv = strip_option(argv, "--output")
+    argv = strip_option(argv, "--output-dir")
     argv = [x for x in argv if x != "--resume"]
+
+    if args.repeat is not None:
+        argv = strip_option(argv, "-r")
+        argv = strip_option(argv, "--repeat")
+        argv += ["-r", str(args.repeat)]
+    if args.parallel_trials is not None:
+        argv = strip_option(argv, "--parallel-trials")
+        argv += ["--parallel-trials", str(args.parallel_trials)]
+
     if not args.no_steering:
-        argv += ["--replay", args.run]
+        root = find_root_or_fail()
+        order, keys = replayable_points(manifest, args)
+        if len(keys) == 0:
+            report(
+                LogLevel.FATAL,
+                "run {} measured nothing to replay".format(args.run),
+                hint="`yuclid replay {} --no-steering` runs the command it was "
+                "given instead".format(args.run),
+            )
+        # the points decide what runs, so anything else that would have is out
+        argv = strip_list_option(argv, "-s")
+        argv = strip_list_option(argv, "--select")
+        argv = strip_list_option(argv, "-p")
+        argv = strip_list_option(argv, "--presets")
+        path = workspace.write_point_set(
+            root,
+            "{:%Y%m%d-%H%M%S}".format(datetime.now()),
+            yuclid.run.points_of_keys(order, keys),
+            replay_of=args.run,
+        )
+        # the id as well, so the run records where its points came from
+        argv += ["--points", path, "--replay", args.run]
+        report(
+            LogLevel.INFO,
+            "replaying {} point(s) of run {}".format(len(keys), args.run),
+            path,
+        )
 
     report(LogLevel.INFO, "replaying", " ".join(argv))
     yuclid.run.launch(as_run(parser, argv))
+
+
+def replayable_points(manifest, args):
+    """The points to replay: what the run measured, narrowed if asked.
+
+    `--select` here is a filter on that list rather than on the configured
+    space, since the list is what the replay is about.
+    """
+    import yuclid.run
+
+    order = plan_order(manifest["directory"])
+    keys = yuclid.run.measured_points(manifest["directory"])
+    if not args.select:
+        return order, keys
+
+    wanted = yuclid.run.parse_coordinates(args.select, what="selector")
+    unknown = [dim for dim in wanted if dim not in order]
+    if unknown:
+        report(
+            LogLevel.FATAL,
+            "unknown dimension(s) in selector: {}".format(", ".join(unknown)),
+            hint="that run has {}".format(", ".join(order)),
+        )
+    index = {dim: i for i, dim in enumerate(order)}
+    kept = [
+        key
+        for key in keys
+        if all(key[index[dim]] in values for dim, values in wanted.items())
+    ]
+    if len(kept) == 0:
+        report(
+            LogLevel.FATAL,
+            "no point of that run matches the selection",
+            " ".join(args.select),
+        )
+    report(
+        LogLevel.INFO,
+        "keeping {} of {} point(s)".format(len(kept), len(keys)),
+        " ".join(args.select),
+    )
+    return order, kept
+
+
+def plan_order(directory):
+    """The dimensions of a recorded run, in the order it ran them."""
+    for record in workspace.read_progress(directory):
+        if record["type"] == "plan":
+            return list(record["order"])
+    report(
+        LogLevel.FATAL,
+        "that run never recorded a plan, so its points are not known",
+        hint="replay it with --no-steering to run the command it was given",
+    )
+
+
+def strip_list_option(argv, name):
+    """Drop `name a b c` from a command line: an option that takes a list.
+
+    `strip_option` removes one value, which is wrong for the options that take
+    as many as they are given — everything up to the next option belongs to it.
+    """
+    cleaned, dropping = [], False
+    for token in argv:
+        if token == name:
+            dropping = True
+            continue
+        if dropping:
+            if token.startswith("-"):
+                dropping = False
+            else:
+                continue
+        if token.startswith(name + "="):
+            continue
+        cleaned.append(token)
+    return cleaned
 
 
 def as_run(parser, argv):

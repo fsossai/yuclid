@@ -109,10 +109,26 @@
   }
   .chip:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
   .chip:disabled { cursor: default; opacity: .6; }
+  /* faded is enough to say a value is out of the run; a line through it as
+     well reads as an error rather than a choice */
   .chip.gone {
-    opacity: .55; text-decoration: line-through; cursor: grab;
+    opacity: .55; cursor: grab;
   }
   .chip.gone:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  /* a long point list scrolls inside its own box rather than pushing the
+     controls that act on it off the page */
+  .zone.points { max-height: 32vh; overflow-y: auto; align-items: flex-start; }
+  /* the buttons above act on the selection; this is a different thing, and
+     sitting against them it read as a caption to them */
+  details.points-box { margin-top: 16px; }
+  details.points-box > summary {
+    display: block; cursor: pointer; color: var(--dim); font-weight: 600;
+    font-size: 12.5px; list-style: none;
+  }
+  details.points-box > summary::-webkit-details-marker { display: none; }
+  details.points-box > summary::before { content: "\25B8  "; }
+  details.points-box[open] > summary::before { content: "\25BE  "; }
+  details.points-box > summary:hover { color: var(--accent); }
   .dim-add { display: inline-flex; gap: 4px; align-items: center; }
   .dim-add input {
     width: 14ch; padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px;
@@ -837,8 +853,114 @@ const renderLaunch = () => {
   }
   body.append(bulk);
 
+  renderPoints(body);
   showSize();
 };
+
+// The points the selection comes to, each one strikeable. A product is the
+// usual way to say what to run, but not the only shape an experiment has: a
+// handful of configurations that were interesting is another, and this is
+// where one is built — by taking out what does not belong.
+const renderPoints = body => {
+  const points = productPoints();
+  // folded away by default: the list is as long as the run is, and most of the
+  // time the selection above already says everything worth knowing. Whether it
+  // is open survives a redraw, so choosing a value does not shut it
+  const block = document.createElement("details");
+  block.className = "dim-row points-box";
+  const label = document.createElement("summary");
+  block.append(label);
+
+  if (points === null) {
+    label.textContent =
+      `points — more than ${POINT_CAP}, too many to take out one by one`;
+    struck.clear();
+    body.append(block);
+    return;
+  }
+  if (points.length === 0) return;
+
+  // a value taken out of the selection takes its points with it, and the
+  // strikes on them mean nothing any more
+  const alive = new Set(points.map(keyOf));
+  for (const key of [...struck]) if (!alive.has(key)) struck.delete(key);
+
+  block.open = pointsOpen;
+  block.ontoggle = () => (pointsOpen = block.open);
+
+  const dims = launchDims();
+  const count = () => {
+    // the summary carries the count, so a folded list still says how much of
+    // the selection is actually going to run
+    label.textContent =
+      struck.size === 0
+        ? `points — ${points.length}, click to take any out`
+        : `points — ${points.length - struck.size} of ${points.length}, ` +
+          `${struck.size} taken out`;
+  };
+  count();
+
+  const zone = document.createElement("div");
+  zone.className = "zone points";
+  for (const point of points) {
+    const key = keyOf(point);
+    const chip = document.createElement("button");
+    chip.textContent = dims.map((dim, i) => `${dim}=${point[i]}`).join(", ");
+    const paint = () => {
+      const gone = struck.has(key);
+      chip.className = gone ? "chip gone" : "chip";
+      chip.title = gone ? "put it back into the run" : "take it out of the run";
+    };
+    paint();
+    // patched in place rather than redrawn: a large product is thousands of
+    // these, and rebuilding them all on every click is a click you can feel
+    chip.onclick = () => {
+      struck.has(key) ? struck.delete(key) : struck.add(key);
+      paint();
+      count();
+      showSize();
+    };
+    zone.append(chip);
+  }
+  block.append(zone);
+  body.append(block);
+};
+
+// The launcher builds a product, and then lets you take individual points out
+// of it. Everything left is what runs — which is how a run that is not a
+// product at all gets built, and how a replay is offered for editing before it
+// starts: its points are struck into the selection rather than described.
+const struck = new Set();
+let basedOn = null;
+// whether the point list is unfolded, kept across redraws
+let pointsOpen = false;
+// a product this size is not something to list, let alone strike one by one
+const POINT_CAP = 4000;
+
+const launchDims = () => Object.keys(config.dimensions);
+
+const valuesOf = dim =>
+  config.dimensions[dim] === null
+    ? listed(dim)
+    : [...config.dimensions[dim]].filter(value => chosen[dim].has(value));
+
+// every point of the current selection, in dimension order
+const productPoints = () => {
+  let points = [[]];
+  for (const dim of launchDims()) {
+    const values = valuesOf(dim);
+    if (values.length === 0) return [];
+    const grown = [];
+    for (const point of points) {
+      for (const value of values) grown.push(point.concat(value));
+      if (grown.length > POINT_CAP) return null;
+    }
+    points = grown;
+  }
+  return points;
+};
+
+const keyOf = point => point.join(" ");
 
 const selection = () => {
   const select = {};
@@ -872,6 +994,8 @@ const showSize = () => {
   // conditions may still carve some of these away, so this is a ceiling
   size.textContent = empty.length
     ? `nothing chosen for ${empty.join(", ")}`
+    : struck.size
+    ? `${points - struck.size} of ${points} point(s)`
     : `up to ${points} point(s)`;
   // running several trials at once is a different experiment — they share the
   // machine they are being timed on — so the button says which one is about to
@@ -891,11 +1015,123 @@ const tell = (text, bad) => {
   says.style.color = bad ? "var(--warn)" : "var(--dim)";
 };
 
+const parallelFrom = argv => {
+  const at = (argv || []).indexOf("--parallel-trials");
+  const n = at < 0 ? 1 : Number(argv[at + 1]);
+  return Number.isFinite(n) && n > 1 ? n : 1;
+};
+
+// Fill the launcher with a run: the values it covered, its repetitions, and
+// its exact points struck into the list. Replaying is then the same gesture as
+// starting anything else, with the chance to change it first — which is the
+// only difference between doing a run again and doing something like it.
+const seedLaunch = run => {
+  struck.clear();
+  basedOn = run.id;
+  const dims = launchDims();
+  const order = run.order || [];
+  const notes = [];
+
+  const used = Object.fromEntries(dims.map(dim => [dim, []]));
+  const wanted = new Set();
+  let lost = 0;
+
+  for (const key of run.measured || []) {
+    const point = [];
+    for (const dim of dims) {
+      const at = order.indexOf(dim);
+      if (at < 0) return unseedable(run, `it had no ${dim}`);
+      const value = String(key[at]);
+      const declared = config.dimensions[dim];
+      // a value the configuration has since lost cannot be asked for
+      if (declared !== null && !declared.includes(value)) {
+        point.length = 0;
+        break;
+      }
+      point.push(value);
+    }
+    if (point.length === 0) {
+      lost += 1;
+      continue;
+    }
+    wanted.add(keyOf(point));
+    dims.forEach((dim, i) => {
+      if (!used[dim].includes(point[i])) used[dim].push(point[i]);
+    });
+  }
+
+  for (const dim of dims) {
+    if (config.dimensions[dim] === null) typed[dim] = used[dim].join(", ");
+    else chosen[dim] = new Set(used[dim]);
+  }
+
+  // the selection is a product, and that run may not have been one: whatever
+  // the product adds beyond what it measured starts struck out
+  const points = productPoints();
+  if (points === null) {
+    notes.push(`more than ${POINT_CAP} points, so they are not listed`);
+  } else {
+    for (const point of points) {
+      if (!wanted.has(keyOf(point))) struck.add(keyOf(point));
+    }
+    // that run was not the whole product, and which points it left out is the
+    // thing worth seeing before starting it again
+    pointsOpen = struck.size > 0;
+  }
+
+  document.getElementById("launch-repeat").value = run.repeat || 1;
+  document.getElementById("launch-parallel").value = parallelFrom(run.argv);
+  document.getElementById("launch-name").value = "";
+
+  if (lost) {
+    notes.push(`${lost} of its points name values the configuration no longer has`);
+  }
+  const extra = order.filter(dim => dims.indexOf(dim) < 0);
+  if (extra.length) notes.push(`it also had ${extra.join(", ")}`);
+
+  renderLaunch();
+  // how many points there are is said by the points list and by the counter
+  // beside Start; saying it a third time here only invites them to disagree
+  tell(
+    `based on run ${run.id}` + (notes.length ? ` — ${notes.join("; ")}` : ""),
+    lost > 0
+  );
+};
+
+const unseedable = (run, why) => {
+  basedOn = null;
+  renderLaunch();
+  tell(`run ${run.id} cannot be replayed against this configuration: ${why}`, true);
+};
+
+// The points to run, when they are not simply the product: one object per
+// point, which is what `yuclid run --points` takes. Sent only when something
+// has been struck out, so an untouched selection stays the simpler request.
+const explicitPoints = () => {
+  const points = productPoints();
+  if (points === null || struck.size === 0) return null;
+  const dims = launchDims();
+  const kept = points.filter(point => !struck.has(keyOf(point)));
+  return kept.map(point =>
+    Object.fromEntries(dims.map((dim, i) => [dim, [point[i]]]))
+  );
+};
+
 document.getElementById("launch-go").onclick = async () => {
   const go = document.getElementById("launch-go");
   go.disabled = true;
   tell("starting…");
-  const answer = await ask("/api/runs", {
+  const points = explicitPoints();
+  if (points !== null && points.length === 0) {
+    go.disabled = false;
+    return tell("every point has been struck out: there is nothing to run", true);
+  }
+  const answer = await ask("/api/runs", points ? {
+    points,
+    repeat: Number(document.getElementById("launch-repeat").value) || 1,
+    parallel: parallelism(),
+    name: document.getElementById("launch-name").value,
+  } : {
     select: selection(),
     repeat: Number(document.getElementById("launch-repeat").value) || 1,
     parallel: parallelism(),
@@ -904,6 +1140,7 @@ document.getElementById("launch-go").onclick = async () => {
   go.disabled = false;
   if (answer.error) return tell(answer.error, true);
   tell(`run ${answer.started} started`);
+  basedOn = null;
   select(answer.started);
   refresh();
 };
@@ -1066,7 +1303,18 @@ const renderNav = runs => {
   // the small triangle rather than U+25B6, which many systems draw as an
   // emoji and would sit oddly in a page of plain text
   fresh.textContent = "▸ New run";
-  fresh.onclick = () => show("launch");
+  fresh.onclick = () => {
+    // a fresh run is not based on anything: whatever a replay left in the
+    // launcher goes, or the next run quietly inherits it
+    if (basedOn !== null) {
+      basedOn = null;
+      struck.clear();
+      pointsOpen = false;
+      if (config) renderLaunch();
+      tell("");
+    }
+    show("launch");
+  };
   nav.append(fresh);
 
   const list = document.createElement("div");
@@ -1209,22 +1457,24 @@ const renderRun = run => {
     again.dataset.run = "";
   } else if (again.dataset.run !== run.id) {
     again.dataset.run = run.id;
-    // the steering it was given comes with it: a run half of whose space was
-    // dropped is replayed as the run it turned out to be, not as the one it
-    // set out to be
-    confirmer(
-      again,
-      "Replay run",
-      `run ${run.id} again?`,
-      async () => {
-        const answer = await ask(`/api/runs/${run.id}/finish`, {mode: "replay"});
-        if (answer.error) return say(answer.error, true);
-        say(`run ${answer.started} is doing ${run.id} again`);
-        select(answer.started);
-        refresh();
-      },
-      {yes: "replay", no: "cancel", danger: false}
-    );
+    again.innerHTML = "";
+    // A replay opens the launcher rather than starting anything: the points it
+    // measured are what a replay covers, and seeing them before they run is
+    // the point — a run half of whose space was dropped comes back as the run
+    // it turned out to be, and can still be changed.
+    const button = document.createElement("button");
+    button.className = "act";
+    button.textContent = "Replay run";
+    button.title = "open New run with this run's points, to change before starting";
+    button.onclick = async () => {
+      if (!config) await loadConfig();
+      if (!config || config.error) {
+        return say((config && config.error) || "no configuration to run", true);
+      }
+      show("launch");
+      seedLaunch(lastRun && lastRun.id === run.id ? lastRun : run);
+    };
+    again.append(button);
   }
 
   const trash = document.getElementById("rdelete");
