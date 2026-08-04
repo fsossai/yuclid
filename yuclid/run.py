@@ -2111,19 +2111,39 @@ def build_replay_outcome(settings, args):
         )
 
     points = derive_outcome(source)
+    manifest = workspace.read_manifest(source) or {}
+    failed_before_plan = (
+        workspace.state_of(manifest) in (workspace.FAILED, workspace.INTERRUPTED)
+        and not any(
+            record["type"] == "plan" for record in workspace.read_progress(source)
+        )
+    )
     with open(os.path.join(settings["run_dir"], workspace.REPLAY), "w") as f:
-        json.dump({"replay_of": args.replay, "points": points}, f, indent=2)
+        json.dump(
+            {
+                "replay_of": args.replay,
+                # None means the failed run never got far enough to say what
+                # its plan was, so the original command is tried in full.
+                "points": None if failed_before_plan else points,
+            },
+            f,
+            indent=2,
+        )
         f.write("\n")
-    settings["replay"] = {
-        tuple(p["key"]): p for p in points
-    }
+    settings["replay"] = (
+        None if failed_before_plan else {tuple(p["key"]): p for p in points}
+    )
 
     units = sum(p["repetitions"] for p in points)
     report(
         LogLevel.INFO,
         "replaying",
         args.replay,
-        "{} point(s), {} repetition(s)".format(len(points), units),
+        (
+            "the whole configured space (the failed run recorded no plan)"
+            if failed_before_plan
+            else "{} point(s), {} repetition(s)".format(len(points), units)
+        ),
     )
 
 
@@ -2441,23 +2461,31 @@ class Steering:
 
 
 def derive_outcome(directory):
-    """What a run actually measured: each point, and how many times.
+    """What a run should optimistically measure again.
 
-    A replay repeats that, and nothing else. Re-applying the operations the run
-    was given instead — a drop here, a kill there, each anchored to how far the
-    run had got — reproduces the steering rather than the result, and the two
-    are not the same thing: a drop that landed during a pause has no such
-    window when there is no pause to land in, and the point it removed gets
-    measured after all. What a run did is a fact; when it was told what to do
-    is a story about an afternoon.
+    A replay repeats the intended outcome, not the timing of the instructions
+    the run received. Re-applying a drop here and a kill there, each anchored
+    to how far the run had got, reproduces the steering rather than the result:
+    a drop that landed during a pause has no such window when there is no pause
+    to land in, and the point it removed gets measured after all.
 
-    A point that ran and failed still ran, and counts. A point that was skipped
-    as already recorded is remembered as skipped, so a replay skips it too.
+    Errors are not outcomes worth reproducing. A point that ran and failed is
+    tried again, and if the run itself failed or was interrupted, every point
+    it still intended to run is recovered from its last plan. Deliberately
+    dropped or killed points remain absent. A point skipped as already recorded
+    is remembered as skipped, so a replay skips it too.
     """
     outcome = dict()
+    plans = dict()
+    records = workspace.read_progress(directory)
 
-    for record in workspace.read_progress(directory):
+    for record in records:
         kind = record["type"]
+        if kind == "plan":
+            # Runs over several presets have one live plan per preset. Keep the
+            # last version of each, since steering may have changed its shape.
+            plans[record.get("preset")] = record
+            continue
         if kind not in ("point.finished", "point.skipped"):
             continue
         key = tuple(record.get("key") or ())
@@ -2469,6 +2497,22 @@ def derive_outcome(directory):
             )
         else:
             point["repetitions"] += record.get("repetitions", 1)
+
+    manifest = workspace.read_manifest(directory) or {}
+    if workspace.state_of(manifest) in (workspace.FAILED, workspace.INTERRUPTED):
+        for plan in plans.values():
+            for entry in plan.get("points", []):
+                if entry.get("status") in ("dropped", "killed"):
+                    continue
+                key = tuple(entry.get("key") or ())
+                point = outcome.setdefault(
+                    key, {"repetitions": 0, "skipped": False}
+                )
+                # Replay means doing the point again, not merely finishing the
+                # repetition at which the old process died.
+                point["repetitions"] = max(
+                    point["repetitions"], entry.get("target", 1)
+                )
 
     return [
         {"key": list(key), **point}
