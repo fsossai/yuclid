@@ -8,7 +8,7 @@ to the run's own socket and answered with what the run said it did.
 """
 
 from yuclid.log import LogLevel, report
-from yuclid.run import remove_duplicates
+from yuclid.run import DEFAULT_INPUTS, remove_duplicates
 from yuclid import __version__
 import yuclid.workspace as workspace
 import yuclid.control as control
@@ -782,14 +782,17 @@ class Server(http.server.ThreadingHTTPServer):
 
 
 def launch(args):
-    root = workspace.find_root(args.directory)
-    if root is None:
+    # Serving an empty directory is useful: it can launch the first run from
+    # the browser. Use the same workspace creation path as `yuclid run` rather
+    # than requiring a run to have happened here already.
+    root = workspace.open_root(args.directory)
+    directory = os.path.dirname(root)
+    if not any(os.path.isfile(os.path.join(directory, name)) for name in DEFAULT_INPUTS):
         report(
-            LogLevel.FATAL,
-            "no .yuclid directory in {}".format(
-                os.path.abspath(args.directory or os.getcwd())
-            ),
-            hint="`yuclid run` creates one; name the directory holding it",
+            LogLevel.WARNING,
+            "no Yuclid configuration found in",
+            directory,
+            hint="add yuclid.json, yuclid.yaml, or yuclid.yml",
         )
     if not os.path.exists(PAGE):
         report(LogLevel.FATAL, "the web page is missing from the installation", PAGE)
@@ -822,7 +825,7 @@ def launch(args):
     # sitting at the machine, the URL above is already the whole story
     if os.environ.get("SSH_CONNECTION"):
         hints.append(
-            "forward the port to reach it: ssh -N -L {0}:127.0.0.1:{0} {1}".format(
+            "for port forwarding: ssh -N -L {0}:127.0.0.1:{0} {1}".format(
                 server.server_port, ssh_target()
             )
         )

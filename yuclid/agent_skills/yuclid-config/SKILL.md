@@ -1,5 +1,5 @@
 ---
-name: yuclid-json
+name: yuclid-config
 description: Author or fix a yuclid.json configuration for `yuclid run` — the experiment space, trials, and metric extraction. Use whenever the user mentions yuclid.json, a yuclid config, `yuclid run`, or asks to set up a parameter sweep / combinatorial experiment / benchmark grid whose results feed `yuclid plot`, `yuclid tplot`, or `yuclid stats`.
 ---
 

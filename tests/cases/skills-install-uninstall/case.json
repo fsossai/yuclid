@@ -2,7 +2,7 @@
   "description": "skills install copies both bundled skills into the named skills directory and uninstall removes them",
   "runs": [
     ["skills", "install", "--directory", "agent-skills"],
-    "test -f agent-skills/yuclid-json/SKILL.md && test -f agent-skills/yuclid-plot/SKILL.md && test -f agent-skills/.yuclid-skills.json",
+    "test -f agent-skills/yuclid-config/SKILL.md && test -f agent-skills/yuclid-plot/SKILL.md && test -f agent-skills/.yuclid-skills.json",
     ["skills", "uninstall", "--directory", "agent-skills"]
   ],
   "exit_codes": [0, 0, 0],
@@ -13,7 +13,7 @@
     "uninstalled 2 skill(s)"
   ],
   "files_not_exist": [
-    "agent-skills/yuclid-json",
+    "agent-skills/yuclid-config",
     "agent-skills/yuclid-plot",
     "agent-skills/.yuclid-skills.json"
   ]

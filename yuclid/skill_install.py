@@ -74,6 +74,8 @@ def install(args):
     manifest = read_manifest(target)
     recorded = manifest["skills"]
     sources = bundled_skills()
+    source_names = {source.name for source in sources}
+    retired = set(recorded) - source_names
 
     # Check everything before changing anything, so one conflict cannot leave
     # half of the bundle updated.
@@ -91,6 +93,17 @@ def install(args):
                     hint="use --force to replace it",
                 )
 
+    for name in retired:
+        destination = target / name
+        if destination.exists() and digest(destination) != recorded[name]:
+            if not args.force:
+                report(
+                    LogLevel.FATAL,
+                    "retired installed skill has local modifications",
+                    destination,
+                    hint="use --force to replace the bundle and remove it",
+                )
+
     installed = {}
     staging = Path(tempfile.mkdtemp(prefix=".yuclid-skills-", dir=target))
     try:
@@ -102,6 +115,10 @@ def install(args):
                 shutil.rmtree(destination)
             os.replace(fresh, destination)
             installed[source.name] = digest(destination)
+        for name in retired:
+            destination = target / name
+            if destination.is_dir():
+                shutil.rmtree(destination)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
