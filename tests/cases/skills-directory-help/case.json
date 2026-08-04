@@ -1,0 +1,11 @@
+{
+  "description": "skills directory help makes clear that the path includes the skills directory itself",
+  "args": ["skills", "install", "--help"],
+  "output_flag": false,
+  "no_results_file": true,
+  "stdout_contains": [
+    "including the 'skills'",
+    "component",
+    "~/.agents/skills, not ~/.agents"
+  ]
+}

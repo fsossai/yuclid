@@ -129,17 +129,26 @@ lowest  1.59    0.62    0.37
 
 ## Skills
 
-If you use Claude, symlink [`skills/`](skills/) into your agent directory and
-it will pick both of them up:
+Yuclid includes skills for Codex, Claude, and other agents that support the
+Agent Skills format. Install them for a known agent:
 
 ```sh
-ln -s "$PWD/skills" ~/.claude/skills/yuclid       # everywhere
-ln -s "$PWD/skills" .claude/skills/yuclid         # this project only
+yuclid skills install --agent codex
+yuclid skills install --agent claude
 ```
 
-- **`yuclid-json`** writes and fixes a configuration: the space, the trials,
+Or name a custom skills directory. The path includes the `skills` component:
+
+```sh
+yuclid skills install --directory .agents/skills
+```
+
+Use the corresponding `uninstall` command to remove skills installed by
+Yuclid, for example `yuclid skills uninstall --agent codex`.
+
+- **[`yuclid-json`](yuclid/agent_skills/yuclid-json/SKILL.md)** writes and fixes a configuration: the space, the trials,
   and the commands that scrape the numbers out of them.
-- **`yuclid-plot`** reads a result file and suggests what is worth looking at,
+- **[`yuclid-plot`](yuclid/agent_skills/yuclid-plot/SKILL.md)** reads a result file and suggests what is worth looking at,
   as `yuclid plot` / `tplot` / `stats` commands that you can paste.
 
 

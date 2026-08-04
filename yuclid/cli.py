@@ -242,6 +242,36 @@ def get_parser():
         help="Replay the configuration alone, without the steering it received",
     )
 
+    # skills subcommand
+    skills_parser = subparsers.add_parser(
+        "skills", help="Install or uninstall Yuclid's agent skills"
+    )
+    skills_actions = skills_parser.add_subparsers(
+        dest="skills_action", required=True
+    )
+    for action in ("install", "uninstall"):
+        action_parser = skills_actions.add_parser(
+            action, help="{} Yuclid's bundled skills".format(action.capitalize())
+        )
+        destination = action_parser.add_mutually_exclusive_group(required=True)
+        destination.add_argument(
+            "--agent",
+            choices=["codex", "claude"],
+            help="Install for a known agent in its user-wide skills directory",
+        )
+        destination.add_argument(
+            "--directory",
+            "--dir",
+            metavar="DIR",
+            help="The skills directory itself, including the 'skills' component; "
+            "for example ~/.agents/skills, not ~/.agents",
+        )
+        action_parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Replace or remove skills that have local modifications",
+        )
+
     _add_steering_parsers(subparsers)
 
     parser.add_argument("--version", action="version", version="yuclid " + __version__)
@@ -618,6 +648,10 @@ def dispatch(args):
     elif args.command == "stats":
         from yuclid import stats as _stats
         _stats.launch(args)
+    elif args.command == "skills":
+        from yuclid import skill_install as _skill_install
+
+        _skill_install.launch(args)
 
 
 if __name__ == "__main__":
