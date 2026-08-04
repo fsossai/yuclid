@@ -1193,8 +1193,15 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     # --ignore-errors lets the run get past one, and the point should say so
     failed = False
 
+    # a pause takes effect as soon as the command in flight is done: the point
+    # keeps the repetitions it managed and goes back into the queue for the rest
+    held = False
+
     while entry["done"] < entry["target"] and not killed:
         if trials.is_abandoned(entry["key"]):
+            break
+        if plan.paused:
+            held = True
             break
         rep = entry["done"]
         rep_suffix = f"_rep{rep}" if requested > 1 else ""
@@ -1440,6 +1447,21 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         report(LogLevel.WARNING, point_to_string(point), "abandoned")
         progress.emit("point.killed", index=i, key=list(entry["key"]), scope="point")
         plan.finish(entry, "killed")
+    elif held:
+        # not finished and not abandoned: waiting for the run to carry on, and
+        # said out loud so that whoever is watching does not see it hanging
+        report(
+            LogLevel.INFO,
+            point_to_string(point),
+            "held after {} of {} repetition(s)".format(entry["done"], entry["target"]),
+        )
+        progress.emit(
+            "point.held",
+            index=i,
+            key=list(entry["key"]),
+            rep=entry["done"],
+        )
+        plan.hold(entry)
     else:
         plan.finish(entry, "failed" if failed else "done")
 
@@ -2025,14 +2047,18 @@ def build_run_directory(settings, args):
     settings["run_id"], settings["run_dir"] = workspace.create_run(
         settings["root"],
         settings["now"],
-        argv=sys.argv[1:],
+        # the run this is, not the command that asked for it: `yuclid finish`
+        # and `yuclid replay` both come down to a `run`, and recording the
+        # wrapper would leave the run they made unable to be finished or
+        # replayed in its turn
+        argv=getattr(args, "origin_argv", None) or sys.argv[1:],
         inputs=settings["inputs"],
         output=os.path.abspath(settings["output"]),
         replay_of=args.replay,
     )
     if args.name is not None:
         workspace.write_name(settings["run_dir"], args.name)
-    build_replay_schedule(settings, args)
+    build_replay_outcome(settings, args)
 
     if args.temp_dir is None:
         settings["trials_dir"] = os.path.join(settings["run_dir"], workspace.TRIALS)
@@ -2045,13 +2071,33 @@ def build_run_directory(settings, args):
     )
 
 
-def build_replay_schedule(settings, args):
-    """Work out what the run being replayed was told, and write it down here.
+def report_unreplayed(settings):
+    """Say which of the original's points this space could not offer.
 
-    The schedule lives in the new run's directory, so a replay says what it
+    A point the previous run was given by `yuclid add` may name a value the
+    configuration does not have, in which case there is nothing here to run for
+    it. Better said than silently missing from the results.
+    """
+    if settings.get("replay") is None:
+        return
+    missing = set(settings["replay"]) - settings.get("replayed", set())
+    if not missing:
+        return
+    report(
+        LogLevel.WARNING,
+        "{} point(s) of the replayed run are not in this space".format(len(missing)),
+        ", ".join(".".join(key) for key in sorted(missing)),
+        hint="they were probably added to that run while it was going",
+    )
+
+
+def build_replay_outcome(settings, args):
+    """Work out what the run being replayed measured, and write it down here.
+
+    The outcome lives in the new run's directory, so a replay says what it
     replayed and can itself be replayed in turn.
     """
-    settings["schedule"] = []
+    settings["replay"] = None
     if args.replay is None:
         return
 
@@ -2064,17 +2110,20 @@ def build_replay_schedule(settings, args):
             hint="`yuclid runs` lists what there is to replay",
         )
 
-    schedule = derive_schedule(source)
+    points = derive_outcome(source)
     with open(os.path.join(settings["run_dir"], workspace.REPLAY), "w") as f:
-        json.dump({"replay_of": args.replay, "schedule": schedule}, f, indent=2)
+        json.dump({"replay_of": args.replay, "points": points}, f, indent=2)
         f.write("\n")
-    settings["schedule"] = schedule
+    settings["replay"] = {
+        tuple(p["key"]): p for p in points
+    }
 
+    units = sum(p["repetitions"] for p in points)
     report(
         LogLevel.INFO,
         "replaying",
         args.replay,
-        "{} steering operation(s)".format(len(schedule)),
+        "{} point(s), {} repetition(s)".format(len(points), units),
     )
 
 
@@ -2264,7 +2313,9 @@ def describe_op(op, effect):
             effect.get("killed", 0), effect.get("commands", 0)
         )
     if kind == "stop":
-        return "stopping, {} point(s) abandoned".format(effect.get("abandoned", 0))
+        return "stopped: {} point(s) abandoned, {} interrupted".format(
+            effect.get("abandoned", 0), effect.get("interrupted", 0)
+        )
     if kind == "repeat":
         return "{} point(s) now ask for {} repetition(s)".format(
             effect.get("retargeted", 0), effect.get("repeat")
@@ -2323,6 +2374,10 @@ class Steering:
             effect = self.kill(message)
         else:
             effect = self.execution["plan"].apply(message)
+            if kind == "stop":
+                # stopping ends the run now: nothing new starts, and what is
+                # running is taken down rather than waited for
+                self.execution["trials"].kill("point")
         report(LogLevel.INFO, "control", describe_op(message, effect))
         self.progress.emit(
             "op.applied", op=message, effect=effect, total=effect.get("total")
@@ -2385,119 +2440,40 @@ class Steering:
         }
 
 
-def derive_schedule(directory):
-    """Turn what a run was told to do into a schedule another run can follow.
+def derive_outcome(directory):
+    """What a run actually measured: each point, and how many times.
 
-    Boundary operations are anchored to the number of repetitions completed
-    when they were applied, not to the clock, so a replay lands them in the same
-    place however fast the machine is. A kill is anchored to the point and
-    repetition it interrupted, and to how far into it the interruption came.
+    A replay repeats that, and nothing else. Re-applying the operations the run
+    was given instead — a drop here, a kill there, each anchored to how far the
+    run had got — reproduces the steering rather than the result, and the two
+    are not the same thing: a drop that landed during a pause has no such
+    window when there is no pause to land in, and the point it removed gets
+    measured after all. What a run did is a fact; when it was told what to do
+    is a story about an afternoon.
+
+    A point that ran and failed still ran, and counts. A point that was skipped
+    as already recorded is remembered as skipped, so a replay skips it too.
     """
-    schedule = []
-    completed = 0
-    started = dict()
+    outcome = dict()
 
     for record in workspace.read_progress(directory):
         kind = record["type"]
-        if kind == "point.started":
-            started[(tuple(record["key"]), record.get("rep", 0))] = record["time"]
-        elif kind == "point.finished":
-            completed = record.get("completed", completed)
-        elif kind == "point.killed":
-            key = tuple(record["key"])
-            rep = record.get("rep", 0)
-            began = started.get((key, rep))
-            schedule.append(
-                {
-                    "at_point": list(key),
-                    "at_rep": rep,
-                    "after_seconds": round(record["time"] - began, 3) if began else 0.0,
-                    "op": {"op": "kill", "scope": record.get("scope", "point")},
-                }
+        if kind not in ("point.finished", "point.skipped"):
+            continue
+        key = tuple(record.get("key") or ())
+        point = outcome.setdefault(key, {"repetitions": 0, "skipped": False})
+        if kind == "point.skipped":
+            point["skipped"] = True
+            point["repetitions"] = max(
+                point["repetitions"], record.get("repetitions", 0)
             )
-        elif kind == "op.applied" and record["op"].get("op") != "kill":
-            # a kill is replayed from what it actually interrupted, above
-            schedule.append({"after_units": completed, "op": record["op"]})
+        else:
+            point["repetitions"] += record.get("repetitions", 1)
 
-    return schedule
-
-
-class Replay:
-    """Re-apply a recorded schedule to the run now under way.
-
-    It watches rather than being called: the point loop knows nothing about
-    replaying, and a kill has to fire in the middle of a point anyway.
-    """
-
-    def __init__(self, schedule, steering):
-        self.pending = list(schedule)
-        self.steering = steering
-        self.thread = None
-        self.stopped = False
-
-    def start(self):
-        if len(self.pending) == 0:
-            return
-        self.thread = threading.Thread(target=self._watch, daemon=True)
-        self.thread.start()
-
-    def close(self):
-        self.stopped = True
-
-    def _watch(self):
-        while not self.stopped and len(self.pending) > 0:
-            item = self.pending[0]
-            if "after_units" in item:
-                if self._units() >= item["after_units"]:
-                    self.pending.pop(0)
-                    self._apply(item["op"])
-            elif self._kill_due(item):
-                self.pending.pop(0)
-            time.sleep(0.05)
-
-    def _units(self):
-        execution = self.steering.execution
-        if execution is None:
-            return -1
-        return execution["plan"].units()[1]
-
-    def _kill_due(self, item):
-        execution = self.steering.execution
-        if execution is None:
-            return False
-        plan = execution["plan"]
-        entry = plan.in_flight(tuple(item["at_point"]))
-        if entry is None or entry["done"] != item["at_rep"]:
-            # the point may already be past: a kill that has nothing to
-            # interrupt is a kill that does nothing, and says so
-            if self._units() > 0 and plan.units()[1] >= plan.units()[0]:
-                report(
-                    LogLevel.WARNING,
-                    "replayed kill found nothing to interrupt",
-                    ".".join(item["at_point"]),
-                )
-                return True
-            return False
-        time.sleep(item.get("after_seconds", 0.0))
-        if plan.in_flight(tuple(item["at_point"])) is None:
-            report(
-                LogLevel.WARNING,
-                "replayed kill arrived after the command had finished",
-                ".".join(item["at_point"]),
-            )
-            return True
-        self._apply(dict(item["op"], coords=coords_of(plan.order, item["at_point"])))
-        return True
-
-    def _apply(self, op):
-        try:
-            self.steering.handle(op)
-        except control.ControlError as e:
-            report(LogLevel.WARNING, "replayed operation declined", str(e))
-
-
-def coords_of(order, key):
-    return {dim: [value] for dim, value in zip(order, key)}
+    return [
+        {"key": list(key), **point}
+        for key, point in sorted(outcome.items())
+    ]
 
 
 def run_experiments(
@@ -2528,6 +2504,12 @@ def run_experiments(
         recorded=recorded,
         expand=make_expander(settings, data, execution),
     )
+    if settings.get("replay") is not None:
+        # a replay is the previous run's result, not its command line: whatever
+        # this preset would have covered, it covers what was measured
+        settings.setdefault("replayed", set()).update(
+            execution["plan"].conform(settings["replay"])
+        )
     settings["steering"].attach(execution)
     execution["progress"].emit(
         "plan", preset=preset_name, **execution["plan"].snapshot()
@@ -2586,9 +2568,6 @@ def launch(args):
     steering = settings["steering"]
     steering.start(os.path.join(settings["run_dir"], workspace.CONTROL))
     previous = install_interrupt_handler(settings["trials"])
-    replay = Replay(settings["schedule"], steering)
-    replay.start()
-
     state = workspace.FAILED
     try:
         execute(settings)
@@ -2600,7 +2579,6 @@ def launch(args):
         state = workspace.FINISHED if not e.code else workspace.FAILED
         raise
     finally:
-        replay.close()
         settings["progress"].emit("run.finished", state=state)
         steering.close()
         settings["progress"].close()
@@ -2672,6 +2650,8 @@ def execute(settings):
             report(LogLevel.INFO, "completed preset", preset_name)
     else:
         run_experiments(settings, data, order, env, preset_name=None, recorded=recorded)
+
+    report_unreplayed(settings)
 
     report(
         LogLevel.INFO,

@@ -548,6 +548,10 @@ def scan(directory):
     plan = None
     completed, total, current, failed = 0, 0, None, False
     command, broken, wrong = None, [], []
+    # a plan snapshot is only written when the run is steered, so between two
+    # operations it says what was true then. What has happened since is in the
+    # records after it, and is folded back in before anything reads the plan
+    since = dict()
     # a point is in flight between the start of a repetition and its end;
     # repetitions of one point are sequential, so counting them per point says
     # which points are still going without the run having to announce it
@@ -557,6 +561,9 @@ def scan(directory):
         kind = record["type"]
         if kind == "plan":
             plan = record
+            # this snapshot is the truth as of now; what came before it is
+            # already in it
+            since = dict()
         if record.get("total") is not None:
             total = record["total"]
         if kind in ("point.finished", "point.skipped"):
@@ -592,12 +599,25 @@ def scan(directory):
         key = tuple(record.get("key") or ())
         if kind == "point.started":
             running[key] = running.get(key, 0) + 1
+            since.setdefault(key, {})["started"] = True
         elif kind == "point.finished":
             running[key] = max(0, running.get(key, 0) - 1)
+            entry = since.setdefault(key, {})
+            entry["done"] = entry.get("done", 0) + record.get("repetitions", 1)
+            entry["failed"] = entry.get("failed") or bool(record.get("failed"))
         elif kind == "point.killed":
             running[key] = 0
+            entry = since.setdefault(key, {})
+            # abandoning one repetition leaves the point to carry on with the
+            # rest; abandoning the point is what ends it
+            entry["killed"] = entry.get("killed") or record.get("scope") == "point"
+        elif kind == "point.skipped":
+            # a skipped point was already complete when the plan was written,
+            # so there are no repetitions to add — only the fact
+            since.setdefault(key, {})["skipped"] = True
 
     if plan is not None:
+        plan = freshen(plan, since)
         failed = failed or any(p["status"] == "failed" for p in plan["points"])
 
     return {
@@ -615,6 +635,42 @@ def scan(directory):
         "failure_count": len(wrong),
         "in_flight": sum(1 for count in running.values() if count > 0),
     }
+
+
+def freshen(plan, since):
+    """The plan as it stands now, not as it stood when it was last written.
+
+    Everything derived from a plan — which values are still to be measured,
+    which points are gaps, what dropping one would cost — was reading a
+    snapshot that is only rewritten when the run is steered. For a run nobody
+    steers that is the snapshot taken before the first point ran, so the counts
+    the page offered stayed at their starting figures for the whole run.
+
+    A dropped point stays dropped: the plan is the authority on what the run
+    intends, and the records only say what became of what it did.
+    """
+    if not since:
+        return plan
+    points = []
+    for point in plan["points"]:
+        seen = since.get(tuple(point["key"]))
+        if seen is None or point["status"] == "dropped":
+            points.append(point)
+            continue
+        point = dict(point)
+        point["done"] = min(point["target"], point["done"] + seen.get("done", 0))
+        if seen.get("killed"):
+            point["status"] = "killed"
+        elif seen.get("failed"):
+            point["status"] = "failed"
+        elif seen.get("skipped") or point["done"] >= point["target"]:
+            point["status"] = "done"
+        elif seen.get("started"):
+            point["status"] = "running"
+        points.append(point)
+    plan = dict(plan)
+    plan["points"] = points
+    return plan
 
 
 def mood(state, plan, live, failed):

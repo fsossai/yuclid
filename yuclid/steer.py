@@ -198,13 +198,15 @@ def describe(command, effect):
         if flight == 0:
             return "paused: nothing was running"
         return (
-            "pausing: no new point will start, and the {} in flight will "
-            "finish their repetitions first".format(flight)
+            "pausing: no new point will start, and the {} in flight will stop "
+            "as soon as the command they are running is done".format(flight)
         )
     if command == "resume":
         return "resumed, {} unit(s) remain".format(remaining)
     if command == "stop":
-        return "stopping, {} point(s) abandoned".format(effect.get("abandoned", 0))
+        return "stopped: {} point(s) abandoned, {} interrupted".format(
+            effect.get("abandoned", 0), effect.get("interrupted", 0)
+        )
     if command == "repeat":
         return "{} point(s) now ask for {} repetition(s)".format(
             effect.get("retargeted", 0), effect.get("repeat")
@@ -265,24 +267,40 @@ def launch_finish(args, parser):
     argv += ["-o", output, "--resume"]
 
     report(LogLevel.INFO, "resuming", " ".join(argv))
-    yuclid.run.launch(parser.parse_args(argv))
+    yuclid.run.launch(as_run(parser, argv))
 
 
 def launch_replay(args, parser):
-    """Run a previous run's command again, with the steering it received.
+    """Run a previous run's command again, measuring what it measured.
 
     The command is taken from the source run's manifest rather than rebuilt, so
-    a replay is the same experiment and not an approximation of it.
+    a replay is the same experiment and not an approximation of it. Where it
+    wrote is not part of that: a replay is a run of its own and gets a results
+    file of its own, rather than resuming into one that is already complete.
     """
     import yuclid.run
 
     _, argv = source_run(args.run)
     argv = strip_option(argv, "--replay")
+    argv = strip_option(argv, "-o")
+    argv = strip_option(argv, "--output")
+    argv = [x for x in argv if x != "--resume"]
     if not args.no_steering:
         argv += ["--replay", args.run]
 
     report(LogLevel.INFO, "replaying", " ".join(argv))
-    yuclid.run.launch(parser.parse_args(argv))
+    yuclid.run.launch(as_run(parser, argv))
+
+
+def as_run(parser, argv):
+    """Parse a `run` command line, remembering what it was.
+
+    The run records this rather than the `finish` or `replay` that led to it,
+    so that the run it produces can itself be finished or replayed.
+    """
+    parsed = parser.parse_args(argv)
+    parsed.origin_argv = list(argv)
+    return parsed
 
 
 def strip_option(argv, name):

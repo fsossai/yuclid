@@ -269,9 +269,9 @@ def _add_steering_parsers(subparsers):
     )
 
     described = {
-        "pause": "Stop starting new points, without interrupting those in flight",
+        "pause": "Stop as soon as the commands in flight are done",
         "resume": "Carry on after a pause",
-        "stop": "End the run once the points in flight are done",
+        "stop": "End the run now, killing whatever is running",
         "kill": "Abandon what is running right now",
         "drop": "Take points out of what is left to run",
         "add": "Put points into what is left to run",
