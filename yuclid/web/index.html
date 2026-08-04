@@ -10,12 +10,17 @@
     --bg: #fbfbfa; --panel: #fff; --line: #e3e1dd; --ink: #1c1b19;
     --dim: #6b6862; --accent: #2f6f4e; --warn: #a4462d; --chip: #f1efec;
     --pause: #b8891b; --fail: #7d4bb0;
+    /* the heatmap's two ends. Deliberately not the green and red that mean
+       well and badly elsewhere: lower is not always better, and a colour that
+       says so would be lying about half the metrics. */
+    --cool: #3b6ea5; --hot: #b5561f;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #16171a; --panel: #1d1e22; --line: #2e3036; --ink: #e6e4e1;
       --dim: #918d87; --accent: #6fb58c; --warn: #e08a6d; --chip: #26282d;
       --pause: #d8b155; --fail: #b18ad8;
+      --cool: #6fa8dc; --hot: #e0894f;
     }
   }
   * { box-sizing: border-box; }
@@ -28,6 +33,13 @@
     display: flex; align-items: baseline; gap: 12px;
   }
   header b { font-weight: 600; letter-spacing: .02em; }
+  /* which directory this is watching: one server per directory, and more than
+     one may be open at once */
+  #where {
+    margin-left: auto; color: var(--dim); font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+  }
   main { display: grid; grid-template-columns: 260px minmax(0, 1fr); }
   @media (max-width: 720px) { main { grid-template-columns: 1fr; } }
   #runs {
@@ -264,6 +276,37 @@
       color-mix(in srgb, var(--dim) 25%, transparent) 4px,
       color-mix(in srgb, var(--dim) 25%, transparent) 5px);
   }
+  .leaf { cursor: pointer; }
+  /* the pinned point, marked in the space so that the table below is never
+     about a point the reader has to hunt for */
+  .leaf[data-pinned="true"] {
+    outline: 2px solid var(--ink); outline-offset: 1px;
+  }
+  #space-look:not(:empty) {
+    margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  .look-head { margin-bottom: 10px; }
+  table.look {
+    border-collapse: collapse; font-size: 13px; margin-bottom: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  table.look th {
+    text-align: left; font-weight: 600; color: var(--dim); font-size: 12px;
+    text-transform: uppercase; letter-spacing: .05em; padding: 2px 14px 4px 0;
+  }
+  table.look th:not(:first-child) { text-align: right; }
+  table.look td { padding: 2px 14px 2px 0; cursor: pointer; }
+  table.look tr:hover td { background: var(--chip); }
+  table.look tr[data-focused="true"] td { color: var(--hot); font-weight: 600; }
+  .look-foot { font-size: 12.5px; color: var(--dim); }
+  .look-foot > div { display: flex; gap: 10px; margin-top: 3px; }
+  .look-label {
+    flex: 0 0 8em; color: var(--dim); font-weight: 600; font-size: 12px;
+  }
+  .look-foot span:last-child {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow-wrap: anywhere;
+  }
   /* wide screens keep the alternation; narrow ones turn the outermost level
      down the page, so nothing is ever pushed off the side */
   @media (max-width: 720px) {
@@ -272,7 +315,7 @@
 </style>
 </head>
 <body>
-<header><b>yuclid</b><span id="version">__YUCLID_VERSION__</span></header>
+<header><b>Yuclid</b><span id="version">__YUCLID_VERSION__</span><span id="where" title="the directory holding .yuclid">__YUCLID_ROOT__</span></header>
 <main>
   <nav id="runs"></nav>
   <div id="panes">
@@ -281,8 +324,8 @@
       <div id="launch-body"></div>
       <div class="row" style="margin-top: 12px">
         <label>repeat <input id="launch-repeat" type="number" min="1" value="1"></label>
-        <label title="how many trials may be running at once; 1 runs them one after another"
-          >at once <input id="launch-parallel" type="number" min="1" value="1"></label>
+        <label title="how many points may be measured at the same time; 1 runs them one after another"
+          >parallel points <input id="launch-parallel" type="number" min="1" value="1"></label>
         <label>name <input id="launch-name" placeholder="optional"></label>
         <button class="act" id="launch-go">Start</button>
         <span id="launch-size" style="color: var(--dim)"></span>
@@ -302,6 +345,7 @@
         <span id="space-says" style="color: var(--dim)"></span>
       </div>
       <div id="space-body"></div>
+      <div id="space-look"></div>
     </section>
     <section id="nothing" hidden>
       <p id="nothing-says">select a run</p>
@@ -678,6 +722,92 @@ const renderManage = async () => {
 
   block.append(button);
   body.append(block);
+  body.append(temporaryBlock());
+};
+
+// Almost all of a run directory is what its trials and setup commands printed,
+// and almost none of its meaning is. Wanting the room back is not the same as
+// wanting to forget the runs happened, so it is offered separately.
+const temporaryBlock = () => {
+  const block = document.createElement("div");
+  block.style.marginTop = "26px";
+  block.style.paddingTop = "18px";
+  block.style.borderTop = "1px solid var(--line)";
+
+  const title = document.createElement("h2");
+  title.textContent = "Temporary files";
+  block.append(title);
+
+  const what = document.createElement("p");
+  what.style.color = "var(--dim)";
+  what.textContent =
+    "Each run keeps what its trials and setup commands printed, under tmp/ " +
+    "and setup/. Clearing them keeps every run's manifest, progress and plan: " +
+    "the runs stay listed and their results are untouched. A run told to put " +
+    "its temporary files elsewhere with --temp-dir keeps them.";
+  block.append(what);
+
+  const room = document.createElement("p");
+  room.style.color = "var(--dim)";
+  block.append(room);
+
+  const button = document.createElement("button");
+  button.className = "act";
+  button.textContent = "Clear temporary files";
+  button.disabled = true;
+  block.append(button);
+
+  ask("/api/usage").then(usage => {
+    const going = usage.live
+      ? ` ${usage.live} still going will be left alone.`
+      : "";
+    room.textContent =
+      usage.temporary > 0
+        ? `About ${size(usage.temporary)} across ${usage.runs} run(s).${going}`
+        : `Nothing to clear.${going}`;
+    button.disabled = !usage.temporary;
+  });
+
+  button.onclick = () => {
+    // asked here, as part of this page, in the same shape as the one above
+    block.innerHTML = "";
+    const question = document.createElement("p");
+    question.innerHTML = "<b>Clear the temporary files of every run?</b>";
+    const detail = document.createElement("p");
+    detail.style.color = "var(--dim)";
+    detail.textContent =
+      "The runs stay, with their manifests, progress and results. What goes " +
+      "is the captured output of each trial and setup command, which cannot " +
+      "be brought back.";
+    const row = document.createElement("div");
+    row.className = "row";
+    const yes = document.createElement("button");
+    yes.className = "act danger";
+    yes.style.color = "var(--warn)";
+    yes.textContent = "Clear them";
+    yes.onclick = async () => {
+      row.querySelectorAll("button").forEach(b => (b.disabled = true));
+      const answer = await ask("/api/temporary", {}, "DELETE");
+      if (answer.error) {
+        detail.textContent = answer.error;
+        return;
+      }
+      renderManage();
+      const said = document.createElement("p");
+      said.style.color = "var(--dim)";
+      said.textContent =
+        `${size(answer.bytes)} freed across ${answer.cleared.length} run(s)` +
+        (answer.kept.length ? `, ${answer.kept.length} left alone` : "");
+      document.getElementById("manage-body").append(said);
+    };
+    const no = document.createElement("button");
+    no.className = "act";
+    no.textContent = "Cancel";
+    no.onclick = renderManage;
+    row.append(yes, no);
+    block.append(question, detail, row);
+  };
+  return block;
 };
 
 const loadConfig = async () => {
@@ -960,7 +1090,10 @@ const productPoints = () => {
   return points;
 };
 
-const keyOf = point => point.join(" ");
+// Written as an escape and never as a raw byte: an HTML parser turns a
+// literal U+0000 into U+FFFD before the script runs, and a key joined with
+// one character but split on another is a key that never matches.
+const keyOf = point => point.join("\u0000");
 
 const selection = () => {
   const select = {};
@@ -997,11 +1130,11 @@ const showSize = () => {
     : struck.size
     ? `${points - struck.size} of ${points} point(s)`
     : `up to ${points} point(s)`;
-  // running several trials at once is a different experiment — they share the
-  // machine they are being timed on — so the button says which one is about to
-  // start rather than leaving it to a number field
+  // measuring several points at the same time is a different experiment — they
+  // share the machine they are being timed on — so the button says which one is
+  // about to start rather than leaving it to a number field
   const at = parallelism();
-  go.textContent = at > 1 ? `Start ${at} at a time` : "Start";
+  go.textContent = at > 1 ? `Start ${at} in parallel` : "Start";
 };
 
 const parallelism = () =>
@@ -1691,13 +1824,27 @@ const spell = run => {
     dateStyle: "long",
     timeStyle: "medium",
   });
-  // a run still going has no end to measure to, so it is measured to now —
-  // redrawn every second along with everything else
+  // A run still going has no end to measure to, so it is measured to now —
+  // redrawn every second along with everything else. A paused one is not
+  // going: the clock stops where it was paused, and starts again from there
+  // when the run does. While it is still settling the points in flight are
+  // running, so the clock is too.
   if (run.live) {
-    return `started ${long} · running for ${duration(Date.now() / 1000 - run.created)}`;
+    const idle = run.paused && run.in_flight === 0 && pausedAt !== null;
+    const until = idle ? pausedAt : Date.now() / 1000;
+    return (
+      `started ${long} · ${idle ? "paused after" : "running for"} ` +
+      duration(until - run.created - pausedFor)
+    );
   }
   if (!run.ended) return `started ${long}`;
-  return `started ${long} · took ${duration(run.ended - run.created)}`;
+  // a run stopped while paused never resumed, so that last pause has no
+  // `resume` to close it and is closed by the ending instead
+  const open = pausedAt === null ? 0 : Math.max(0, run.ended - pausedAt);
+  return (
+    `started ${long} · took ` +
+    duration(run.ended - run.created - pausedFor - open)
+  );
 };
 
 let gapsShow = "";
@@ -1762,50 +1909,42 @@ const renderGapActions = (run, missing) => {
     row.innerHTML = "";
     const question = document.createElement("span");
     question.className = "confirm";
-    question.append(`${missing} point(s) missing:`);
-    for (const [mode, label, told] of [
-      ["finish", "fill them in", `yuclid finish ${run.id}`],
-      ["restart", "redo it all", `yuclid replay ${run.id} --no-steering`],
-    ]) {
-      const choice = document.createElement("button");
-      choice.className = "yes";
-      choice.textContent = label;
-      choice.onclick = () => spawn(mode, told);
-      question.append(choice);
-    }
+    question.append(`measure the ${missing} missing point(s)?`);
+    const yes = document.createElement("button");
+    yes.className = "yes";
+    yes.textContent = "run them";
+    yes.onclick = fill;
     const no = document.createElement("button");
     no.className = "no";
     no.textContent = "cancel";
     no.onclick = () => { choosing = false; renderGapActions(run, missing); };
-    question.append(no);
+    question.append(yes, no);
     row.append(question);
-    how.textContent = "";
+    how.textContent = `they go into ${run.output || "the same results file"}`;
   };
   row.append(start);
   how.textContent = `${missing} point(s) of the space were never measured`;
 
-  const spawn = async (mode, told) => {
+  // Only the missing points, into the file the run already wrote: no second
+  // dataset to reconcile afterwards, which is the whole reason for filling
+  // gaps rather than measuring the space again.
+  const fill = async () => {
     row.querySelectorAll("button").forEach(b => (b.disabled = true));
-    // the command it comes to, so that the next one can be typed rather than
-    // clicked for
-    how.textContent = `starting… (${told})`;
-    const answer = await ask(`/api/runs/${current}/finish`, {mode});
+    how.textContent = `starting… (yuclid finish ${run.id})`;
+    const answer = await ask(`/api/runs/${current}/finish`, {mode: "finish"});
     choosing = false;
     if (answer.error) {
       renderGapActions(run, missing);
       how.textContent = answer.error;
       return;
     }
-    // Both modes make a run of their own, and that run is the one worth
-    // watching: filling the gaps in leaves this one exactly as it was, so
-    // staying here shows nothing happening. The word goes in the run's own
-    // message rather than under the gaps, which the next poll rewrites.
-    const started = answer.started;
-    select(started);
+    // the work is done by a process, and yuclid records every process it
+    // starts, so there is a new entry in the list — but the measurements land
+    // in the same file, which is what was asked for
+    select(answer.started);
     say(
-      mode === "finish"
-        ? `run ${started} is measuring the ${missing} missing point(s)`
-        : `run ${started} is running the whole space again`
+      `measuring the ${missing} missing point(s) into ` +
+        `${run.output || "the same results file"}`
     );
   };
 };
@@ -1825,13 +1964,56 @@ const stamp = seconds => {
 // needs: a `plan` record is the roster of points, and the records after it say
 // what became of each one. Kept per run and rebuilt from that run's history.
 let roster = null;
+// When the run was last told to pause, and how long it has spent paused
+// altogether, so that the clock in the header can be a stopwatch rather than a
+// calendar. Taken from the records rather than from the moment the page
+// noticed, so it survives a reload and says the same thing in every tab.
+let pausedAt = null, pausedFor = 0;
 
 const forget = () => {
   roster = null;
   spaceShows = "";
+  pausedAt = null;
+  pausedFor = 0;
+  forgetLook();
 };
 
-const at = key => key.join(" ");
+// an escape, never a raw byte: see the note on `keyOf`
+const at = key => key.join("\u0000");
+
+// A long run is a lot of numbers, and the tab holds them all. These are what
+// one point may keep before the oldest is let go: enough that no real run is
+// truncated, bounded so that no run can grow the page without end.
+const SAMPLE_MEMORY = 4000;
+const TRIAL_MEMORY = 200;
+
+// Every metric of every repetition, which `point.finished` already carries and
+// the panel used to throw away. Kept per point so that the inspector can say
+// what a point measured and how much it varied between repetitions.
+const keepSamples = (point, record) => {
+  // A point announces itself once and then finishes a repetition at a time, so
+  // one repetition ran from wherever the last one stopped — or from the
+  // announcement, for the first.
+  const started = point.mark;
+  point.mark = record.time;
+  (point.reps = point.reps || []).push({
+    rep: record.rep || 0,
+    seconds: started === undefined ? null : record.time - started,
+    failed: !!record.failed,
+  });
+  if (point.reps.length > TRIAL_MEMORY) point.reps.shift();
+
+  point.samples = point.samples || {};
+  for (const [name, values] of Object.entries(record.metrics || {})) {
+    const kept = (point.samples[name] = point.samples[name] || []);
+    for (const value of [].concat(values)) {
+      // a metric that could not be parsed arrives as a NaN, and a NaN is not a
+      // measurement: it would poison every statistic drawn from the column
+      if (typeof value === "number" && isFinite(value)) kept.push(value);
+    }
+    if (kept.length > SAMPLE_MEMORY) kept.splice(0, kept.length - SAMPLE_MEMORY);
+  }
+};
 
 const remember = record => {
   if (record.type === "plan") {
@@ -1865,8 +2047,20 @@ const remember = record => {
 
   if (record.type === "point.started") {
     point.status = "running";
+    // where the clock starts for the repetitions that follow
+    point.mark = record.time;
+  } else if (record.type === "trial.started") {
+    // what ran and where it wrote, for whoever wants to go and read it
+    (point.trials = point.trials || []).push({
+      rep: record.rep || 0,
+      trial: record.trial || 0,
+      command: record.command,
+      stem: record.stem,
+    });
+    if (point.trials.length > TRIAL_MEMORY) point.trials.shift();
   } else if (record.type === "point.finished") {
     point.done = (point.done || 0) + (record.repetitions || 1);
+    keepSamples(point, record);
     if (record.failed) point.failed = true;
     point.status = point.failed
       ? "failed"
@@ -1887,6 +2081,40 @@ const remember = record => {
     point.done = record.repetitions || point.done;
     point.skipped = true;
   }
+};
+
+// What a column of samples comes to. The median rather than the mean is what
+// the inspector leads with: one slow repetition — a page fault, another tenant
+// on the machine — moves a mean and leaves a median alone.
+const summary = values => {
+  const n = values.length;
+  if (n === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = n >> 1;
+  const median = n % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  // the sample deviation: with one measurement there is no spread to speak of,
+  // and saying zero would claim a precision nothing supports
+  const stddev =
+    n > 1
+      ? Math.sqrt(values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1))
+      : null;
+  return {n, median, mean, stddev, min: sorted[0], max: sorted[n - 1]};
+};
+
+// How long something took, to the millisecond. `duration` rounds to whole
+// seconds, which is the right shape for a run and useless for a repetition:
+// most of them are a fraction of a second, and all of them would read as 0s.
+const lapse = seconds =>
+  seconds < 60 ? `${seconds.toFixed(3)}s` : duration(seconds);
+
+// enough digits to tell two measurements apart, few enough to read
+const figure = value => {
+  if (value === null || value === undefined || !isFinite(value)) return "";
+  const size = Math.abs(value);
+  if (size === 0) return "0";
+  if (size >= 1e6 || size < 1e-3) return value.toExponential(2);
+  return String(Number(value.toPrecision(size >= 100 ? 6 : 4)));
 };
 
 // every value each dimension takes, in the order the run first mentions it, so
@@ -1912,6 +2140,15 @@ const stateOf = point =>
 
 let spaceShows = "";
 let spaceLeaves = new Map();
+// the point the inspector is describing, the one held for comparison, the one
+// being compared against it, and the metric colouring the space
+let pinned = null, against = null, focused = null;
+let lookShows = "";
+
+const forgetLook = () => {
+  pinned = against = focused = null;
+  lookShows = "";
+};
 
 const renderSpace = () => {
   const body = document.getElementById("space-body");
@@ -1946,12 +2183,66 @@ const renderSpace = () => {
     `${points} point(s) in the product of ${roster.order.length} dimension(s)` +
     (held < points ? `, ${points - held} not in the space` : "");
 
+  const scale = heatScale();
   for (const [id, leaf] of spaceLeaves) {
     const point = roster.points.get(id);
     const state = stateOf(point);
     if (leaf.dataset.state !== state) leaf.dataset.state = state;
     fillLeaf(leaf, point, state);
+    paintLeaf(leaf, id, point, scale);
+    const held = String(id === pinned);
+    if (leaf.dataset.pinned !== held) leaf.dataset.pinned = held;
   }
+  renderLook();
+};
+
+// -- colouring the space by a metric ---------------------------------------
+
+// The range the focused metric covers, or where the pinned point sits in it.
+// Nothing is drawn until a metric is chosen: the space is about progress until
+// somebody asks it to be about a number.
+const heatScale = () => {
+  if (!focused) return null;
+  const values = new Map();
+  for (const [id, point] of roster.points) {
+    const stat = summary((point.samples || {})[focused] || []);
+    if (stat) values.set(id, stat.median);
+  }
+  if (values.size === 0) return null;
+  const middle = pinned ? values.get(pinned) : undefined;
+  if (middle === undefined) {
+    const all = [...values.values()];
+    return {values, low: Math.min(...all), high: Math.max(...all)};
+  }
+  // centred on the pinned value, and as far one way as the other, so that a
+  // cell's colour means the same amount above as below
+  let reach = 0;
+  for (const value of values.values()) {
+    reach = Math.max(reach, Math.abs(value - middle));
+  }
+  return {values, middle, reach};
+};
+
+const paintLeaf = (leaf, id, point, scale) => {
+  const value = scale ? scale.values.get(id) : undefined;
+  if (value === undefined) {
+    if (leaf.style.background) leaf.style.background = "";
+    if (leaf.dataset.heat) delete leaf.dataset.heat;
+    return;
+  }
+  let tint;
+  if (scale.middle === undefined) {
+    // no pin: one hue, faint at the bottom of the range and full at the top
+    const share =
+      scale.high === scale.low ? 1 : (value - scale.low) / (scale.high - scale.low);
+    tint = `color-mix(in srgb, var(--hot) ${Math.round(12 + 58 * share)}%, transparent)`;
+  } else {
+    const off = scale.reach === 0 ? 0 : (value - scale.middle) / scale.reach;
+    const hue = off < 0 ? "var(--cool)" : "var(--hot)";
+    tint = `color-mix(in srgb, ${hue} ${Math.round(70 * Math.abs(off))}%, transparent)`;
+  }
+  leaf.style.background = tint;
+  leaf.dataset.heat = "true";
 };
 
 const buildNest = (order, values, sizes, depth, prefix, base) => {
@@ -1993,7 +2284,21 @@ const buildLeaf = (order, key, index) => {
   const leaf = document.createElement("div");
   leaf.className = "leaf";
   leaf.dataset.of = `${coords(order, key)}  ·  ${key.join(".")}  ·  #${index}`;
-  spaceLeaves.set(at(key), leaf);
+  const id = at(key);
+  // clicking pins the point: the inspector describes it, the space marks it,
+  // and moving over any other point compares that one against it. Clicking it
+  // again lets it go.
+  leaf.onclick = () => {
+    pinned = pinned === id ? null : id;
+    against = null;
+    renderSpace();
+  };
+  leaf.onmouseenter = () => {
+    if (!pinned || pinned === id || against === id) return;
+    against = id;
+    renderLook();
+  };
+  spaceLeaves.set(id, leaf);
   return leaf;
 };
 
@@ -2015,6 +2320,186 @@ const fillLeaf = (leaf, point, state) => {
   leaf.title = point
     ? `${leaf.dataset.of}\n${state}${wanted > 1 ? `  ${done}/${wanted}` : ""}`
     : `${leaf.dataset.of}\nnot in the space`;
+};
+
+// -- what is known about one point -----------------------------------------
+
+const nameOf = id => coords(roster.order, id.split("\u0000"));
+
+// The panel under the space. Everything in it comes from records the page is
+// already polling, so a point being measured fills in as its repetitions land
+// — redrawn only when a number has actually changed, like the rest of the page.
+const renderLook = () => {
+  const look = document.getElementById("space-look");
+  const subject = against || pinned;
+  if (!subject || !roster || !roster.points.has(subject)) {
+    if (look.childElementCount) look.innerHTML = "";
+    lookShows = "";
+    return;
+  }
+
+  const point = roster.points.get(subject);
+  // there is a comparison only once a second point is in play: on its own, a
+  // pinned point is described rather than measured against itself
+  const held = against && pinned !== against ? roster.points.get(pinned) : null;
+  const rows = metricRows(held, point);
+  const signature = JSON.stringify([
+    subject, pinned, focused, point.done, point.status, rows,
+    (point.reps || []).length,
+  ]);
+  if (signature === lookShows) return;
+  lookShows = signature;
+
+  look.innerHTML = "";
+  look.append(lookHead(subject, point, held));
+  look.append(metricTable(rows, !!held));
+  look.append(lookFooter(point));
+};
+
+const lookHead = (subject, point, held) => {
+  const head = document.createElement("div");
+  head.className = "row look-head";
+
+  const who = document.createElement("b");
+  who.textContent = held
+    ? `${nameOf(pinned)} — ${nameOf(subject)}`
+    : nameOf(subject);
+  head.append(who);
+
+  const state = document.createElement("span");
+  state.style.color = "var(--dim)";
+  const spent = (point.reps || []).reduce((a, r) => a + (r.seconds || 0), 0);
+  state.textContent =
+    `${stateOf(point)} · ${point.done || 0}/${point.target || 1}` +
+    (spent > 0 ? ` · ${lapse(spent)}` : "");
+  head.append(state);
+
+  const how = document.createElement("span");
+  how.style.color = "var(--dim)";
+  how.style.fontSize = "12.5px";
+  how.textContent = held
+    ? "move over another point to compare it, or click the pinned one to let go"
+    : "move over another point to compare them";
+  head.append(how);
+  return head;
+};
+
+// One row per metric the point measured, or per metric either point measured
+// when two are being compared, so that a metric only one of them has is still
+// visible rather than quietly dropped.
+const metricRows = (held, point) => {
+  const names = [
+    ...new Set([
+      ...Object.keys(held ? held.samples || {} : {}),
+      ...Object.keys(point.samples || {}),
+    ]),
+  ].sort();
+  return names.map(name => {
+    const one = held ? summary((held.samples || {})[name] || []) : null;
+    const two = summary((point.samples || {})[name] || []);
+    let change = null;
+    // a change against nothing is not a percentage, and neither is a change
+    // against a metric the other point does not have
+    if (one && two && one.median !== 0) {
+      change = (100 * (two.median - one.median)) / Math.abs(one.median);
+    }
+    return {name, one, two, change};
+  });
+};
+
+const metricTable = (rows, comparing) => {
+  const table = document.createElement("table");
+  table.className = "look";
+  const columns = comparing
+    ? ["metric", "pinned", "this one", "Δ"]
+    : ["metric", "n", "median", "mean", "stddev", "min", "max"];
+
+  const head = table.insertRow();
+  for (const column of columns) {
+    const cell = document.createElement("th");
+    cell.textContent = column;
+    head.append(cell);
+  }
+
+  if (rows.length === 0) {
+    const row = table.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = columns.length;
+    cell.textContent = "nothing measured here yet";
+    cell.style.color = "var(--dim)";
+    return table;
+  }
+
+  for (const {name, one, two, change} of rows) {
+    const row = table.insertRow();
+    row.dataset.focused = String(focused === name);
+    // clicking a metric colours the whole space by it; clicking it again lets
+    // the space go back to being about progress
+    row.onclick = () => {
+      focused = focused === name ? null : name;
+      renderSpace();
+    };
+    const cells = comparing
+      ? [name, one ? figure(one.median) : "", two ? figure(two.median) : "",
+         change === null ? "" : `${change > 0 ? "+" : ""}${change.toFixed(1)}%`]
+      : [name, two ? String(two.n) : "0", two ? figure(two.median) : "",
+         two ? figure(two.mean) : "", two ? figure(two.stddev) : "",
+         two ? figure(two.min) : "", two ? figure(two.max) : ""];
+    cells.forEach((text, i) => {
+      const cell = row.insertCell();
+      cell.textContent = text;
+      if (i > 0) cell.style.textAlign = "right";
+    });
+    if (comparing && change !== null) {
+      row.lastChild.style.color = change > 0 ? "var(--hot)" : "var(--cool)";
+    }
+  }
+  return table;
+};
+
+// where its output went, and what produced it
+const lookFooter = point => {
+  const foot = document.createElement("div");
+  foot.className = "look-foot";
+
+  const reps = (point.reps || []).filter(r => r.seconds !== null);
+  if (reps.length > 0) {
+    foot.append(
+      lookLine(
+        "repetitions",
+        reps.map(r => `${r.rep}: ${lapse(r.seconds)}`).join("   ")
+      )
+    );
+  }
+
+  // the last repetition's captures: the earlier ones are the same names with a
+  // different suffix, and one line per trial of one repetition is enough to
+  // find them all
+  const trials = point.trials || [];
+  const last = trials.length ? trials[trials.length - 1].rep : null;
+  for (const trial of trials.filter(t => t.rep === last)) {
+    if (trial.stem) {
+      const line = lookLine("captures", `${trial.stem}.out`);
+      line.lastChild.title = "click to copy";
+      line.lastChild.style.cursor = "pointer";
+      line.lastChild.onclick = () =>
+        copyPath(line.lastChild, `${trial.stem}.out`);
+      foot.append(line);
+    }
+    if (trial.command) foot.append(lookLine("command", trial.command));
+  }
+  return foot;
+};
+
+const lookLine = (label, text) => {
+  const line = document.createElement("div");
+  const name = document.createElement("span");
+  name.className = "look-label";
+  name.textContent = label;
+  const value = document.createElement("span");
+  value.textContent = text;
+  line.append(name, value);
+  return line;
 };
 
 document.getElementById("rspace").onclick = () => show("space");
@@ -2039,7 +2524,17 @@ const absorb = payload => {
   since = payload.seq;
   lines.push(...payload.records.map(summarize));
   lines = lines.slice(-300);
-  for (const record of payload.records) remember(record);
+  for (const record of payload.records) {
+    remember(record);
+    if (record.type === "op.applied") {
+      const kind = (record.op || {}).op;
+      if (kind === "pause" && pausedAt === null) pausedAt = record.time;
+      if (kind === "resume" && pausedAt !== null) {
+        pausedFor += record.time - pausedAt;
+        pausedAt = null;
+      }
+    }
+  }
 };
 
 const drawLog = () => {

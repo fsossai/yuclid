@@ -29,8 +29,10 @@ import re
 
 PAGE = os.path.join(os.path.dirname(__file__), "web", "index.html")
 BODY_LIMIT = 1 << 16
-# how many failures the page is sent; the rest are in the terminal and the logs
-FAILURES = 20
+# How many failures the page is sent. A handful is what a reader takes in, and
+# a run where everything fails says the same thing three times as clearly as it
+# does twenty; the rest are in the terminal and the captures.
+FAILURES = 3
 # a point list arrives in one request, and a request is not the place to hand
 # over an unbounded one
 POINT_LIMIT = 20000
@@ -151,6 +153,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/runs":
             return self.respond(200, self.forget_all())
+        # a literal path of its own: /api/runs/temporary would be read as a run
+        # by the route below, and one could be named that
+        if path == "/api/temporary":
+            return self.respond(200, self.clear_temporary())
         match = re.fullmatch(r"/api/runs/([^/]+)", path)
         if not match:
             return self.respond(404, {"error": "no such resource"})
@@ -214,7 +220,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with open(PAGE, "rb") as f:
             html = f.read()
         html = html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
-        return html.replace(b"__YUCLID_VERSION__", __version__.encode())
+        html = html.replace(b"__YUCLID_VERSION__", __version__.encode())
+        # the directory holding .yuclid, which is the one the runs are about
+        watching = self.server.base
+        return html.replace(b"__YUCLID_ROOT__", watching.encode())
 
     def manifest(self, run_id):
         directory = workspace.run_directory(self.server.root, run_id)
@@ -280,6 +289,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "in_flight": in_flight if live else 0,
             "paused": bool(plan.get("paused")) if plan and live else False,
             "failed": failed,
+            "directory": manifest["directory"],
             "mood": mood(manifest["state"], plan, live, failed),
             "gaps": gaps_of(plan, live),
             # what a replay of this run would cover, and how it would be asked
@@ -303,21 +313,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
         touching every trial capture, which is not something to do once a
         second for a figure nobody asked for.
         """
-        total, runs, live = 0, 0, 0
+        total, scratch, runs, live = 0, 0, 0, 0
         for manifest in workspace.list_runs(self.server.root):
             runs += 1
             if manifest["state"] == workspace.RUNNING:
                 live += 1
-            for where, _, files in os.walk(manifest["directory"]):
-                for name in files:
-                    try:
-                        # a hard link counts once, and the results it points at
-                        # are not this directory's to give back
-                        stat = os.lstat(os.path.join(where, name))
-                        total += 0 if stat.st_nlink > 1 else stat.st_size
-                    except OSError:
-                        pass
-        return {"runs": runs, "live": live, "bytes": total}
+            else:
+                # what clearing the temporary files would give back, which is
+                # only ever offered for a run that has ended
+                scratch += workspace.temporary_size(manifest["directory"])
+            # a hard link counts once, and the results it points at are not
+            # this directory's to give back
+            total += workspace.directory_size(manifest["directory"])
+        return {"runs": runs, "live": live, "bytes": total, "temporary": scratch}
+
+    def clear_temporary(self):
+        """Take back the room the captures cost, and keep the runs.
+
+        A run still going is writing into the very directory this would empty,
+        so it is left alone and named in the answer.
+        """
+        cleared, kept, freed = [], [], 0
+        for manifest in workspace.list_runs(self.server.root):
+            if manifest["state"] == workspace.RUNNING:
+                kept.append(manifest["id"])
+                continue
+            try:
+                freed += workspace.clear_temporary(
+                    self.server.root, manifest["id"]
+                )
+                cleared.append(manifest["id"])
+            except (OSError, ValueError, FileNotFoundError):
+                kept.append(manifest["id"])
+        return {"cleared": cleared, "kept": kept, "bytes": freed}
 
     def configuration(self):
         """The space a new run could be built from, as the config declares it.
@@ -330,7 +358,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """
         from yuclid import run as runner
 
-        directory = os.path.dirname(self.server.root)
+        directory = self.server.base
         inputs = [
             name
             for name in runner.DEFAULT_INPUTS
@@ -370,7 +398,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if "error" in config:
             return config
 
-        argv = ["run"]
+        argv = ["run"] + self.elsewhere()
         declared = config["dimensions"]
 
         # a point list says exactly what to run, so it stands in for the
@@ -459,6 +487,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         answer, _ = self.spawn(argv, os.path.join(self.server.root, "run.log"))
         return answer
 
+    def elsewhere(self):
+        """`--workspace` for a child, when this server keeps its state away.
+
+        Said only when it has to be: a run whose recorded command names an
+        absolute workspace cannot be replayed from a copy of the directory
+        somewhere else, and the ordinary case has nothing to name.
+        """
+        beside = os.path.join(self.server.base, workspace.DIRNAME)
+        if os.path.abspath(self.server.root) == beside:
+            return []
+        return ["--workspace", self.server.root]
+
     def spawn(self, argv, log_path):
         """Start yuclid, and answer with the name of the run it made.
 
@@ -471,7 +511,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             log = open(log_path, "w")
             child = subprocess.Popen(
                 [sys.executable, "-c", ENTRY_POINT] + argv,
-                cwd=os.path.dirname(self.server.root),
+                cwd=self.server.base,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -514,7 +554,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "finish": ["finish", run_id],
             "replay": ["replay", run_id],
             "restart": ["replay", run_id, "--no-steering"],
-        }[mode]
+        }[mode] + self.elsewhere()
 
         with self.server.lock:
             started = self.server.finishing.get(run_id)
@@ -844,9 +884,13 @@ def dimensions_of(plan):
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, root, port):
+    def __init__(self, root, base, port):
         super().__init__(("127.0.0.1", port), Handler)
         self.root = root
+        # where the work is, which is not always where its record is kept:
+        # --workspace separates them, and the configuration and the runs
+        # started from here belong to the work
+        self.base = base
         self.token = secrets.token_urlsafe(24)
         # runs started from here, so a second request cannot start them again
         self.finishing = dict()
@@ -863,7 +907,7 @@ PORT_HINT = "pick a free one above {}, e.g. --port {}".format(
 )
 
 
-def bind(root, port):
+def bind(root, base, port):
     """Take the port, or say why it could not be had.
 
     Failing to listen is the whole command failing, and a traceback is a poor
@@ -877,7 +921,7 @@ def bind(root, port):
             hint=["a port is between 0 and 65535", PORT_HINT],
         )
     try:
-        return Server(root, port)
+        return Server(root, base, port)
     except PermissionError:
         report(
             LogLevel.FATAL,
@@ -917,8 +961,8 @@ def launch(args):
     # Serving an empty directory is useful: it can launch the first run from
     # the browser. Use the same workspace creation path as `yuclid run` rather
     # than requiring a run to have happened here already.
-    root = workspace.open_root(args.directory)
-    directory = os.path.dirname(root)
+    directory = os.path.abspath(args.directory or os.getcwd())
+    root = workspace.open_root(directory, args.workspace)
     if not any(os.path.isfile(os.path.join(directory, name)) for name in DEFAULT_INPUTS):
         report(
             LogLevel.WARNING,
@@ -940,7 +984,7 @@ def launch(args):
             hint="open that one, or `yuclid serve --force` to start another anyway",
         )
 
-    server = bind(root, args.port)
+    server = bind(root, directory, args.port)
     if workspace.read_server(root) is None:
         # a forced second server does not take the note over: it stays with
         # the one that was here first, which is the one worth pointing at

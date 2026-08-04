@@ -48,25 +48,35 @@ def hostname():
     return socket.gethostname().split(".")[0]
 
 
-def root_path(start=None):
+def root_path(start=None, workspace=None):
+    """Where this invocation keeps its state.
+
+    Normally `.yuclid` beside the work, which is what makes a directory of
+    experiments self-contained. `workspace` names the directory itself instead,
+    for the times when the work and the record of it cannot live together: a
+    read-only checkout, a scratch filesystem worth more than the home one, or
+    several working directories reporting into one place.
+    """
+    if workspace is not None:
+        return os.path.abspath(workspace)
     return os.path.join(os.path.abspath(start or os.getcwd()), DIRNAME)
 
 
-def find_root(start=None):
-    """The `.yuclid` directory of `start`, or None.
+def find_root(start=None, workspace=None):
+    """The state directory of `start`, or None.
 
     Looked up in one directory and not searched for upwards, the same rule the
     configuration follows. Walking up would be worse than inconsistent here:
     `yuclid tplot` already keeps a cache in `~/.yuclid`, so every run made
     anywhere below a home directory would be recorded into it.
     """
-    root = root_path(start)
+    root = root_path(start, workspace)
     return root if os.path.isdir(root) else None
 
 
-def open_root(start=None):
+def open_root(start=None, workspace=None):
     """As `find_root`, creating the directory when there is none."""
-    root = root_path(start)
+    root = root_path(start, workspace)
     os.makedirs(os.path.join(root, RUNS), exist_ok=True)
     return root
 
@@ -198,6 +208,68 @@ def delete_run(root, run_id):
     if read_manifest(directory) is None:
         raise FileNotFoundError(run_id)
     shutil.rmtree(directory)
+
+
+def clear_temporary(root, run_id):
+    """Empty a run's scratch directories, keeping the run itself.
+
+    What a trial and a setup command printed is the bulk of a run directory and
+    the least of its meaning: the manifest, the progress and the plan are what
+    say the run happened, and they stay. The directories stay too, so that
+    finishing the run later has somewhere to write.
+
+    A hard link is left alone and not counted: the results file is one, and it
+    is not this directory's to give back.
+    """
+    separators = [os.sep] + ([os.altsep] if os.altsep else [])
+    if run_id in ("", ".", "..") or any(s in run_id for s in separators):
+        raise ValueError("not a run name: {}".format(run_id))
+    directory = run_directory(root, run_id)
+    if read_manifest(directory) is None:
+        raise FileNotFoundError(run_id)
+
+    freed = 0
+    for name in (TRIALS, "setup"):
+        scratch = os.path.join(directory, name)
+        if not os.path.isdir(scratch):
+            continue
+        for entry in os.listdir(scratch):
+            path = os.path.join(scratch, entry)
+            try:
+                stat = os.lstat(path)
+                if os.path.isdir(path) and not os.path.islink(path):
+                    freed += directory_size(path)
+                    shutil.rmtree(path)
+                    continue
+                if stat.st_nlink > 1:
+                    continue
+                freed += stat.st_size
+                os.unlink(path)
+            except OSError:
+                pass
+    return freed
+
+
+def directory_size(path):
+    """The room a tree takes, counting a hard-linked file as nothing."""
+    total = 0
+    for where, _, files in os.walk(path):
+        for name in files:
+            try:
+                stat = os.lstat(os.path.join(where, name))
+                total += 0 if stat.st_nlink > 1 else stat.st_size
+            except OSError:
+                pass
+    return total
+
+
+def temporary_size(directory):
+    """The room a run's scratch directories take."""
+    return sum(
+        directory_size(os.path.join(directory, name))
+        for name in (TRIALS, "setup")
+        if os.path.isdir(os.path.join(directory, name))
+    )
 
 
 def write_point_set(root, stamp, points, replay_of=None):

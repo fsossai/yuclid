@@ -69,6 +69,13 @@ def get_parser():
         help="Select a list of name=csv_values pairs for each dimension. E.g. dim1=val1,val2 dim2=val3,val4",
     )
     run_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
+        "records, their logs and their captured output",
+    )
+    run_parser.add_argument(
         "--points",
         default=None,
         metavar="FILE",
@@ -182,6 +189,12 @@ def get_parser():
         "runs", help="List the runs recorded under .yuclid"
     )
     runs_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Read the runs recorded in DIR instead of ./.yuclid",
+    )
+    runs_parser.add_argument(
         "-n",
         type=int,
         default=10,
@@ -214,6 +227,13 @@ def get_parser():
         help="The directory holding .yuclid (default: the working directory)",
     )
     serve_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
+        "records, their logs and their captured output",
+    )
+    serve_parser.add_argument(
         "--port",
         type=int,
         default=0,
@@ -238,12 +258,24 @@ def get_parser():
         "finish", help="Run again whatever a previous run did not record"
     )
     finish_parser.add_argument("run", metavar="ID", help="The run to finish")
+    finish_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Read the runs recorded in DIR instead of ./.yuclid",
+    )
 
     # replay subcommand
     replay_parser = subparsers.add_parser(
         "replay", help="Run the points a previous run measured, again"
     )
     replay_parser.add_argument("run", metavar="ID", help="The run to replay")
+    replay_parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Read the runs recorded in DIR instead of ./.yuclid",
+    )
     replay_parser.add_argument(
         "--no-steering",
         default=False,
@@ -373,6 +405,13 @@ def _add_steering_parsers(subparsers):
     parsers["order"].add_argument("dimensions", metavar="DIM", nargs="+")
 
     for name, p in parsers.items():
+        p.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
+        "records, their logs and their captured output",
+    )
         p.add_argument(
             "--run",
             default=None,

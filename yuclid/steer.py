@@ -13,14 +13,18 @@ import os
 import time
 
 
-def find_root_or_fail():
-    root = workspace.find_root()
+def find_root_or_fail(args=None):
+    """Where the runs are recorded: here, or wherever --workspace says."""
+    chosen = getattr(args, "workspace", None)
+    root = workspace.find_root(workspace=chosen)
     if root is None:
         report(
             LogLevel.FATAL,
-            "no .yuclid directory here",
-            hint="`yuclid run` creates one; `mkdir .yuclid` pins it to a "
-            "directory of your choosing",
+            "no runs are recorded in {}".format(
+                chosen if chosen else os.path.join(os.getcwd(), workspace.DIRNAME)
+            ),
+            hint="`yuclid run` creates the directory; --workspace DIR reads "
+            "the one a run was told to use",
         )
     return root
 
@@ -69,7 +73,7 @@ def failed_points(directory):
 
 
 def launch_runs(args):
-    root = find_root_or_fail()
+    root = find_root_or_fail(args)
     runs = workspace.list_runs(root)
 
     if args.last:
@@ -130,7 +134,7 @@ def relative(path):
 
 def call(args, operation):
     """Send one operation to the run it is addressed to, and say what it did."""
-    root = find_root_or_fail()
+    root = find_root_or_fail(args)
     manifest = workspace.select_run(root, getattr(args, "run", None))
     if manifest["state"] != workspace.RUNNING:
         report(
@@ -219,9 +223,9 @@ def describe(command, effect):
     return str(effect)
 
 
-def source_run(run_id):
+def source_run(run_id, args=None):
     """A previous run's directory and the command that made it."""
-    root = find_root_or_fail()
+    root = find_root_or_fail(args)
     directory = workspace.run_directory(root, run_id)
     manifest = workspace.read_manifest(directory)
     if manifest is None:
@@ -250,7 +254,7 @@ def launch_finish(args, parser):
     """
     import yuclid.run
 
-    manifest, argv = source_run(args.run)
+    manifest, argv = source_run(args.run, args)
     output = manifest.get("output")
     if not output or not os.path.exists(output):
         report(
@@ -287,7 +291,7 @@ def launch_replay(args, parser):
     """
     import yuclid.run
 
-    manifest, argv = source_run(args.run)
+    manifest, argv = source_run(args.run, args)
     argv = strip_option(argv, "--replay")
     argv = strip_option(argv, "--points")
     argv = strip_option(argv, "-o")
@@ -304,7 +308,7 @@ def launch_replay(args, parser):
         argv += ["--parallel-trials", str(args.parallel_trials)]
 
     if not args.no_steering:
-        root = find_root_or_fail()
+        root = find_root_or_fail(args)
         order, keys = replayable_points(manifest, args)
         if len(keys) == 0:
             report(
@@ -439,7 +443,7 @@ def strip_option(argv, name):
 
 
 def launch_status(args):
-    root = find_root_or_fail()
+    root = find_root_or_fail(args)
     manifest = workspace.select_run(root, getattr(args, "run", None))
     while True:
         line = status_line(manifest)

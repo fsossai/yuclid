@@ -1524,6 +1524,9 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 rep=rep,
                 trial=j,
                 command=command,
+                # where this trial's output is about to land, so that whoever
+                # is watching can go and read it without working the name out
+                stem=point_id,
             )
             stdout, stderr, returncode, was_killed = trials.spawn(
                 entry["key"], command, execution["env"], settings["cwd"]
@@ -2420,7 +2423,7 @@ def build_run_directory(settings, args):
         except ValueError as e:
             report(LogLevel.FATAL, "invalid --name", str(e))
 
-    settings["root"] = workspace.open_root()
+    settings["root"] = workspace.open_root(workspace=args.workspace)
     settings["run_id"], settings["run_dir"] = workspace.create_run(
         settings["root"],
         settings["now"],
