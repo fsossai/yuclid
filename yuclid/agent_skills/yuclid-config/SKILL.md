@@ -1,6 +1,6 @@
 ---
 name: yuclid-config
-description: Author or fix a yuclid.json configuration for `yuclid run` — the experiment space, trials, and metric extraction. Use whenever the user mentions yuclid.json, a yuclid config, `yuclid run`, or asks to set up a parameter sweep / combinatorial experiment / benchmark grid whose results feed `yuclid plot`, `yuclid tplot`, or `yuclid stats`.
+description: Author or fix a yuclid.json configuration
 ---
 
 # Writing a `yuclid.json`
@@ -192,14 +192,6 @@ whose metrics are all defaults runs no trial at all and still gets a row. A defa
 metric that is unconditional somewhere can never fire, and is reported when the
 configuration is read.
 
-A metric command may chain several pipelines with `;` to emit several numbers, which is
-how per-region timers are collected in one column:
-
-```json
-{ "name": "stopwatches",
-  "command": "grep Trial ${yuclid.@}.out | grep -oE '[0-9]+\\.[0-9]+' ; grep stopwatch ${yuclid.@}.out | sort | awk '{print $3}'" }
-```
-
 ## `env`
 
 A **list of groups**, resolved in order. A group is resolved as a whole, so nothing in it
@@ -229,6 +221,16 @@ Each value is expanded by the shell (`echo "<value>"`). Only global
 
 ## `setup`
 
+**Setup exists to put in place everything the points will need.** A trial names files —
+a binary, a generated input, a directory to write into — and a run is only reproducible
+if every one of them is something setup makes rather than something that happened to be
+lying around on the machine where the configuration was written.
+
+So read the configuration backwards once it is written: take every path in `trials` and
+`metrics`, resolve the `${yuclid.*}` in it, and find the setup command that creates it.
+A path with no such command is the line that will fail on somebody else's machine, or on
+yours after a `git clean`.
+
 ```json
 {
   "setup": {
@@ -253,6 +255,10 @@ Each value is expanded by the shell (`echo "<value>"`). Only global
   - `parallel` — `false` (default), `true` (parallelize over every dimension in `on`), or
     an explicit list of dimensions.
 - Global setup runs before point setup. `--no-setup` skips both.
+
+Prefer `point` with a narrow `on` over `global` for anything per-point: a binary built
+once per compiler belongs to `on: ["compiler"]`, not to a global step that rebuilds it,
+and not to a full-space step that builds it once per thread count as well.
 
 ## `order`
 
@@ -295,15 +301,15 @@ region with **mutually exclusive conditions** and let each declare the metrics i
 ```json
 {
   "trials": [
-    { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "burn_omp", "/usr/bin/time -v",
+    { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "/usr/bin/time -v",
                   "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
-      "condition": "yuclid.program in ['bc', 'bfs', 'cc', 'pr']",
+      "condition": "yuclid.program in ['prog1', 'prog2']",
       "metrics": ["time", "space"] },
-    { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "burn_omp loop $nruns", "/usr/bin/time -v",
+    { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "/usr/bin/time -v",
                   "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
-      "condition": "yuclid.program in ['canneal', 'streamcluster', 'xz']",
+      "condition": "yuclid.program in ['prog3', 'prog4']",
       "metrics": ["time", "space"] },
-    { "command": ["LD_PRELOAD=$root/nmallocs/libnmallocs.so",
+    { "command": ["LD_PRELOAD=$root/nmallocs/libmymalloc.so",
                   "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}"],
       "metrics": ["nmallocs"] }
   ]
@@ -333,11 +339,9 @@ conditions that partition the space:
 {
   "metrics": [
     { "name": "time", "command": "grep Trial ${yuclid.@}.out | grep -oE '[0-9]+\\.[0-9]+'",
-      "condition": "yuclid.program in ['bc', 'bfs', 'cc', 'pr']" },
-    { "name": "time", "command": "egrep '\\[scoped_timer\\] Kernel: ' ${yuclid.@}.out | awk '{print $3}'",
-      "condition": "yuclid.program in ['kmeans', 'xz']" },
-    { "name": "time", "command": "egrep '\\[parsec\\] Total time spent in ROI: ' ${yuclid.@}.out | grep -oE '[0-9]+\\.[0-9]+'",
-      "condition": "yuclid.program in ['canneal', 'streamcluster']" }
+      "condition": "yuclid.program in ['prog1', 'prog2']" },
+    { "name": "time", "command": "grep ROI ${yuclid.@}.out | awk '{print $3}'",
+      "condition": "yuclid.program in ['prog3', 'prog4']" }
   ]
 }
 ```
@@ -376,7 +380,7 @@ Long-lived configs use all three, and they resolve at different times:
 | Form | Resolved | Use for |
 |---|---|---|
 | `${yuclid.dim}` | by yuclid, per point | anything that varies over the space |
-| `$var` from `env` | by the shell, once at startup | derived paths (`"graphs_dir": "$root/gapbs/benchmark/graphs"`) |
+| `$var` from `env` | by the shell, once at startup | derived paths (`"graphs_dir": "$root/graphs"`) |
 | `$var` inherited | by the shell, from the caller's environment | machine/run identity — `$root`, `$machine`, `$nruns` |
 
 Inherited variables never appear in the config's `env`; a driver script exports them and
@@ -385,7 +389,6 @@ then invokes `yuclid run`, which is how one config serves several machines:
 ```bash
 export root=$(dirname $(realpath $0))
 export machine="local"
-export nruns="3"
 yuclid run -i yuclid.json --select nthreads=28 impl=base cxx=clang++ "$@"
 ```
 
@@ -395,11 +398,10 @@ parameterized, and `--select`/`--metrics` lines can be commented in and out per 
 ### Deferring expansion to an inner shell
 
 `\\$VAR` in JSON reaches the shell as `\$VAR`, which survives yuclid's shell as the literal
-text `$VAR`. Use it when a wrapper re-evaluates the command (`loop`/`burn_omp` end in
-`eval "$cmd"`) and the variable is only set at that inner level:
+text `$VAR`. Use it when a wrapper re-evaluates the command and the variable is only set at that inner level:
 
 ```json
-{ "name": "large", "value": "10 20 128 1000000 200000 5000 none out.txt \\$OMP_NUM_THREADS" }
+{ "name": "large", "value": "a b c \\$OMP_NUM_THREADS" }
 ```
 
 The trial sets `OMP_NUM_THREADS=${yuclid.nthreads}` as a command prefix, so an unescaped
@@ -543,6 +545,12 @@ yuclid run --dry-run
 yuclid run --dry-run -s size=small cpuid=0     # shrink the space first
 yuclid run -s size=small                       # then a real smoke run
 ```
+
+The dry run prints every setup command and every point, which is what makes the last
+check possible: **every file the trials and metrics name should be one that setup
+creates.** Walk the printed commands and tick off the paths in the printed trials; a path
+nothing accounts for is the one that will fail somewhere else. Running the smoke test in
+a fresh clone, or after deleting whatever setup builds, turns that check into a proof.
 
 Then check the JSONL and plot it:
 
