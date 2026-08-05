@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>yuclid</title>
+<title>Yuclid</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -33,12 +33,10 @@
     display: flex; align-items: baseline; gap: 12px;
   }
   header b { font-weight: 600; letter-spacing: .02em; }
-  /* the workspace this is reading: one server per workspace, and more than
-     one may be open at once */
-  /* pushed to the far side: the browser is often not on the machine doing the
-     work, and a forwarded port looks exactly like a local one */
+  /* who is running this, and the workspace it is reading: both sit right
+     after the version, left-aligned like everything else in the header */
   #who {
-    margin-left: auto; color: var(--dim); font-size: 12.5px;
+    color: var(--dim); font-size: 12.5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     white-space: nowrap;
   }
@@ -104,6 +102,12 @@
   button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   button.act:disabled { opacity: .4; cursor: not-allowed; }
   button.act.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
+  /* the Control panel is pause/stop/kill, not a set of things to encourage —
+     a neutral halo on hover rather than the same green a "go" action gets */
+  button.act[data-op]:hover:not(:disabled) {
+    border-color: var(--ink); color: var(--ink);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 18%, transparent);
+  }
   #name {
     padding: 4px 8px; border: 1px solid transparent; border-radius: 6px;
     background: none; color: inherit; font: inherit; font-weight: 600; width: 22ch;
@@ -201,11 +205,18 @@
   .confirm .no { color: var(--dim); }
   .confirm.danger { border-color: var(--warn); }
   .confirm.danger .yes { color: var(--warn); }
+  /* a plain clickable word, styled like a confirm's "yes" but without the
+     pill around it — for an action offered in passing, beside a status word */
+  #rkill button {
+    border: 0; background: none; padding: 0; font: inherit; font-size: 13px;
+    font-weight: 600; color: var(--pause); cursor: pointer;
+  }
+  #rkill button:hover { text-decoration: underline; }
   pre {
     margin: 0; max-height: 40vh; overflow: auto; font-size: 12.5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
   }
-  #says { color: var(--dim); min-height: 1.5em; }
+  #says { margin: 0; color: var(--dim); min-height: 1.5em; }
   #nothing { border-bottom: 0; }
   #nothing-says { margin: 0; color: var(--dim); }
   #says[data-bad="true"] { color: var(--warn); }
@@ -382,7 +393,7 @@
 </style>
 </head>
 <body>
-<header><b>Yuclid</b><span id="version">__YUCLID_VERSION__</span><span id="where" title="the workspace these runs are recorded in">__YUCLID_ROOT__</span><span id="who" title="the account and machine these runs belong to">__YUCLID_WHO__</span></header>
+<header><b>Yuclid</b><span id="version">__YUCLID_VERSION__</span><span id="who" title="the account and machine these runs belong to">__YUCLID_WHO__</span><span id="where" title="the workspace these runs are recorded in">__YUCLID_ROOT__</span></header>
 <main>
   <nav id="runs"></nav>
   <div id="panes">
@@ -447,9 +458,13 @@
         <button class="act" data-op="kill" data-scope="rep">Kill repetition</button>
         <button class="act" data-op="kill" data-scope="point">Kill point</button>
         <span id="rreplay"></span>
+        <span id="rexport"></span>
         <span id="rdelete"></span>
       </div>
-      <p id="says"></p>
+      <div class="row" style="align-items: baseline">
+        <p id="says"></p>
+        <span id="rkill"></span>
+      </div>
     </section>
     <section>
       <h2>Dimensions — click to drop, drag back to restore</h2>
@@ -493,7 +508,12 @@ const describe = (op, effect) => {
   if (op.op === "drop") return `${effect.dropped} point(s) dropped, ${left} unit(s) remain`;
   if (op.op === "add")
     return `${effect.added} point(s) added, ${effect.restored} restored, ${left} unit(s) remain`;
-  if (op.op === "kill") return `abandoned ${(effect.points || []).map(p => p.join(".")).join(", ")}`;
+  if (op.op === "kill") {
+    if (effect.scope === "hold") return "paused";
+    const order = roster ? roster.order : null;
+    const points = (effect.points || []).map(p => coords(order, p)).join(", ");
+    return `abandoned: ${points}`;
+  }
   if (op.op === "pause")
     return effect.in_flight
       ? `pausing: no new point will start, and the ${effect.in_flight} in flight ` +
@@ -1749,6 +1769,18 @@ const renderRun = run => {
     (run.replay_of ? ` · replay of ${run.replay_of}` : "");
   state.dataset.mood = run.mood;
 
+  // a way to end the wait: kills the command holding the pause up, without
+  // losing it — the same repetition runs again once resumed
+  const kill = document.getElementById("rkill");
+  kill.innerHTML = "";
+  if (live && settling) {
+    const button = document.createElement("button");
+    button.textContent = "kill it";
+    button.title = "kill the command in flight; it runs again once resumed";
+    button.onclick = () => send({op: "kill", scope: "hold"});
+    kill.append(button);
+  }
+
   // the message that announced the pause described what was about to happen,
   // so once it has, it is replaced rather than left standing
   if (awaiting === "pause" && run.paused && !settling) {
@@ -1818,6 +1850,27 @@ const renderRun = run => {
       seedLaunch(lastRun && lastRun.id === run.id ? lastRun : run);
     };
     again.append(button);
+  }
+
+  // a copy in the working directory, next to wherever the browser's user is
+  // sitting, regardless of where --workspace keeps the run itself
+  const exporter = document.getElementById("rexport");
+  if (!run.output || !run.output.toLowerCase().endsWith(".jsonl")) {
+    exporter.innerHTML = "";
+    exporter.dataset.run = "";
+  } else if (exporter.dataset.run !== run.id) {
+    exporter.dataset.run = run.id;
+    exporter.innerHTML = "";
+    const button = document.createElement("button");
+    button.className = "act";
+    button.textContent = "Export";
+    button.title = "copy this run's JSONL into the current working directory";
+    button.onclick = async () => {
+      const answer = await ask(`/api/runs/${run.id}/export`, {});
+      if (answer.error) return say(answer.error, true);
+      say(`exported to ${answer.path}`);
+    };
+    exporter.append(button);
   }
 
   const trash = document.getElementById("rdelete");
@@ -2363,12 +2416,25 @@ const summary = values => {
 const lapse = seconds =>
   seconds < 60 ? `${seconds.toFixed(3)}s` : duration(seconds);
 
-// enough digits to tell two measurements apart, few enough to read
+// enough digits to tell two measurements apart, few enough to read. Scientific
+// notation lands on a multiple of 3 — 10^3, 10^6, 10^9 — the way an engineer
+// reads it, rather than wherever the first significant digit happens to fall
 const figure = value => {
   if (value === null || value === undefined || !isFinite(value)) return "";
   const size = Math.abs(value);
   if (size === 0) return "0";
-  if (size >= 1e6 || size < 1e-3) return value.toExponential(2);
+  if (size >= 1e6 || size < 1e-3) {
+    const magnitude = Math.floor(Math.log10(size) + 1e-9);
+    let exp = magnitude - (((magnitude % 3) + 3) % 3);
+    let digits = Number((value / 10 ** exp).toPrecision(3));
+    // rounding to 3 significant figures can itself reach 1000: 999.6 rounds to
+    // 1.00e+3, which belongs a step up rather than as a 4-digit mantissa here
+    if (Math.abs(digits) >= 1000) {
+      exp += 3;
+      digits = Number((value / 10 ** exp).toPrecision(3));
+    }
+    return `${digits}e${exp >= 0 ? "+" : ""}${exp}`;
+  }
   return String(Number(value.toPrecision(size >= 100 ? 6 : 4)));
 };
 
@@ -2829,14 +2895,16 @@ document.getElementById("space-back").onclick = () => show("detail");
 
 const summarize = record => {
   const at = stamp(record.time);
-  if (record.type === "point.started") return `${at}  ${record.key.join(".")} started`;
+  const order = roster ? roster.order : null;
+  if (record.type === "point.started") return `${at}  ${coords(order, record.key)} started`;
   if (record.type === "point.finished")
-    return `${at}  ${(record.key || []).join(".")} ${record.failed ? "FAILED" : "completed"} ${
+    return `${at}  ${coords(order, record.key || [])} ${record.failed ? "FAILED" : "completed"} ${
       record.metrics ? Object.entries(record.metrics).map(([k, v]) => `${k}=${v}`).join(" ") : ""}`;
   if (record.type === "point.killed")
-    return `${at}  ${record.key.join(".")} ${record.scope} abandoned`;
+    return `${at}  ${coords(order, record.key)} ${record.scope} abandoned`;
   if (record.type === "op.applied") return `${at}  control: ${JSON.stringify(record.op)}`;
   if (record.type === "plan") return `${at}  plan: ${record.points.length} point(s)`;
+  if (record.type === "run.started") return `${at}  run started`;
   if (record.type === "run.finished") return `${at}  run ${record.state}`;
   return `${at}  ${record.type}`;
 };

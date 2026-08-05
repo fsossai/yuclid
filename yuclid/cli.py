@@ -82,7 +82,7 @@ def get_parser():
         metavar="RULE",
         help="Repeat each point until this holds, instead of a fixed count. "
         "Either a duration (3s, 500ms, 2m) or a precision on a metric "
-        "(time±5%, or time+-5%). May be given more than once, and the first "
+        "(time±5%%, or time+-5%%). May be given more than once, and the first "
         "rule satisfied ends the point",
     )
     run_parser.add_argument(
@@ -192,6 +192,14 @@ def get_parser():
         help="Run the points a previous run measured. Same as --points with "
         "that run's points; `yuclid replay` is the shorter way to ask for it",
     )
+    run_parser.add_argument(
+        "--continue-run",
+        default=None,
+        metavar="ID",
+        # internal: how `yuclid finish` writes into the run it is finishing
+        # instead of starting one of its own
+        help=argparse.SUPPRESS,
+    )
 
     # plot subcommand — GUI
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
@@ -277,6 +285,12 @@ def get_parser():
         action="store_true",
         help="Start even if another server is already watching this directory",
     )
+    serve_parser.add_argument(
+        "--quiet",
+        default=False,
+        action="store_true",
+        help="Print only warnings and errors, not the address the page is on",
+    )
 
     # finish subcommand
     finish_parser = subparsers.add_parser(
@@ -349,8 +363,10 @@ def get_parser():
         destination = action_parser.add_mutually_exclusive_group(required=True)
         destination.add_argument(
             "--agent",
+            nargs="+",
             choices=["codex", "claude"],
-            help="Install for a known agent in its user-wide skills directory",
+            help="Install for one or more known agents in their user-wide "
+            "skills directory, e.g. --agent claude codex",
         )
         destination.add_argument(
             "--directory",
@@ -407,9 +423,11 @@ def _add_steering_parsers(subparsers):
 
     parsers["kill"].add_argument(
         "scope",
-        choices=["point", "rep"],
-        help="'point' abandons the point entirely, 'rep' only the repetition "
-        "in flight. There is no default: a kill says what it abandons",
+        choices=["point", "rep", "hold"],
+        help="'point' abandons the point entirely, 'rep' abandons only the "
+        "repetition in flight, 'hold' kills it without abandoning it — it "
+        "runs again once a pause on the point is resumed. There is no "
+        "default: a kill says what it does to what it reaches",
     )
     parsers["kill"].add_argument(
         "point",

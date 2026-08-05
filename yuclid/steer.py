@@ -38,6 +38,11 @@ def progress_counts(directory):
     """
     total, done = None, 0
     for record in workspace.read_progress(directory):
+        if record["type"] == "run.started":
+            # `finish` continues into this same file, and its count of the
+            # run as it stands now must not be added on top of the attempt
+            # before it
+            done = 0
         if record.get("total") is not None:
             total = record["total"]
         if record["type"] in ("point.finished", "point.skipped"):
@@ -195,8 +200,11 @@ def describe(command, effect):
         )
     if command == "kill":
         points = ", ".join(".".join(p) for p in effect.get("points", []))
+        scope = effect.get("scope")
+        if scope == "hold":
+            return "killed, to retry once resumed, on {}".format(points)
         return "{} abandoned on {}".format(
-            "the repetition" if effect.get("scope") == "rep" else "the point", points
+            "the repetition" if scope == "rep" else "the point", points
         )
     if command == "pause":
         flight = effect.get("in_flight", 0)
@@ -250,11 +258,15 @@ def launch_finish(args, parser):
 
     Points that failed, were killed, or never started left no record behind, so
     resuming against the same file is exactly the work still outstanding — the
-    same mechanism that finishes a run cut short by Ctrl-C.
+    same mechanism that finishes a run cut short by Ctrl-C. It continues that
+    run rather than starting a new one: the gaps belong to it, and filling
+    them is not a second run of anything.
     """
     import yuclid.run
 
     manifest, argv = source_run(args.run, args)
+    if workspace.state_of(manifest) == workspace.RUNNING:
+        report(LogLevel.FATAL, "run {} is still going".format(args.run))
     output = manifest.get("output")
     if not output or not os.path.exists(output):
         report(
@@ -268,8 +280,9 @@ def launch_finish(args, parser):
     argv = strip_option(argv, "-o")
     argv = strip_option(argv, "--output")
     argv = strip_option(argv, "--output-dir")
+    argv = strip_option(argv, "--continue-run")
     argv = [x for x in argv if x != "--resume"]
-    argv += ["-o", output, "--resume"]
+    argv += ["-o", output, "--resume", "--continue-run", args.run]
 
     report(LogLevel.INFO, "resuming", " ".join(argv))
     yuclid.run.launch(as_run(parser, argv))

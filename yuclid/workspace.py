@@ -125,6 +125,29 @@ def create_run(root, stamp, **manifest):
     return run_id, directory
 
 
+def reopen_run(root, run_id):
+    """Resume an existing run's directory instead of starting a new one.
+
+    `finish` fills the gaps a run left behind, and the record of that belongs
+    to the run whose gaps they are: continuing it, rather than starting a
+    fresh run that happens to write into the same output file. The pid and
+    host are updated to this process, the one now actually doing the work, so
+    that a reader checking whether the run is alive is not looking at the pid
+    of a process that has long since exited.
+    """
+    directory = run_directory(root, run_id)
+    manifest = read_manifest(directory)
+    if manifest is None:
+        raise FileNotFoundError(run_id)
+    manifest["pid"] = os.getpid()
+    manifest["host"] = hostname()
+    manifest["state"] = RUNNING
+    manifest.pop("ended", None)
+    write_manifest(directory, manifest)
+    os.makedirs(os.path.join(directory, TRIALS), exist_ok=True)
+    return run_id, directory
+
+
 def write_manifest(directory, manifest):
     path = os.path.join(directory, MANIFEST)
     temporary = path + ".tmp"

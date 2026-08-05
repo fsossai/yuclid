@@ -19,12 +19,15 @@ MANIFEST = ".yuclid-skills.json"
 SOURCE = Path(__file__).with_name("agent_skills")
 
 
-def target_of(args):
+def targets_of(args):
+    """Where the skills go — one directory per agent named, in order."""
     if args.agent is not None:
-        target = AGENTS[args.agent]
-    else:
-        target = Path(args.directory)
-    return target.expanduser().resolve()
+        chosen = []
+        for name in args.agent:
+            if name not in chosen:
+                chosen.append(name)
+        return [AGENTS[name].expanduser().resolve() for name in chosen]
+    return [Path(args.directory).expanduser().resolve()]
 
 
 def bundled_skills():
@@ -68,8 +71,7 @@ def write_manifest(target, skills):
     os.replace(temporary, path)
 
 
-def install(args):
-    target = target_of(args)
+def install(args, target):
     target.mkdir(parents=True, exist_ok=True)
     manifest = read_manifest(target)
     recorded = manifest["skills"]
@@ -130,8 +132,7 @@ def install(args):
     )
 
 
-def uninstall(args):
-    target = target_of(args)
+def uninstall(args, target):
     manifest = read_manifest(target)
     recorded = manifest["skills"]
     if not recorded:
@@ -161,7 +162,8 @@ def uninstall(args):
 
 
 def launch(args):
-    if args.skills_action == "install":
-        install(args)
-    else:
-        uninstall(args)
+    for target in targets_of(args):
+        if args.skills_action == "install":
+            install(args, target)
+        else:
+            uninstall(args, target)

@@ -1262,7 +1262,7 @@ def run_setup_command(execution, command, label):
     execution["progress"].emit(
         "setup.failed",
         label=label,
-        command=command,
+        command=expand_env_value(command, execution["env"]),
         code=result.returncode,
         log=stem + ".err",
         said=excerpt(result.stderr or result.stdout),
@@ -1490,6 +1490,7 @@ class Trials:
         self.active = dict()
         self.abandoned = set()
         self.skipped = set()
+        self.held = set()
         self.terminated = set()
 
     def spawn(self, key, command, env, cwd):
@@ -1515,10 +1516,13 @@ class Trials:
         return stdout, stderr, process.returncode, killed
 
     def kill(self, scope, keys=None):
-        """Abandon what is running: this repetition of it, or the point.
+        """End what is running: this repetition of it, the point, or neither.
 
-        Returns the points it reached, so that whoever asked is told what was
-        actually in flight rather than what they hoped was.
+        'hold' is not abandoning anything — it is a way to bring a pause on
+        the point forward without waiting for the command in flight to finish
+        on its own; the repetition it reaches is tried again once the run
+        resumes. Returns the points it reached, so that whoever asked is told
+        what was actually in flight rather than what they hoped was.
         """
         with self.lock:
             targets = [k for k in self.active if self.active[k]]
@@ -1526,6 +1530,8 @@ class Trials:
                 targets = [k for k in targets if k in keys]
             if scope == "point":
                 self.abandoned.update(targets)
+            elif scope == "hold":
+                self.held.update(targets)
             else:
                 self.skipped.update(targets)
             processes = [p for k in targets for p in self.active.get(k, ())]
@@ -1545,6 +1551,13 @@ class Trials:
         with self.lock:
             if key in self.skipped:
                 self.skipped.discard(key)
+                return True
+            return False
+
+    def take_held(self, key):
+        with self.lock:
+            if key in self.held:
+                self.held.discard(key)
                 return True
             return False
 
@@ -1611,6 +1624,29 @@ def abandon_repetition(execution, entry, rep):
         key=list(entry["key"]),
         rep=rep,
         scope="rep",
+    )
+
+
+def hold_repetition(execution, entry, rep):
+    """End the repetition in flight without giving it up.
+
+    Neither `done` nor `target` moves, so this is not a smaller repetition
+    count the way abandoning one is — it is the same repetition, tried again
+    once the run resumes. What kills it this way is impatience with a pause:
+    the point would have held here anyway once the command finished: killing
+    it only brings that moment forward.
+    """
+    report(
+        LogLevel.WARNING,
+        point_to_string(entry["point"]),
+        "repetition killed, will retry on resume",
+    )
+    execution["progress"].emit(
+        "point.killed",
+        index=entry["seq"],
+        key=list(entry["key"]),
+        rep=rep,
+        scope="hold",
     )
 
 
@@ -1699,14 +1735,18 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             command = substitute_global_yvars(trial["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, point_id)
             # what is about to run, as it will be run: whoever is watching
-            # should not have to work it back out of the configuration
+            # should not have to work it back out of the configuration. The
+            # shell still does its own expansion when it runs — this is only
+            # what gets recorded, so a $VAR left for the shell is not left
+            # unreadable for a person looking at the progress feed
+            shown = expand_env_value(command, execution["env"])
             progress.emit(
                 "trial.started",
                 index=i,
                 key=list(entry["key"]),
                 rep=rep,
                 trial=j,
-                command=command,
+                command=shown,
                 # where this trial's output is about to land, so that whoever
                 # is watching can go and read it without working the name out
                 stem=point_id,
@@ -1740,7 +1780,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     key=list(entry["key"]),
                     rep=rep,
                     trial=j,
-                    command=command,
+                    command=shown,
                     code=returncode,
                     log=point_id + ".err",
                     said=excerpt(stderr or stdout),
@@ -1758,6 +1798,14 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         if killed:
             if trials.is_abandoned(entry["key"]):
                 break
+            if trials.take_held(entry["key"]):
+                hold_repetition(execution, entry, rep)
+                killed = False
+                # `plan.paused`, checked at the top of the loop, is what turns
+                # this into a hold rather than an immediate retry — the same
+                # check an ordinary pause already relies on to end the point
+                # cleanly
+                continue
             abandon_repetition(execution, entry, rep)
             killed = False
             continue
@@ -1767,6 +1815,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             metric_point_id = metric_point_ids[metric["name"]]
             command = substitute_global_yvars(metric["command"], execution["subspace"])
             command = substitute_point_yvars(command, point_map, metric_point_id)
+            shown = expand_env_value(command, execution["env"])
             stdout, stderr, returncode, was_killed = trials.spawn(
                 entry["key"], command, execution["env"], settings["cwd"]
             )
@@ -1776,7 +1825,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 killed = True
                 break
 
-            def note(said):
+            def note(said, command=shown):
                 progress.emit(
                     "metric.failed",
                     index=i,
@@ -2670,7 +2719,9 @@ def build_run_directory(settings, args):
     # stays answerable when none is — compiling a script writes no run, and the
     # script it writes still has to name the same place
     global WORKSPACE
-    WORKSPACE = workspace.root_path(workspace=getattr(args, "workspace", None))
+    WORKSPACE = workspace.work_of(
+        workspace.root_path(workspace=getattr(args, "workspace", None))
+    )
     settings["workspace"] = WORKSPACE
     settings["progress"] = workspace.Progress(None)
     settings["setup_dir"] = os.path.join(workspace.DIRNAME, "setup")
@@ -2692,18 +2743,27 @@ def build_run_directory(settings, args):
             report(LogLevel.FATAL, "invalid --name", str(e))
 
     settings["root"] = workspace.open_root(workspace=args.workspace)
-    settings["run_id"], settings["run_dir"] = workspace.create_run(
-        settings["root"],
-        settings["now"],
-        # the run this is, not the command that asked for it: `yuclid finish`
-        # and `yuclid replay` both come down to a `run`, and recording the
-        # wrapper would leave the run they made unable to be finished or
-        # replayed in its turn
-        argv=getattr(args, "origin_argv", None) or sys.argv[1:],
-        inputs=settings["inputs"],
-        output=os.path.abspath(settings["output"]),
-        replay_of=args.replay,
-    )
+    continue_run = getattr(args, "continue_run", None)
+    if continue_run is not None:
+        # `finish` fills the gaps a run left behind, and that belongs to the
+        # run whose gaps they are: reopened rather than recorded as a run of
+        # its own, so nothing new appears in `yuclid runs` for it
+        settings["run_id"], settings["run_dir"] = workspace.reopen_run(
+            settings["root"], continue_run
+        )
+    else:
+        settings["run_id"], settings["run_dir"] = workspace.create_run(
+            settings["root"],
+            settings["now"],
+            # the run this is, not the command that asked for it: `yuclid
+            # finish` and `yuclid replay` both come down to a `run`, and
+            # recording the wrapper would leave the run they made unable to be
+            # finished or replayed in its turn
+            argv=getattr(args, "origin_argv", None) or sys.argv[1:],
+            inputs=settings["inputs"],
+            output=os.path.abspath(settings["output"]),
+            replay_of=args.replay,
+        )
     if args.name is not None:
         workspace.write_name(settings["run_dir"], args.name)
 
@@ -2964,6 +3024,12 @@ class Steering:
         if kind == "kill":
             effect = self.kill(message)
         else:
+            if kind == "stop":
+                # asked for, not merely ended: set before anything below can
+                # wake the main thread, so it is never read before it is
+                # written — applying the op or killing what is running can
+                # both let that thread finish and read it immediately
+                self.settings["final_state"] = workspace.STOPPED
             effect = self.execution["plan"].apply(message)
             if kind == "stop":
                 # stopping ends the run now: nothing new starts, and what is
@@ -2995,10 +3061,12 @@ class Steering:
 
     def kill(self, message):
         scope = message.get("scope")
-        if scope not in ("point", "rep"):
+        if scope not in ("point", "rep", "hold"):
             raise control.ControlError(
-                "kill needs a scope: 'point' abandons it entirely, "
-                "'rep' only the repetition in flight"
+                "kill needs a scope: 'point' abandons it entirely, 'rep' "
+                "abandons only the repetition in flight, 'hold' kills it "
+                "without abandoning it — it runs again once a pause on the "
+                "point is resumed"
             )
         plan = self.execution["plan"]
         keys = None
@@ -3211,6 +3279,12 @@ def install_interrupt_handler(trials):
 
 def execute(settings):
     started = time.monotonic()
+    # marks where this process's activity begins in the progress file, which
+    # matters when it is not the first: `finish` writes into a run's own
+    # file rather than a fresh one, and a reader counting progress needs to
+    # know where the count picks back up rather than adding a second attempt
+    # on top of the first
+    settings["progress"].emit("run.started")
     data = aggregate_input_data(settings)
     validate_settings(data, settings)
     validate_env_order(data["env"])

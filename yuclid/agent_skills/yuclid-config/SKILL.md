@@ -1,6 +1,6 @@
 ---
-name: yuclid-config
-description: Author or fix a yuclid.json configuration
+name: "yuclid-config"
+description: "Author or fix a yuclid.json configuration"
 ---
 
 # Writing a `yuclid.json`

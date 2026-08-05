@@ -1,6 +1,6 @@
 ---
-name: yuclid-plot
-description: Suggest ways to visualize a yuclid result file with `yuclid plot`, `yuclid tplot` or `yuclid stats`. Use whenever the user asks what to plot from a results file (`*.yuclid.jsonl`, a JSON Lines or CSV dataset of experiments), how to compare their measurements, how to show a speedup, or wants the right flags for a view they describe in words. Operates on one dataset: ask which file if it is not obvious.
+name: "yuclid-plot"
+description: "Suggest ways to visualize a yuclid result file"
 ---
 
 # Suggesting views of a yuclid dataset

@@ -17,6 +17,7 @@ import http.server
 import subprocess
 import threading
 import getpass
+import shutil
 import signal
 import secrets
 import errno
@@ -133,6 +134,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             try:
                 mode = payload.get("mode") or "finish"
                 return self.respond(200, self.finish_run(match.group(1), mode))
+            except FileNotFoundError:
+                return self.respond(404, {"error": "no such run"})
+
+        match = re.fullmatch(r"/api/runs/([^/]+)/export", path)
+        if match:
+            if self.body() is None:
+                return
+            try:
+                return self.respond(200, self.export_run(match.group(1)))
             except FileNotFoundError:
                 return self.respond(404, {"error": "no such run"})
 
@@ -312,6 +322,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         since = int(query.get("since") or 0)
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
+
+    def export_run(self, run_id):
+        """Copy this run's JSONL into the working directory.
+
+        `--workspace` can keep a run's data far from where a person is sitting;
+        this puts a copy of it exactly where they are, under its own name, so
+        it can be picked up without knowing where the workspace is.
+        """
+        manifest = self.manifest(run_id)
+        output = manifest.get("output")
+        if not output or not os.path.exists(output):
+            return {"error": "the results of run {} are gone".format(run_id)}
+        if not output.lower().endswith(".jsonl"):
+            return {"error": "run {} was not recorded as JSONL".format(run_id)}
+        destination = os.path.join(self.server.base, os.path.basename(output))
+        if os.path.abspath(destination) == os.path.abspath(output):
+            return {"path": destination}
+        try:
+            shutil.copyfile(output, destination)
+        except OSError as e:
+            return {"error": "cannot write {}: {}".format(destination, e)}
+        return {"path": destination}
 
     def usage(self):
         """How much room the run directories take, and how many are going.
@@ -561,17 +593,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
             time.sleep(0.1)
         return {"error": "the run did not start", "log": log_path}, child
 
+    def spawn_continuing(self, run_id, argv, log_path):
+        """As `spawn`, for a run continuing in its own directory.
+
+        `finish` writes into the run it is finishing rather than making a new
+        one, so there is no fresh id to watch for the way `spawn` waits for
+        one. Watching for `state` to turn running is not enough either: a
+        `finish` with nothing left to measure can run and end between two
+        polls, and the state would never be seen mid-flight. The pid does not
+        have that problem — `reopen_run` stamps it with this child's own, and
+        once written it stays, whether or not the run has already finished by
+        the time this notices.
+        """
+        directory = workspace.run_directory(self.server.root, run_id)
+        with self.server.lock:
+            log = open(log_path, "w")
+            child = subprocess.Popen(
+                [sys.executable, "-c", ENTRY_POINT] + argv,
+                cwd=self.server.base,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            manifest = workspace.read_manifest(directory)
+            if manifest is not None and manifest.get("pid") == child.pid:
+                return {"started": run_id}, child
+            if child.poll() is not None:
+                break
+            time.sleep(0.1)
+        return {"error": "the run did not start", "log": log_path}, child
+
     def finish_run(self, run_id, mode):
         """Start a run from an old one: completing it, or doing it again.
 
-        `finish` resumes into the same results file, so only the points that
-        went unmeasured are run. `replay` does the run again as a run of its
-        own, with the steering it was given, and `restart` does it again
-        without — the difference matters for a run half of whose space was
-        dropped while it went. The command is built here from the run's id and
-        a mode this method knows, so nothing in a request becomes an argument.
-        The new run is detached: `serve` owns no run, and killing it must not
-        take one down.
+        `finish` continues this same run, writing the points that went
+        unmeasured into the same directory and the same results file — it is
+        not a run of its own, and nothing new appears in the run list for it.
+        `replay` does the run again as a run of its own, with the steering it
+        was given, and `restart` does it again without — the difference
+        matters for a run half of whose space was dropped while it went. The
+        command is built here from the run's id and a mode this method knows,
+        so nothing in a request becomes an argument. `replay` and `restart`
+        are detached: `serve` owns no run, and killing it must not take one
+        down.
         """
         if mode not in ("finish", "replay", "restart"):
             return {"error": "unknown mode '{}'".format(mode)}
@@ -600,9 +667,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         )
                     }
 
-        answer, child = self.spawn(
-            argv, os.path.join(manifest["directory"], mode + ".log")
-        )
+        log_path = os.path.join(manifest["directory"], mode + ".log")
+        if mode == "finish":
+            answer, child = self.spawn_continuing(run_id, argv, log_path)
+        else:
+            answer, child = self.spawn(argv, log_path)
         self.server.finishing[run_id] = child
         answer["mode"] = mode
         return answer
@@ -719,6 +788,12 @@ def scan(directory):
 
     for record in workspace.read_progress(directory):
         kind = record["type"]
+        if kind == "run.started":
+            # `finish` writes into this same file rather than a fresh one, so
+            # a second attempt's progress must not be added on top of the
+            # first's — this is where the count for the run as it stands now
+            # starts over
+            completed = 0
         if kind == "plan":
             plan = record
             # this snapshot is the truth as of now; what came before it is
@@ -1052,18 +1127,20 @@ def launch(args):
     # the page carries the token itself, so the URL does not have to: a secret
     # in one ends up in scrollback, shell history and any Referer header
     url = "http://127.0.0.1:{}/".format(server.server_port)
-    report(LogLevel.INFO, "watching", root)
-    hints = ["stop with Ctrl-C"]
-    # bound to loopback, so a machine reached over ssh needs the port brought
-    # to where the browser is. Only worth saying when that is the situation:
-    # sitting at the machine, the URL above is already the whole story
-    if os.environ.get("SSH_CONNECTION"):
-        hints.append(
-            "for port forwarding: ssh -N -L {0}:127.0.0.1:{0} {1}".format(
-                server.server_port, ssh_target()
+    if not args.quiet:
+        report(LogLevel.INFO, "watching", root)
+        hints = ["stop with Ctrl-C"]
+        # bound to loopback, so a machine reached over ssh needs the port
+        # brought to where the browser is. Only worth saying when that is the
+        # situation: sitting at the machine, the URL above is already the
+        # whole story
+        if os.environ.get("SSH_CONNECTION"):
+            hints.append(
+                "for port forwarding: ssh -N -L {0}:127.0.0.1:{0} {1}".format(
+                    server.server_port, ssh_target()
+                )
             )
-        )
-    report(LogLevel.INFO, "open", url, hint=hints)
+        report(LogLevel.INFO, "open", url, hint=hints)
     if args.open:
         import webbrowser
 
@@ -1071,7 +1148,8 @@ def launch(args):
     try:
         server.serve_forever()
     except (KeyboardInterrupt, SystemExit):
-        report(LogLevel.INFO, "stopped")
+        if not args.quiet:
+            report(LogLevel.INFO, "stopped")
     finally:
         workspace.clear_server(root)
         server.server_close()
