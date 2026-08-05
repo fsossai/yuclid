@@ -27,6 +27,7 @@ trials:
       - -- ./build/${yuclid.opt}/structures ${yuclid.structure} ${yuclid.operation} ${yuclid.nodes} $KEY_SEED
       - 2>&1
     metrics:
+      - time
       - ops
       - ipc
       - cache_hit_rate
@@ -39,6 +40,8 @@ trials:
     metrics:
       - alloc_syscalls
 metrics:
+  - name: time
+    command: awk '$1=="op_seconds"{t=$2} $1=="ops"{n=$2} END{print (n>0)?t/n:0}' ${yuclid.@}.out
   - name: ops
     command: awk '$1=="ops"{print $2}' ${yuclid.@}.out
   - name: ipc

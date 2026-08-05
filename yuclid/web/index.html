@@ -114,6 +114,20 @@
   .dim-row > b {
     display: block; color: var(--dim); font-weight: 600; font-size: 12.5px;
   }
+  .dim-head { display: flex; align-items: baseline; gap: 8px; }
+  .dim-head .pick {
+    border: 0; background: none; color: var(--dim); font: inherit;
+    font-size: 11.5px; cursor: pointer; padding: 0; opacity: .7;
+  }
+  .dim-head .pick:hover { opacity: 1; font-weight: 600; }
+  .dim-head .pick.all:hover { color: var(--accent); }
+  .dim-head .pick.none:hover { color: var(--warn); }
+  .zone.metrics { gap: 4px 14px; }
+  .metric {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+    cursor: pointer; padding: 2px 0;
+  }
+  .metric input { cursor: pointer; accent-color: var(--accent); margin: 0; }
   .zone {
     display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
     min-height: 30px; padding: 2px 4px; border: 1px dashed transparent;
@@ -306,6 +320,25 @@
     margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
   }
   .look-head { margin-bottom: 10px; }
+  /* A failure, in three voices. Yuclid's own words recede; the command it ran
+     is quieter still; what the command printed is the evidence, and is the
+     only part set as if somebody wrote it. */
+  .wrong { margin-top: 14px; padding-left: 10px; border-left: 2px solid var(--fail); }
+  .wrong-head { font-size: 13px; margin-bottom: 5px; }
+  .wrong-what { color: var(--fail); font-weight: 600; }
+  .wrong-command, .wrong-said { margin: 0; max-height: 22vh; }
+  .wrong-command { color: var(--dim); font-size: 12px; opacity: .85; }
+  .wrong-said {
+    margin-top: 5px; padding: 7px 9px; border-radius: 6px;
+    background: var(--chip); color: var(--ink); font-size: 12.5px;
+  }
+  .wrong-said[data-silent="true"] { color: var(--dim); font-style: italic; }
+  .wrong-where { display: flex; gap: 8px; margin-top: 5px; font-size: 12px; }
+  .wrong-where span:last-child {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--dim); cursor: pointer; overflow-wrap: anywhere;
+  }
+  .wrong-label { color: var(--dim); font-weight: 600; }
   /* which point this is: the dimensions recede, the values stand out */
   .look-who { display: inline; }
   .coord-dim { color: var(--dim); font-weight: 400; }
@@ -565,6 +598,8 @@ const confirmChip = (dim, value) => {
 // The gestures are the ones the Dimensions panel already uses, so a value is
 // taken out of a run the same way it is dropped from one
 let config = null, configError = null;
+// which metrics the next run should collect; every one, until told otherwise
+let wanted = null;
 const chosen = {};
 const typed = {};
 const describePreset = name => {
@@ -863,6 +898,7 @@ const loadConfig = async () => {
   go.disabled = false;
   go.title = "";
   configError = null;
+  wanted = new Set(config.metrics || []);
   // nothing is chosen to begin with: a new run is built by saying what it
   // should cover, not by paring back a space you never asked for
   for (const [dim, values] of Object.entries(config.dimensions)) {
@@ -920,9 +956,24 @@ const renderLaunch = () => {
   for (const [dim, values] of Object.entries(config.dimensions)) {
     const row = document.createElement("div");
     row.className = "dim-row";
+    const head = document.createElement("div");
+    head.className = "dim-head";
     const label = document.createElement("b");
     label.textContent = values === null ? `${dim} — needs values` : dim;
-    row.append(label);
+    head.append(label);
+    // Full space and Empty space act on everything; these act on one
+    // dimension, which is the unit a space is usually narrowed by
+    if (values !== null) {
+      head.append(
+        pick("all", "all", `every value of ${dim}`, () => {
+          chosen[dim] = new Set(values);
+        }),
+        pick("none", "none", `no value of ${dim}`, () => {
+          chosen[dim] = new Set();
+        })
+      );
+    }
+    row.append(head);
 
     if (values === null) {
       // a dimension the configuration leaves open: a run has to supply it
@@ -1030,6 +1081,7 @@ const renderLaunch = () => {
   }
   body.append(bulk);
 
+  renderMetrics(body);
   renderPoints(body);
   showSize();
 };
@@ -1103,6 +1155,63 @@ const renderPoints = body => {
   body.append(block);
 };
 
+const pick = (kind, text, why, act) => {
+  const button = document.createElement("button");
+  button.className = `pick ${kind}`;
+  button.textContent = text;
+  button.title = why;
+  button.onclick = () => {
+    act();
+    renderLaunch();
+  };
+  return button;
+};
+
+// Which metrics to collect. Not merely which columns come back: a trial runs
+// only when something it declares is wanted, so leaving a metric out can leave
+// out the run that would have measured it.
+const renderMetrics = body => {
+  const names = config.metrics || [];
+  if (names.length === 0) return;
+
+  const row = document.createElement("div");
+  row.className = "dim-row";
+  const head = document.createElement("div");
+  head.className = "dim-head";
+  const label = document.createElement("b");
+  label.textContent = "metrics";
+  head.append(
+    label,
+    pick("all", "all", "collect every metric", () => {
+      wanted = new Set(names);
+    }),
+    pick("none", "none", "collect none of them", () => {
+      wanted = new Set();
+    })
+  );
+  row.append(head);
+
+  const zone = document.createElement("div");
+  zone.className = "zone metrics";
+  for (const name of names) {
+    const box = document.createElement("label");
+    box.className = "metric";
+    const tick = document.createElement("input");
+    tick.type = "checkbox";
+    tick.checked = wanted.has(name);
+    tick.onchange = () => {
+      tick.checked ? wanted.add(name) : wanted.delete(name);
+      showSize();
+    };
+    const named = document.createElement("span");
+    named.textContent = name;
+    box.append(tick, named);
+    zone.append(box);
+  }
+  row.append(zone);
+  body.append(row);
+};
+
 // The launcher builds a product, and then lets you take individual points out
 // of it. Everything left is what runs — which is how a run that is not a
 // product at all gets built, and how a replay is offered for editing before it
@@ -1170,9 +1279,13 @@ const showSize = () => {
   }
   const size = document.getElementById("launch-size");
   const go = document.getElementById("launch-go");
-  go.disabled = empty.length > 0;
+  // a run with no metric measures nothing and records no row for any point
+  const noMetric = wanted !== null && wanted.size === 0;
+  go.disabled = empty.length > 0 || noMetric;
   // conditions may still carve some of these away, so this is a ceiling
-  size.textContent = empty.length
+  size.textContent = noMetric
+    ? "no metric chosen: nothing would be measured"
+    : empty.length
     ? `nothing chosen for ${empty.join(", ")}`
     : struck.size
     ? `${points - struck.size} of ${points} point(s)`
@@ -1193,6 +1306,18 @@ const tell = (text, bad) => {
   const says = document.getElementById("launch-says");
   says.textContent = text || "";
   says.style.color = bad ? "var(--warn)" : "var(--dim)";
+};
+
+// the metrics a recorded run was told to collect, or all of them
+const metricsFrom = argv => {
+  const at = (argv || []).indexOf("-m");
+  if (at < 0) return null;
+  const names = [];
+  for (const token of argv.slice(at + 1)) {
+    if (token.startsWith("-")) break;
+    names.push(token);
+  }
+  return names.length ? names : null;
 };
 
 const parallelFrom = argv => {
@@ -1216,7 +1341,7 @@ const seedLaunch = run => {
   const wanted = new Set();
   let lost = 0;
 
-  for (const key of run.measured || []) {
+  for (const key of run.replayable || []) {
     const point = [];
     for (const dim of dims) {
       const at = order.indexOf(dim);
@@ -1240,13 +1365,28 @@ const seedLaunch = run => {
     });
   }
 
+  // The values come from the run's plan rather than from the points it got
+  // through: a value dropped half way, or one whose points never ran, is still
+  // a value that run was given, and leaving it out would quietly change the
+  // experiment being repeated. Which points actually run is decided
+  // separately, by the strikes below.
   for (const dim of dims) {
-    if (config.dimensions[dim] === null) typed[dim] = used[dim].join(", ");
-    else chosen[dim] = new Set(used[dim]);
+    const planned = (run.dimensions || {})[dim] || [];
+    let values = planned
+      .map(v => String(v.value))
+      .filter(
+        value =>
+          config.dimensions[dim] === null ||
+          config.dimensions[dim].includes(value)
+      );
+    // nothing recorded about that dimension: fall back to what was measured
+    if (values.length === 0) values = used[dim];
+    if (config.dimensions[dim] === null) typed[dim] = values.join(", ");
+    else chosen[dim] = new Set(values);
   }
 
   // the selection is a product, and that run may not have been one: whatever
-  // the product adds beyond what it measured starts struck out
+  // the product adds beyond what the run was going to cover starts struck out
   const points = productPoints();
   if (points === null) {
     notes.push(`more than ${POINT_CAP} points, so they are not listed`);
@@ -1261,6 +1401,11 @@ const seedLaunch = run => {
 
   document.getElementById("launch-repeat").value = run.repeat || 1;
   document.getElementById("launch-parallel").value = parallelFrom(run.argv);
+  // the metrics it was told to collect are part of what that run was
+  const asked = metricsFrom(run.argv);
+  const known = config.metrics || [];
+  wanted = new Set(asked ? asked.filter(m => known.includes(m)) : known);
+  if (wanted.size === 0) wanted = new Set(known);
   document.getElementById("launch-name").value = "";
 
   if (lost) {
@@ -1287,6 +1432,13 @@ const unseedable = (run, why) => {
 // The points to run, when they are not simply the product: one object per
 // point, which is what `yuclid run --points` takes. Sent only when something
 // has been struck out, so an untouched selection stays the simpler request.
+// sent only when it is a choice: everything ticked is what a run does anyway
+const chosenMetrics = () => {
+  const names = (config && config.metrics) || [];
+  if (wanted === null || names.length === 0) return null;
+  return wanted.size === names.length ? null : [...wanted];
+};
+
 const explicitPoints = () => {
   const points = productPoints();
   if (points === null || struck.size === 0) return null;
@@ -1306,17 +1458,17 @@ document.getElementById("launch-go").onclick = async () => {
     go.disabled = false;
     return tell("every point has been struck out: there is nothing to run", true);
   }
-  const answer = await ask("/api/runs", points ? {
-    points,
+  const common = {
     repeat: Number(document.getElementById("launch-repeat").value) || 1,
     parallel: parallelism(),
     name: document.getElementById("launch-name").value,
-  } : {
-    select: selection(),
-    repeat: Number(document.getElementById("launch-repeat").value) || 1,
-    parallel: parallelism(),
-    name: document.getElementById("launch-name").value,
-  });
+  };
+  const metrics = chosenMetrics();
+  if (metrics !== null) common.metrics = metrics;
+  const answer = await ask(
+    "/api/runs",
+    points ? {points, ...common} : {select: selection(), ...common}
+  );
   go.disabled = false;
   if (answer.error) return tell(answer.error, true);
   tell(`run ${answer.started} started`);
@@ -1638,10 +1790,9 @@ const renderRun = run => {
   } else if (again.dataset.run !== run.id) {
     again.dataset.run = run.id;
     again.innerHTML = "";
-    // A replay opens the launcher rather than starting anything: the points it
-    // measured are what a replay covers, and seeing them before they run is
-    // the point — a run half of whose space was dropped comes back as the run
-    // it turned out to be, and can still be changed.
+    // A replay opens the launcher rather than starting anything: what comes
+    // back is the run as it set out to be, less whatever was dropped from it
+    // on purpose, and seeing that before it runs is the point.
     const button = document.createElement("button");
     button.className = "act";
     button.textContent = "Replay run";
@@ -1814,23 +1965,60 @@ const renderFailures = run => {
   box.append(said);
 
   for (const bad of wrong) {
-    const what = bad.kind === "metric" ? `metric ${bad.what}` : `trial ${bad.what}`;
-    const item = document.createElement("pre");
-    item.style.maxHeight = "24vh";
-    item.style.marginTop = "8px";
-    item.textContent = [
-      `(${coords(run.order, bad.key)})   ${what}` +
-        (bad.code ? `   exited ${bad.code}` : ""),
-      bad.command,
-      "",
-      bad.said || "it printed nothing at all",
-      "",
-      // for a metric these are the captures of the trial it was measuring,
-      // which is where the rest of the story is
-      `captures: ${bad.log}`,
-    ].join("\n");
-    box.append(item);
+    box.append(oneFailure(run, bad));
   }
+};
+
+// A failure is three voices, and telling them apart is most of reading one:
+// yuclid saying which point and what it was doing, the command it ran, and the
+// command's own words. Only the last is evidence.
+const oneFailure = (run, bad) => {
+  const item = document.createElement("div");
+  item.className = "wrong";
+
+  const head = document.createElement("div");
+  head.className = "wrong-head";
+  head.append(namedKey(run.order, bad.key), faint("·"));
+  const what = document.createElement("span");
+  what.className = "wrong-what";
+  what.textContent =
+    bad.kind === "metric" ? `metric ${bad.what}` : `trial ${bad.what}`;
+  head.append(what);
+  if (bad.code) {
+    const code = document.createElement("span");
+    code.className = "wrong-what";
+    code.textContent = `exited ${bad.code}`;
+    head.append(faint("·"), code);
+  }
+  item.append(head);
+
+  const command = document.createElement("pre");
+  command.className = "wrong-command";
+  command.textContent = bad.command || "";
+  item.append(command);
+
+  const said = document.createElement("pre");
+  said.className = "wrong-said";
+  said.textContent = bad.said || "it printed nothing at all";
+  if (!bad.said) said.dataset.silent = "true";
+  item.append(said);
+
+  if (bad.log) {
+    const where = document.createElement("div");
+    where.className = "wrong-where";
+    const label = document.createElement("span");
+    label.className = "wrong-label";
+    // for a metric these are the captures of the trial it was measuring,
+    // which is where the rest of the story is
+    label.textContent = "captures";
+    const path = document.createElement("span");
+    path.textContent = bad.log;
+    path.title = "click to copy";
+    path.onclick = () => copyPath(path, bad.log);
+    where.append(label, path);
+    item.append(where);
+  }
+  return item;
 };
 
 // a browser will not follow a file:// link out of an http:// page, so the path
@@ -2386,15 +2574,16 @@ const nameOf = id => coords(roster.order, id.split("\u0000"));
 // dimension names. Every point in a run carries the same dimensions, so those
 // are the half that says nothing: the values are what distinguishes this point
 // from the one beside it, and they are what the eye should land on.
-const named = id => {
+const named = id => namedKey(roster ? roster.order : null, id.split("\u0000"));
+
+const namedKey = (order, key) => {
   const whole = document.createElement("span");
   whole.className = "look-who";
-  const key = id.split("\u0000");
-  if (!roster || roster.order.length !== key.length) {
-    whole.textContent = nameOf(id);
+  if (!order || order.length !== key.length) {
+    whole.textContent = (key || []).join(".");
     return whole;
   }
-  roster.order.forEach((dim, i) => {
+  order.forEach((dim, i) => {
     if (i > 0) {
       const comma = document.createElement("span");
       comma.className = "coord-dim";
@@ -2677,8 +2866,13 @@ const refresh = async () => {
   }
 };
 
+// Twice a second. Every redraw below is guarded on what actually changed —
+// the boxes are rebuilt only when the shape of the space does, a leaf is
+// patched only where it differs, and the progress request asks for records
+// after the last one it saw — so the cost of a tick is the cost of the news,
+// not of the run.
 refresh();
-setInterval(refresh, 1000);
+setInterval(refresh, 500);
 </script>
 </body>
 </html>

@@ -572,23 +572,40 @@ def record_points(run_dir, order, points):
         f.write("\n")
 
 
-def measured_points(directory):
-    """The points a recorded run ran, in the order it ran them.
+def intended_points(directory):
+    """The points a replay of this run should cover.
 
-    Read from the run's own progress rather than from its results file: a run
-    that resumed into a file shares it with the runs before it, and only its
-    progress says which of those points were this run's doing.
+    The run as it set out to be, less only what was deliberately taken out of
+    it: a point somebody dropped while steering, and a point skipped because
+    an earlier run had already recorded it.
+
+    Everything else stays. A point that failed, was killed, or never came up is
+    still part of the experiment somebody meant to run — a setup that broke
+    before the first trial leaves every point in place, and that is the case
+    where replaying matters most. Reading what a run *managed* instead would
+    quietly turn a run that went wrong into a smaller experiment.
     """
     ordered, seen = [], set()
+    status, skipped = dict(), set()
     for record in workspace.read_progress(directory):
-        if record["type"] != "point.finished":
-            continue
-        key = tuple(record.get("key") or ())
-        if key in seen:
-            continue
-        seen.add(key)
-        ordered.append(key)
-    return ordered
+        if record["type"] == "plan":
+            # a run over several presets writes one plan each, and a point
+            # added while it went appears in the snapshot after it: the union
+            # is the whole run, and the last word on a point is its status
+            for point in record["points"]:
+                key = tuple(point["key"])
+                if key not in seen:
+                    seen.add(key)
+                    ordered.append(key)
+                status[key] = point["status"]
+        elif record["type"] == "point.skipped":
+            skipped.add(tuple(record.get("key") or ()))
+
+    return [
+        key
+        for key in ordered
+        if status.get(key) != "dropped" and key not in skipped
+    ]
 
 
 def points_of_keys(order, keys):
@@ -624,11 +641,11 @@ def points_of_run(root, run_id):
             "are no points to replay",
         )
 
-    keys = measured_points(directory)
+    keys = intended_points(directory)
     if len(keys) == 0:
         report(
             LogLevel.FATAL,
-            "run {} measured nothing to replay".format(run_id),
+            "run {} has no points left to replay".format(run_id),
             hint="`yuclid replay {} --no-steering` runs the command it was "
             "given instead".format(run_id),
         )

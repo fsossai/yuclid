@@ -8,7 +8,7 @@ to the run's own socket and answered with what the run said it did.
 """
 
 from yuclid.log import LogLevel, report
-from yuclid.run import DEFAULT_INPUTS, measured_points, remove_duplicates
+from yuclid.run import DEFAULT_INPUTS, intended_points, remove_duplicates
 from yuclid import __version__
 import yuclid.workspace as workspace
 import yuclid.control as control
@@ -299,7 +299,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "gaps": gaps_of(plan, live),
             # what a replay of this run would cover, and how it would be asked
             # for: the page offers these for editing before starting anything
-            "measured": [list(key) for key in measured_points(manifest["directory"])],
+            "replayable": [
+                list(key) for key in intended_points(manifest["directory"])
+            ],
             "repeat": max(
                 [p["target"] for p in plan["points"]] or [1]
             ) if plan else 1,
@@ -385,12 +387,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 name: resolve_preset(declared, preset)
                 for name, preset in sorted((raw.get("presets") or {}).items())
             }
+            # a name may be declared several times, once per region of the
+            # space, and it is one column and one thing to choose
+            metrics = remove_duplicates(
+                [m["name"] for m in runner.normalize_metrics(raw.get("metrics") or [])]
+            )
         except SystemExit:
             return {"error": "{} cannot be read; see the terminal".format(inputs[0])}
         except Exception as e:
             return {"error": "{}: {}".format(inputs[0], e)}
 
-        return {"input": inputs[0], "presets": presets, "dimensions": declared}
+        return {
+            "input": inputs[0],
+            "presets": presets,
+            "dimensions": declared,
+            "metrics": metrics,
+        }
 
     def start_run(self, request):
         """Start a run of a subspace the caller chose.
@@ -480,6 +492,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return {"error": "parallel must be a whole number of trials at once"}
         if parallel > 1:
             argv += ["--parallel-trials", str(parallel)]
+
+        # Choosing metrics is not only about which columns come back: a trial
+        # runs when a metric it declares is wanted, so narrowing the metrics
+        # can narrow the work as well.
+        metrics = request.get("metrics")
+        if metrics is not None:
+            if not isinstance(metrics, list) or len(metrics) == 0:
+                return {"error": "choose at least one metric"}
+            unknown = [m for m in metrics if m not in config["metrics"]]
+            if unknown:
+                return {"error": "no such metric: {}".format(", ".join(unknown))}
+            if len(metrics) < len(config["metrics"]):
+                argv += ["-m"] + list(metrics)
 
         name = request.get("name") or ""
         try:

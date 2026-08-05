@@ -276,11 +276,12 @@ def launch_finish(args, parser):
 
 
 def launch_replay(args, parser):
-    """Run the points a previous run measured, again.
+    """Run a previous run again, as it set out to be.
 
-    A replay is that run's result rather than its instructions: whatever it was
-    told along the way — a slice dropped, a point killed, the whole thing
-    stopped early — the points it came to are the points to do again. Those go
+    Not what it managed: what it meant to do. A run that failed at every point,
+    or fell over during setup, replays whole — that is the run somebody wanted.
+    The only points left out are the ones taken out on purpose: a slice dropped
+    while steering, and points an earlier run had already recorded. Those go
     into a file and the run is an ordinary `--points` run, which is also what
     makes a replay something the caller can edit before starting it.
 
@@ -313,7 +314,7 @@ def launch_replay(args, parser):
         if len(keys) == 0:
             report(
                 LogLevel.FATAL,
-                "run {} measured nothing to replay".format(args.run),
+                "run {} has no points left to replay".format(args.run),
                 hint="`yuclid replay {} --no-steering` runs the command it was "
                 "given instead".format(args.run),
             )
@@ -341,7 +342,7 @@ def launch_replay(args, parser):
 
 
 def replayable_points(manifest, args):
-    """The points to replay: what the run measured, narrowed if asked.
+    """The points to replay, narrowed if asked.
 
     `--select` here is a filter on that list rather than on the configured
     space, since the list is what the replay is about.
@@ -349,7 +350,7 @@ def replayable_points(manifest, args):
     import yuclid.run
 
     order = plan_order(manifest["directory"])
-    keys = yuclid.run.measured_points(manifest["directory"])
+    keys = yuclid.run.intended_points(manifest["directory"])
     if not args.select:
         return order, keys
 
