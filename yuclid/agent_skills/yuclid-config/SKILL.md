@@ -19,7 +19,7 @@ and is dropped.
 
 | Field | Type | Purpose |
 |---|---|---|
-| `env` | object | Shell variables exported to every command |
+| `env` | array or object | Shell variables exported to every command, in groups |
 | `setup` | object | `global` and/or `point` commands run before the trials |
 | `space` | object | Dimension → list of points |
 | `trials` | string or array | The experiment command(s) |
@@ -117,18 +117,30 @@ A single string, or a list whose items are strings or objects:
 - `command` is required in object form; a list of strings is joined with a single space.
 - `condition` — Python expression over `yuclid.<dim>`, default `"True"`.
 - `metrics` — names of the metrics this trial enables. Omit (or `null`) to enable all.
-  Referencing an undeclared metric name is fatal.
+  Referencing an undeclared metric name is fatal. A metric no trial enables is never
+  measured, whatever its condition says — if every trial names its metrics, make sure one
+  of them names yours.
 - Unknown keys warn. Valid keys: `command`, `condition`, `metrics`.
 
 Trials do not need to redirect output: stdout and stderr are already captured into
 `${yuclid.@}.out` and `${yuclid.@}.err`.
 
-**Aim for exactly one trial per point.** Every compatible trial is executed, but each gets
-its own `${yuclid.@}` (suffixed `_trial0`, `_trial1`, …) and the metrics are evaluated
-*afterwards* against the **last** trial's `${yuclid.@}` only. If two trials run for the
-same point, metrics targeting the earlier one fail with `generated an empty string` and
-the whole record is dropped. See "Trials as a dispatch table" below for how to keep them
-mutually exclusive.
+**A metric reads the output of the trial that declared it.** Each trial gets its own
+`${yuclid.@}` (suffixed `_trial0`, `_trial1`, …), and a metric is evaluated against the
+capture of the trial whose `metrics` list names it. So several trials may run for one
+point, as long as their `metrics` lists are **disjoint** — that is how one program gets
+measured two ways in a single run.
+
+A metric that reads `${yuclid.@}` and is enabled by more than one trial is a **fatal
+configuration error**, reported before anything runs:
+
+```
+ERROR: these metrics are enabled by more than one trial: m (2 trials at 1)
+HINT: check the conditions of the ambiguous metrics or trials
+```
+
+Beware that a trial with **no** `metrics` list declares them all, so adding one beside a
+trial that names its metrics makes every one of them ambiguous.
 
 ## `metrics`
 
@@ -160,7 +172,25 @@ Shorthand map form (no conditions):
 ```
 
 `name` and `command` are required; `command` may be a list of strings (space-joined).
-Unknown keys warn. Metric names become the column names consumed by `yuclid plot -y`.
+Unknown keys warn. Valid keys: `name`, `command`, `condition`, `default`. Metric names
+become the column names consumed by `yuclid plot -y`.
+
+**`default`** is the number to record where every declaration of that name is conditioned
+away, so that a point a condition carved out of one metric still has a row as complete as
+the others:
+
+```json
+{ "name": "visits_per_op",
+  "command": "awk ...",
+  "condition": "yuclid.operation in ['lookup', 'absent']",
+  "default": 0 }
+```
+
+It must be a number — it lands in the column the command's output would have — and it is
+used only when *no* declaration of that name applies. Nothing is executed for it: a point
+whose metrics are all defaults runs no trial at all and still gets a row. A default on a
+metric that is unconditional somewhere can never fire, and is reported when the
+configuration is read.
 
 A metric command may chain several pipelines with `;` to emit several numbers, which is
 how per-region timers are collected in one column:
@@ -172,13 +202,30 @@ how per-region timers are collected in one column:
 
 ## `env`
 
+A **list of groups**, resolved in order. A group is resolved as a whole, so nothing in it
+can see anything else in it; a group may refer to the groups before it and to any
+inherited variable.
+
 ```json
-{ "env": { "root": "/my/path", "data_dir": "$root/data", "ALL_SIZES": "${yuclid.size.values}" } }
+{ "env": [
+    { "root": "/my/path", "ALL_SIZES": "${yuclid.size.values}" },
+    { "data_dir": "$root/data" }
+] }
 ```
 
-Each value is expanded by the shell (`echo "<value>"`) against the accumulated
-environment, so later keys can reference earlier ones and any inherited variable.
-Only global `${yuclid.*.values}` / `${yuclid.*.names}` are allowed here.
+That is what fixes the order: an object has none to rely on, and a formatter is free to
+rearrange one. A plain object is accepted as a list of one group, which is what most
+configurations are — a handful of constants that refer to nothing:
+
+```json
+{ "env": { "CFLAGS": "-O3 -std=c11" } }
+```
+
+An object with more than one entry warns, because nothing in it can depend on anything
+else in it and there is no way to say otherwise.
+
+Each value is expanded by the shell (`echo "<value>"`). Only global
+`${yuclid.*.values}` / `${yuclid.*.names}` are allowed here.
 
 ## `setup`
 
@@ -385,7 +432,7 @@ hold results from several hosts.
 
 ### Splitting a config across files
 
-`-i` merges: `env`, `space`, and `presets` merge as dicts; `trials`, `metrics`, and `order`
+`-i` merges: `space` and `presets` merge as dicts; `env`, `trials`, `metrics` and `order`
 concatenate. Two uses:
 
 - **Metric overlays** — an extra file containing nothing but a `metrics` array of
@@ -428,9 +475,10 @@ nothing, and an empty metric drops the entire point from the results.
   in JSON.
 - **Quote nesting.** Metric commands run through a shell; prefer single quotes inside the
   JSON double-quoted string.
-- **Multiple inputs merge.** `yuclid run -i base.json local.json` merges `env`, `space`,
-  and `presets` as dicts (later wins per key) and concatenates `trials`, `metrics`, and
-  `order` — useful for machine-specific overlays.
+- **Multiple inputs merge.** `yuclid run -i base.json local.json` merges `space` and
+  `presets` as dicts (later wins per key) and concatenates `env`, `trials`, `metrics` and
+  `order` — useful for machine-specific overlays. `env` concatenating means a second file
+  adds a group after the first file's, which is exactly the order you want.
 - Conditions are Python, not shell: `and`/`or`/`not`, `==`, `'quoted strings'`.
 - **`--select` yields strings.** Values supplied on the command line for a `null`
   dimension arrive as strings, so `"yuclid.nthreads > 1"` raises
@@ -442,14 +490,47 @@ nothing, and an empty metric drops the entire point from the results.
   cleanly.
 - **An empty metric drops the whole point.** `metric X generated an empty string` is an
   error, not a warning, and no record is written for that point. It almost always means
-  the grep targeted the wrong file (`.out` vs `.err`) or a second trial overwrote
-  `${yuclid.@}`.
-- **`${yuclid.@}` in a metric is the last trial's id**, not the id of the trial that
-  declared the metric. Keep one trial per point per metric group.
+  the grep targeted the wrong file (`.out` vs `.err`). Give the metric a `default` if
+  having no number there is a legitimate outcome.
+- **`${yuclid.@}` in a metric is the id of the trial that declared it.** Trials with
+  disjoint `metrics` lists therefore coexist; one that declares none of them declares
+  all, and makes the rest ambiguous.
 - Trial `condition`s see values, so `yuclid.program in ['bc', 'bfs']` works on a plain
   string dimension but a list membership test against a `null` dimension compares strings.
 - `${yuclid.dim}` yields the *value*; use `${yuclid.dim.name}` for the label. Output
   records carry names, not values.
+
+## Running something that is not a product
+
+`yuclid run --points FILE` covers exactly the points a file names, instead of the product
+of `space`. The configuration is still read in full — trials, metrics, setup, env,
+conditions, and the declared values — but `space` stops deciding what runs. It is a mode,
+so it is refused alongside `-s/--select` and `-p/--presets`.
+
+```json
+[
+  { "size": ["*"], "impl": ["dot"] },
+  { "size": ["1024"], "impl": ["rows"], "threads": ["1", "4"] }
+]
+```
+
+Each entry is a small sub-product; the run is their union, deduplicated, in file order.
+`"*"`, or a dimension left out, means every value the configuration declares for it. A
+value the configuration does not have is an error naming it, and a named point a condition
+excludes is reported and dropped. Every such run keeps its resolved list as `points.json`
+in its run directory.
+
+`yuclid describe RESULTS --points` writes such a file from a dataset, so
+`yuclid run --points <that>` re-runs exactly what a result file contains. `yuclid replay`
+is built on the same mechanism.
+
+## Keeping state elsewhere
+
+`--workspace DIR` names the directory Yuclid records itself in, instead of `./.yuclid`:
+the runs, their logs and their captured output. `yuclid run`, `yuclid serve` and every
+command that reads or steers a recorded run take it. For `yuclid serve` the workspace is
+the whole of what it is about — the configuration it offers and the directory it starts
+runs in come from there too — so a workspace can be moved or served on its own.
 
 ## Verify before handing off
 
@@ -470,8 +551,9 @@ yuclid tplot results.jsonl -x size -z compression -y time.real -A
 ```
 
 Other `yuclid run` flags worth mentioning: `-o/--output`, `--output-dir`, `-p` (presets),
-`-m` (subset of metrics), `-r N` (repeat each point), `--parallel-trials [N]`, `--fold`,
-`--no-setup`, `--temp-dir`.
+`-m` (subset of metrics — which also decides which trials fire), `-r N` (repeat each
+point), `--parallel-trials [N]`, `--fold`, `--no-setup`, `--temp-dir`, `--points FILE`,
+`--workspace DIR`, `--abort-on-error`, `--resume`.
 
 ## Reference example
 
