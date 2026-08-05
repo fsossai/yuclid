@@ -151,8 +151,9 @@
   /* a long point list scrolls inside its own box rather than pushing the
      controls that act on it off the page */
   .zone.points { max-height: 32vh; overflow-y: auto; align-items: flex-start; }
-  /* the buttons above act on the selection; this is a different thing, and
-     sitting against them it read as a caption to them */
+  /* the buttons above act on the selection; these are different things, and
+     sitting against them they read as captions to them */
+  .metrics-box { margin-top: 16px; }
   details.points-box { margin-top: 16px; }
   details.points-box > summary {
     display: block; cursor: pointer; color: var(--dim); font-weight: 600;
@@ -898,13 +899,25 @@ const loadConfig = async () => {
   go.disabled = false;
   go.title = "";
   configError = null;
-  wanted = new Set(config.metrics || []);
-  // nothing is chosen to begin with: a new run is built by saying what it
-  // should cover, not by paring back a space you never asked for
-  for (const [dim, values] of Object.entries(config.dimensions)) {
-    if (values) chosen[dim] = new Set();
-  }
+  resetLaunch();
   renderLaunch();
+};
+
+// The state a new run starts from: the whole space, nothing struck out, every
+// metric collected, and the fields at their defaults. One function, so that
+// opening the pane and resetting it cannot come to mean different things.
+const resetLaunch = () => {
+  for (const [dim, values] of Object.entries(config.dimensions)) {
+    if (values) chosen[dim] = new Set(values);
+    else typed[dim] = "";
+  }
+  struck.clear();
+  pointsOpen = false;
+  basedOn = null;
+  wanted = new Set(config.metrics || []);
+  document.getElementById("launch-repeat").value = 1;
+  document.getElementById("launch-parallel").value = 1;
+  document.getElementById("launch-name").value = "";
 };
 
 const renderLaunch = () => {
@@ -1001,7 +1014,7 @@ const renderLaunch = () => {
     hint.textContent = "not in the run:";
     const nothing = document.createElement("span");
     nothing.className = "hint";
-    nothing.textContent = "click a value below to add it";
+    nothing.textContent = "nothing chosen — click a value below to put it back";
 
     const move = (value, into) => {
       into ? chosen[dim].add(value) : chosen[dim].delete(value);
@@ -1032,7 +1045,7 @@ const renderLaunch = () => {
       };
     }
     // the chosen values sit on top, saying what the run covers; a dimension
-    // with nothing chosen yet says how to choose rather than showing a gap
+    // emptied of them says so, rather than showing a gap
     if (!kept.children.length) kept.append(nothing);
     row.append(kept);
     // and the rest below, to be picked from — gone once they are all in
@@ -1175,7 +1188,7 @@ const renderMetrics = body => {
   if (names.length === 0) return;
 
   const row = document.createElement("div");
-  row.className = "dim-row";
+  row.className = "dim-row metrics-box";
   const head = document.createElement("div");
   head.className = "dim-head";
   const label = document.createElement("b");
@@ -1636,13 +1649,12 @@ const renderNav = runs => {
   // emoji and would sit oddly in a page of plain text
   fresh.textContent = "▸ New run";
   fresh.onclick = () => {
-    // a fresh run is not based on anything: whatever a replay left in the
-    // launcher goes, or the next run quietly inherits it
-    if (basedOn !== null) {
-      basedOn = null;
-      struck.clear();
-      pointsOpen = false;
-      if (config) renderLaunch();
+    // a new run is new: whatever the last one left behind — a replay's points,
+    // a narrowed space, a metric switched off — goes, or it is quietly
+    // inherited by a run nobody meant to shape that way
+    if (config) {
+      resetLaunch();
+      renderLaunch();
       tell("");
     }
     show("launch");
@@ -2310,6 +2322,14 @@ const remember = record => {
     } else {
       point.status = "killed";
     }
+  } else if (record.type === "point.settled") {
+    // `--until` builds the plan with the ceiling as every point's target, so
+    // until it settles a point asks for far more repetitions than it will do.
+    // This is the moment it says how many it needed, and the leaf stops
+    // drawing a hundred bars for a point that ran eight times.
+    point.target = point.done;
+    point.settled = record.rule;
+    point.status = "done";
   } else if (record.type === "point.skipped") {
     // remembered rather than set, because the plan the run writes when it ends
     // calls this point done — which it is, but it was another run that did it
@@ -2658,7 +2678,9 @@ const lookHead = (subject, point, held) => {
   const spent = (point.reps || []).reduce((a, r) => a + (r.seconds || 0), 0);
   state.textContent =
     `${stateOf(point)} · ${point.done || 0}/${point.target || 1}` +
-    (spent > 0 ? ` · ${lapse(spent)}` : "");
+    (spent > 0 ? ` · ${lapse(spent)}` : "") +
+    // why it stopped where it did, when a rule decided rather than a count
+    (point.settled ? ` · settled at ${point.settled}` : "");
   head.append(state);
 
   const how = document.createElement("span");

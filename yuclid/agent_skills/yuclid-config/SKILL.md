@@ -42,6 +42,21 @@ Two scopes with **different, non-interchangeable** variable sets.
   `${yuclid.@}.out` and `${yuclid.@}.err` (under `--temp-dir`, default `.yuclid`), so
   metric commands read those files.
 
+**`${yuclid.workspace}` is reserved and available in every scope** — trials, metrics,
+setup, `env`, and a compiled script. It is the directory the run records itself in:
+`./.yuclid` normally, and whatever `--workspace DIR` says otherwise. Use it for anything
+the configuration generates and means to keep beside the runs — built binaries,
+generated corpora, a shared scratch directory:
+
+```json
+{ "setup": { "global": ["mkdir -p ${yuclid.workspace}/data"] } }
+```
+
+Because it follows `--workspace`, the same configuration puts its data on a scratch
+filesystem when the state is sent there, without a second flag or an environment
+variable to keep in step. A dimension called `workspace` is refused, since one of the two
+would shadow the other.
+
 **Global scope** — `env` and `setup.global`, which run once and have no current point:
 
 - `${yuclid.dim.values}` — all values of the dimension, space-joined
@@ -95,7 +110,38 @@ Keys are dimension names, values are lists of points. Four accepted forms:
   produce a list; the dimension is registered as `dim` (suffix stripped). Only builtins
   and `run.py`'s imports are in scope.
 - **`null`** — declares the dimension but leaves it undefined, forcing the user to supply
-  it on the command line: `yuclid run -s nthreads=1,7,14`.
+  it on the command line: `yuclid run -s nthreads=1,7,14`. See below.
+
+### A dimension the configuration deliberately does not fix
+
+```json
+{ "space": { "size": [512, 1024], "nthreads": null } }
+```
+
+```sh
+yuclid run -s nthreads=1,7,14
+```
+
+Reach for `null` when the values are not a property of the experiment but of the
+occasion it is run on: how many threads this machine has, which GPU is free, where a
+dataset happens to live, which compilers are installed. Those belong to the person
+running it, not to the question being asked.
+
+Writing `[1, 7, 14]` instead would bake one machine into the configuration, and the next
+person would edit the file to run it — the file everyone shares, and the one the results
+are supposed to be comparable across. `null` says "this experiment sweeps thread counts;
+which ones is up to you", and every run then records the answer it was given, so the
+results say which machine they came from.
+
+It is filled by `-s`, or by a preset that lists the values, and the run refuses to start
+without them. Three things follow:
+
+- values arrive as **strings**, so a condition comparing them numerically needs a cast —
+  `"int(yuclid.nthreads) > 1"`, not `"yuclid.nthreads > 1"`;
+- a preset may supply them, but a `*` glob cannot: there is nothing declared to match, so
+  list the literal values;
+- `yuclid serve` offers the dimension as a free-text field rather than chips, for the
+  same reason — it has nothing to put on the chips.
 
 ## `trials`
 
@@ -200,8 +246,8 @@ inherited variable.
 
 ```json
 { "env": [
-    { "root": "/my/path", "ALL_SIZES": "${yuclid.size.values}" },
-    { "data_dir": "$root/data" }
+    { "ALL_SIZES": "${yuclid.size.values}" },
+    { "data_dir": "${yuclid.workspace}/data" }
 ] }
 ```
 
@@ -239,7 +285,7 @@ yours after a `git clean`.
       { "on": ["compiler"], "command": "mkdir -p ${yuclid.compiler}" },
       {
         "on": ["compiler"],
-        "command": "make prog.out CXX=${yuclid.compiler} OUTDIR=$root/build/${yuclid.compiler}",
+        "command": "make prog.out CXX=${yuclid.compiler} OUTDIR=${yuclid.workspace}/build/${yuclid.compiler}",
         "parallel": true
       }
     ]
@@ -302,15 +348,15 @@ region with **mutually exclusive conditions** and let each declare the metrics i
 {
   "trials": [
     { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "/usr/bin/time -v",
-                  "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
+                  "${yuclid.workspace}/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
       "condition": "yuclid.program in ['prog1', 'prog2']",
       "metrics": ["time", "space"] },
     { "command": ["OMP_NUM_THREADS=${yuclid.nthreads}", "/usr/bin/time -v",
-                  "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
+                  "${yuclid.workspace}/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}", "2>&1"],
       "condition": "yuclid.program in ['prog3', 'prog4']",
       "metrics": ["time", "space"] },
-    { "command": ["LD_PRELOAD=$root/nmallocs/libmymalloc.so",
-                  "$root/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}"],
+    { "command": ["LD_PRELOAD=${yuclid.workspace}/nmallocs/libmymalloc.so",
+                  "${yuclid.workspace}/bin/${yuclid.program}_${yuclid.impl}.out", "${yuclid.input}"],
       "metrics": ["nmallocs"] }
   ]
 }
@@ -373,22 +419,23 @@ This is the central trick for an irregular space: the Cartesian product stays re
 and conditions carve out the invalid cells. Watch the `subspace size` and the dry-run point
 count to confirm the carving worked.
 
-### Three tiers of variables
+### Tiers of variables
 
-Long-lived configs use all three, and they resolve at different times:
+Long-lived configs use all of these, and they resolve at different times:
 
 | Form | Resolved | Use for |
 |---|---|---|
 | `${yuclid.dim}` | by yuclid, per point | anything that varies over the space |
-| `$var` from `env` | by the shell, once at startup | derived paths (`"graphs_dir": "$root/graphs"`) |
-| `$var` inherited | by the shell, from the caller's environment | machine/run identity — `$root`, `$machine`, `$nruns` |
+| `${yuclid.workspace}` | by yuclid, always | where this run keeps what it builds |
+| `$var` from `env` | by the shell, once at startup | derived paths (`"graphs_dir": "${yuclid.workspace}/graphs"`) |
+| `$var` inherited | by the shell, from the caller's environment | machine/run identity — `$machine`, `$nruns` |
 
 Inherited variables never appear in the config's `env`; a driver script exports them and
 then invokes `yuclid run`, which is how one config serves several machines:
 
 ```bash
-export root=$(dirname $(realpath $0))
 export machine="local"
+export nruns="3"
 yuclid run -i yuclid.json --select nthreads=28 impl=base cxx=clang++ "$@"
 ```
 
@@ -417,9 +464,9 @@ dimension whose jobs share a mutable target:
 {
   "setup": {
     "point": [
-      { "on": ["cxx"], "command": "mkdir -p $root/.yuclid/bin/$machine/${yuclid.cxx}", "parallel": true },
+      { "on": ["cxx"], "command": "mkdir -p ${yuclid.workspace}/bin/$machine/${yuclid.cxx}", "parallel": true },
       { "on": ["cxx", "program", "impl"],
-        "command": "make ${yuclid.program}_${yuclid.impl} OUTDIR=$root/.yuclid/bin/$machine/${yuclid.cxx} CXX=${yuclid.cxx}",
+        "command": "make ${yuclid.program}_${yuclid.impl} OUTDIR=${yuclid.workspace}/bin/$machine/${yuclid.cxx} CXX=${yuclid.cxx}",
         "parallel": ["cxx", "program"] }
     ]
   }
@@ -502,6 +549,45 @@ nothing, and an empty metric drops the entire point from the results.
 - `${yuclid.dim}` yields the *value*; use `${yuclid.dim.name}` for the label. Output
   records carry names, not values.
 
+## Repeating until something is true
+
+`-r N` asks for a number of repetitions, which is rarely the question. Ten runs of a
+two-second point is a twenty-second answer nobody needed; ten runs of a
+forty-millisecond point is noise measured ten times. `--until` lets the measurement
+decide:
+
+```sh
+yuclid run --until 3s                    # give every point three seconds
+yuclid run --until 'time±5%'             # until the median of `time` is that well known
+yuclid run --until 3s --until 'time±5%'  # whichever is satisfied first
+```
+
+A rule is either a **duration** — `3s`, `500ms`, `2m`, `1.5s`, or a bare number of
+seconds — or a **precision**, `metric±x%`, with `+-` accepted for `±` so it can be
+typed. Several may be given, and the first one satisfied ends the point.
+
+| flag | meaning |
+|---|---|
+| `--until RULE` | repeatable; stop when any rule holds |
+| `--min-runs N` | never stop before N repetitions (default 3) |
+| `--max-runs N` | never go past N (default 100) |
+
+`-r` and `--until` are refused together: bound a rule with `--min-runs`/`--max-runs`.
+
+The precision rule is a percentile bootstrap on the **median** — the statistic one
+slow repetition does not move — over every value that metric has produced for the
+point. It watches a metric, so the metric must exist and must not be excluded by
+`-m`; both are fatal, and said before the run starts.
+
+Two things follow from a count nobody knows in advance:
+
+- the progress total counts towards `--max-runs` and **falls as points settle**, so
+  `[12/400]` becomes `[12/38]`. Nothing is wrong: the total is a ceiling until the
+  measurements say otherwise.
+- with `--resume`, the rule judges only what *this* invocation measured, since the
+  earlier repetitions left their samples nowhere. A resumed point is given a fresh
+  budget, and its records add to the ones already in the file.
+
 ## Running something that is not a product
 
 `yuclid run --points FILE` covers exactly the points a file names, instead of the product
@@ -561,7 +647,8 @@ yuclid tplot results.jsonl -x size -z compression -y time.real -A
 Other `yuclid run` flags worth mentioning: `-o/--output`, `--output-dir`, `-p` (presets),
 `-m` (subset of metrics — which also decides which trials fire), `-r N` (repeat each
 point), `--parallel-trials [N]`, `--fold`, `--no-setup`, `--temp-dir`, `--points FILE`,
-`--workspace DIR`, `--abort-on-error`, `--resume`.
+`--workspace DIR`, `--abort-on-error`, `--resume`, `--until RULE` with
+`--min-runs`/`--max-runs`.
 
 ## Reference example
 

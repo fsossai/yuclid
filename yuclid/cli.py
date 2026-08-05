@@ -76,6 +76,30 @@ def get_parser():
         "records, their logs and their captured output",
     )
     run_parser.add_argument(
+        "--until",
+        action="append",
+        default=None,
+        metavar="RULE",
+        help="Repeat each point until this holds, instead of a fixed count. "
+        "Either a duration (3s, 500ms, 2m) or a precision on a metric "
+        "(time±5%, or time+-5%). May be given more than once, and the first "
+        "rule satisfied ends the point",
+    )
+    run_parser.add_argument(
+        "--min-runs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Never stop a point before N repetitions (default: 3 with --until)",
+    )
+    run_parser.add_argument(
+        "--max-runs",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Never repeat a point more than N times (default: 100 with --until)",
+    )
+    run_parser.add_argument(
         "--points",
         default=None,
         metavar="FILE",
@@ -141,9 +165,10 @@ def get_parser():
         "-r",
         "--repeat",
         type=int,
-        default=1,
+        default=None,
         metavar="N",
-        help="Run each point configuration N times (default: 1)",
+        help="Run each point configuration N times (default: 1). Cannot be "
+        "combined with --until, which decides the count instead",
     )
     run_parser.add_argument(
         "--abort-on-error",

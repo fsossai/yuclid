@@ -17,6 +17,26 @@ import re
 import os
 
 
+# Where this run keeps its state, as a variable. Held here rather than passed
+# through every substitution because it belongs to the invocation rather than
+# to the point: it is the same string everywhere, in every scope, and threading
+# it through would touch every call site to say one thing.
+WORKSPACE = None
+
+
+def substitute_workspace(x):
+    """`${yuclid.workspace}`, in whichever scope it is written.
+
+    A configuration that generates data, builds binaries or writes anything it
+    means to keep beside the runs needs to name that directory, and `--workspace`
+    can move it. Available everywhere, because the answer does not depend on the
+    point, the dimension or the phase.
+    """
+    if WORKSPACE is None:
+        return x
+    return re.sub(r"\$\{yuclid\.workspace\}", lambda m: WORKSPACE, x)
+
+
 def substitute_point_yvars(x, point_map, point_id):
     # replace ${yuclid.<name>} and ${yuclid.@} with point values
     value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)(?:\.value)?\}"
@@ -29,6 +49,7 @@ def substitute_point_yvars(x, point_map, point_id):
                 f"point variable '{name}' not found in point_map",
                 hint=f"available variables: {', '.join(point_map.keys())}",
             )
+    x = substitute_workspace(x)
     y = re.sub(value_pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
     if point_id is not None:
@@ -39,6 +60,7 @@ def substitute_point_yvars(x, point_map, point_id):
 
 def substitute_global_yvars(x, subspace):
     # replace ${yuclid.<name>.values} and ${yuclid.<name>.names}
+    x = substitute_workspace(x)
     subspace_values = {k: [str(x["value"]) for x in v] for k, v in subspace.items()}
     subspace_names = {k: {x["name"] for x in v} for k, v in subspace.items()}
     pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.values\}"
@@ -53,7 +75,7 @@ def validate_point_yvars(space, exp):
         r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value|names|values))?\}", exp
     )
     for dim in matches:
-        if dim not in space and dim != "@":
+        if dim not in space and dim not in ("@", "workspace"):
             report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
 
 
@@ -62,6 +84,8 @@ def validate_global_yvars(space, exp):
     point_matches = re.findall(
         r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value))?\}", exp
     )
+    # the one point-shaped variable that is not about a point
+    point_matches = [dim for dim in point_matches if dim != "workspace"]
     for dim in point_matches:
         hint = "maybe you meant ${{yuclid.{}.names}} or ${{yuclid.{}.values}}?".format(
             dim, dim
@@ -355,7 +379,10 @@ def build_environment(settings, data):
     for group in data["env"]:
         # resolved against the environment as it stood before the group, so a
         # group's entries genuinely cannot see one another
-        expanded = {k: expand_env_value(v, resolved_env) for k, v in group.items()}
+        expanded = {
+            k: expand_env_value(substitute_workspace(str(v)), resolved_env)
+            for k, v in group.items()
+        }
         if settings["dry_run"]:
             for key, value in expanded.items():
                 report(LogLevel.INFO, "dry env", f'{key}="{value}"')
@@ -364,6 +391,142 @@ def build_environment(settings, data):
     # a dry run executes nothing, so it hands out no environment either — but
     # it resolves one, which is the only way to see what a value comes to
     return dict() if settings["dry_run"] else resolved_env
+
+
+# how many resamples the bootstrap draws. Enough that the interval is stable
+# between two decisions on the same samples, few enough that deciding costs
+# nothing next to the repetition it is deciding about
+RESAMPLES = 2000
+# the interval the precision rule is about
+CONFIDENCE = 95.0
+
+
+def parse_until(rules):
+    """`--until` as something the repetition loop can ask.
+
+    Two kinds: a duration, which is a budget for the point, and `metric±x%`,
+    which is how precisely that metric's median has to be known. Several may be
+    given, and the first to be satisfied ends the point — so `--until 3s
+    --until 'time±5%'` means "three seconds, or sooner if it settles".
+    """
+    parsed = []
+    for rule in rules or []:
+        text = rule.strip().replace("+-", "±")
+        if "±" in text:
+            metric, _, margin = text.partition("±")
+            margin = margin.strip().rstrip("%")
+            try:
+                percent = float(margin)
+            except ValueError:
+                percent = -1.0
+            if not metric.strip() or percent <= 0:
+                report(
+                    LogLevel.FATAL,
+                    "malformed --until rule",
+                    rule,
+                    hint="a precision rule reads metric±5%",
+                )
+            parsed.append(
+                {"kind": "precision", "metric": metric.strip(), "percent": percent}
+            )
+            continue
+        seconds = parse_duration(text)
+        if seconds is None:
+            report(
+                LogLevel.FATAL,
+                "malformed --until rule",
+                rule,
+                hint="either a duration like 3s, 500ms or 2m, or a precision "
+                "like metric±5%",
+            )
+        parsed.append({"kind": "time", "seconds": seconds})
+    return parsed
+
+
+def parse_duration(text):
+    """`3s`, `500ms`, `2m`, `1.5s`, or a bare number of seconds."""
+    match = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*(ms|s|m|h)?\s*", text)
+    if match is None:
+        return None
+    value = float(match.group(1))
+    if value <= 0:
+        return None
+    return value * {"ms": 1e-3, None: 1.0, "s": 1.0, "m": 60.0, "h": 3600.0}[
+        match.group(2)
+    ]
+
+
+def describe_until(rule):
+    if rule["kind"] == "time":
+        return format_duration(rule["seconds"])
+    return "{}±{:g}%".format(rule["metric"], rule["percent"])
+
+
+def median_precision(values, seed):
+    """How well the median of these values is known, as a fraction of it.
+
+    A percentile bootstrap: resample with replacement, take the median of each
+    resample, and measure the middle 95% of those. The median rather than the
+    mean because one slow repetition — a page fault, another tenant on the
+    machine — moves a mean and leaves a median where it was, and a rule built
+    on the mean would keep running because of it.
+
+    Returns (median, relative half-width), or None when there is not enough to
+    say anything.
+    """
+    import numpy as np
+
+    if len(values) < 3:
+        return None
+    sample = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(sample)):
+        sample = sample[np.isfinite(sample)]
+        if len(sample) < 3:
+            return None
+    middle = float(np.median(sample))
+    # seeded from the point, so that the same samples always decide the same
+    # way and a replay of a run makes the decision it made
+    rng = np.random.default_rng(seed)
+    draws = rng.choice(sample, size=(RESAMPLES, len(sample)), replace=True)
+    medians = np.median(draws, axis=1)
+    tail = (100.0 - CONFIDENCE) / 2.0
+    low, high = np.percentile(medians, [tail, 100.0 - tail])
+    half = float(high - low) / 2.0
+    if half == 0.0:
+        return middle, 0.0
+    if middle == 0.0:
+        # no relative precision to speak of: the ceiling decides instead
+        return middle, float("inf")
+    return middle, half / abs(middle)
+
+
+def satisfied_rule(settings, entry):
+    """The first rule this point now meets, or None.
+
+    Consulted after each repetition, and only once the floor is behind us: a
+    rule is about how much measuring is enough, and three repetitions is the
+    least that can answer it.
+    """
+    rules = settings.get("until") or []
+    # a resumed point brings repetitions it did not measure here, and the rule
+    # can only judge the ones it has the samples and the clock for
+    measured = entry["done"] - entry.get("resumed", 0)
+    if len(rules) == 0 or measured < settings["min_runs"]:
+        return None
+
+    for rule in rules:
+        if rule["kind"] == "time":
+            if entry["spent"] >= rule["seconds"]:
+                return dict(rule, spent=entry["spent"])
+            continue
+        values = entry["samples"].get(rule["metric"]) or []
+        found = median_precision(values, seed=abs(hash(entry["key"])) % (2**32))
+        if found is None:
+            continue
+        middle, relative = found
+        if relative * 100.0 <= rule["percent"]:
+            return dict(rule, median=middle, relative=relative)
+    return None
 
 
 def parse_coordinates(pairs, what="selector", whole=False):
@@ -1515,6 +1678,9 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             break
         rep = entry["done"]
         rep_suffix = f"_rep{rep}" if requested > 1 else ""
+        # what this repetition costs, which is what a time budget is spent on:
+        # the trials and the metric commands both
+        began = time.monotonic()
 
         # every trial gets its own captures, and a metric must be evaluated
         # against the captures of the trial that enabled it
@@ -1728,6 +1894,7 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 file_lock.release()
 
         plan.repetition_done(entry)
+        plan.measured(entry, time.monotonic() - began, collected_metrics)
         total, base = progress_units(execution, entry)
         completion = [
             get_progress(base + entry["done"], total),
@@ -1748,6 +1915,40 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             completed=base + entry["done"],
             total=total,
         )
+
+        # enough is a property of the measurement, not of the command line:
+        # asked after each repetition, and answered from what this point has
+        # produced so far
+        met = satisfied_rule(settings, entry)
+        if met is not None:
+            plan.settle(entry)
+            said = describe_until(met)
+            if met["kind"] == "precision":
+                said += " (±{:.1f}%)".format(met["relative"] * 100.0)
+            report(
+                LogLevel.INFO,
+                point_to_string(point),
+                "settled after {} of {} run(s)".format(
+                    entry["done"] - entry.get("resumed", 0), settings["max_runs"]
+                ),
+                said,
+            )
+            progress.emit(
+                "point.settled",
+                index=i,
+                key=list(entry["key"]),
+                runs=entry["done"] - entry.get("resumed", 0),
+                recorded=entry.get("resumed", 0),
+                limit=settings["max_runs"],
+                spent=entry["spent"],
+                rule=describe_until(met),
+                # not `kind`: that is `Progress.emit`'s own first parameter,
+                # and a field by that name collides with it
+                criterion=met["kind"],
+                median=met.get("median"),
+                relative=met.get("relative"),
+                total=total,
+            )
 
         for metric_name, values in collected_metrics.items():
             if len(values) > 1:
@@ -2362,6 +2563,50 @@ def build_settings(args):
                 "script it writes is sequential",
             )
 
+    # A stopping rule and a fixed count are answers to different questions:
+    # how much measuring is enough, and how much to do regardless.
+    settings["until"] = parse_until(getattr(args, "until", None))
+    given = lambda name: getattr(args, name, None) is not None
+    if settings["until"] and given("repeat"):
+        report(
+            LogLevel.FATAL,
+            "--repeat and --until ask different things",
+            hint="--until repeats a point until a rule holds; bound it with "
+            "--min-runs and --max-runs",
+        )
+    if settings["until"]:
+        settings["min_runs"] = args.min_runs if given("min_runs") else 3
+        settings["max_runs"] = args.max_runs if given("max_runs") else 100
+        if settings["min_runs"] < 1 or settings["max_runs"] < settings["min_runs"]:
+            report(
+                LogLevel.FATAL,
+                "--min-runs {} and --max-runs {} leave nothing to run".format(
+                    settings["min_runs"], settings["max_runs"]
+                ),
+            )
+        # the ceiling is what the plan is built with: a point starts out asking
+        # for the most it could need, and gives back what it turns out not to
+        settings["repeat"] = settings["max_runs"]
+        report(
+            LogLevel.INFO,
+            "repeating until",
+            " or ".join(describe_until(rule) for rule in settings["until"]),
+            hint="between {} and {} runs per point".format(
+                settings["min_runs"], settings["max_runs"]
+            ),
+        )
+    else:
+        settings["repeat"] = args.repeat if given("repeat") else 1
+        settings["min_runs"] = settings["repeat"]
+        settings["max_runs"] = settings["repeat"]
+        for name in ("min_runs", "max_runs"):
+            if given(name):
+                report(
+                    LogLevel.WARNING,
+                    "--{} does nothing without --until".format(name.replace("_", "-")),
+                    hint="-r sets the number of repetitions on its own",
+                )
+
     # A run covers a configured space or a list of points, never both: the two
     # answer the same question, and a rule for combining them would be a rule
     # nobody could remember.
@@ -2421,6 +2666,12 @@ def build_run_directory(settings, args):
     settings["run_dir"] = None
     settings["run_id"] = None
     settings["root"] = None
+    # `${yuclid.workspace}` is answerable before a directory is claimed, and
+    # stays answerable when none is — compiling a script writes no run, and the
+    # script it writes still has to name the same place
+    global WORKSPACE
+    WORKSPACE = workspace.root_path(workspace=getattr(args, "workspace", None))
+    settings["workspace"] = WORKSPACE
     settings["progress"] = workspace.Progress(None)
     settings["setup_dir"] = os.path.join(workspace.DIRNAME, "setup")
     settings["trials"] = Trials()
@@ -2850,8 +3101,16 @@ def run_experiments(
 
 
 def validate_settings(data, settings):
+    if "workspace" in data["space"]:
+        report(
+            LogLevel.FATAL,
+            "a dimension cannot be called 'workspace'",
+            hint="${yuclid.workspace} already names the directory this run "
+            "records itself in, and one of them would shadow the other",
+        )
+
+    valid = {x["name"] for x in data["metrics"]}
     if settings["metrics"]:
-        valid = {x["name"] for x in data["metrics"]}
         wrong = [m for m in settings["metrics"] if m not in valid]
         if len(wrong) > 0:
             hint = "available metrics: {}".format(", ".join(valid))
@@ -2860,6 +3119,34 @@ def validate_settings(data, settings):
                 "invalid metrics",
                 ", ".join(wrong),
                 hint=hint,
+            )
+
+    # a rule watching a metric nothing produces would never be satisfied, and
+    # every point would quietly run to the ceiling
+    watched = [
+        rule["metric"]
+        for rule in settings.get("until") or []
+        if rule["kind"] == "precision"
+    ]
+    unknown = [name for name in watched if name not in valid]
+    if len(unknown) > 0:
+        report(
+            LogLevel.FATAL,
+            "--until watches a metric that does not exist",
+            ", ".join(unknown),
+            hint="available metrics: {}".format(", ".join(sorted(valid))),
+        )
+    # and one that exists but is not being collected is the same trap
+    if settings["metrics"]:
+        unwatched = [name for name in watched if name not in settings["metrics"]]
+        if len(unwatched) > 0:
+            report(
+                LogLevel.FATAL,
+                "--until watches a metric that -m leaves out",
+                ", ".join(unwatched),
+                hint="add it to -m, or watch one of {}".format(
+                    ", ".join(settings["metrics"])
+                ),
             )
 
 

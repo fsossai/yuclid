@@ -57,6 +57,12 @@ class Plan:
             "done": done,
             "status": DONE if done >= self.repeat else PENDING,
             "resumed": done,
+            # what a stopping rule reads: the time this run has spent measuring
+            # this point, and every value each metric has given for it. Held on
+            # the entry rather than in the loop, because a paused point leaves
+            # that loop and comes back to it
+            "spent": 0.0,
+            "samples": dict(),
         }
 
     def _renumber(self):
@@ -111,6 +117,25 @@ class Plan:
     def repetition_done(self, entry):
         with self.lock:
             entry["done"] += 1
+
+    def settle(self, entry):
+        """This point has been measured enough: ask for no more of it.
+
+        The same joint an abandoned repetition uses — the target is what the
+        loop compares against and what the totals are counted from, so lowering
+        it to what has been done ends the point and gives the run back the
+        repetitions it turned out not to need.
+        """
+        with self.lock:
+            entry["target"] = entry["done"]
+
+    def measured(self, entry, seconds, metrics):
+        """Remember what a repetition cost and what it produced."""
+        with self.lock:
+            entry["spent"] += seconds
+            for name, values in metrics.items():
+                kept = entry["samples"].setdefault(name, [])
+                kept.extend(values)
 
     def abandon_repetition(self, entry):
         """An abandoned repetition is one fewer, not one to try again.
