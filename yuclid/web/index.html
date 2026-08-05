@@ -33,10 +33,17 @@
     display: flex; align-items: baseline; gap: 12px;
   }
   header b { font-weight: 600; letter-spacing: .02em; }
-  /* which directory this is watching: one server per directory, and more than
+  /* the workspace this is reading: one server per workspace, and more than
      one may be open at once */
-  #where {
+  /* pushed to the far side: the browser is often not on the machine doing the
+     work, and a forwarded port looks exactly like a local one */
+  #who {
     margin-left: auto; color: var(--dim); font-size: 12.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+  }
+  #where {
+    color: var(--dim); font-size: 12.5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow-wrap: anywhere;
   }
@@ -196,6 +203,19 @@
     color: var(--accent); font-weight: 600;
   }
   #launch-repeat, #launch-parallel { width: 6ch; }
+  /* the one button on this page that does anything: everything else only
+     changes what it will do */
+  #launch-go {
+    background: var(--accent); border-color: var(--accent); color: var(--panel);
+    font-weight: 600; padding: 6px 18px;
+  }
+  #launch-go:hover:not(:disabled) {
+    background: var(--accent); color: var(--panel); filter: brightness(1.1);
+  }
+  #launch-go:disabled {
+    background: var(--chip); border-color: var(--line); color: var(--dim);
+    opacity: 1;
+  }
   /* the selection is one thing, and the buttons that act on it are not part
      of it: the rules say where it begins and ends */
   .selection {
@@ -226,7 +246,7 @@
     margin-top: 6px; font-size: 12.5px; color: var(--warn);
     overflow-wrap: anywhere;
   }
-  header #version { margin-left: auto; color: var(--dim); font-size: 12.5px; }
+  header #version { color: var(--dim); font-size: 12.5px; }
 
   /* The space, drawn as boxes inside boxes. Each level lays its children out
      across the other axis from its parent, and every child takes an equal
@@ -286,6 +306,10 @@
     margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
   }
   .look-head { margin-bottom: 10px; }
+  /* which point this is: the dimensions recede, the values stand out */
+  .look-who { display: inline; }
+  .coord-dim { color: var(--dim); font-weight: 400; }
+  .coord-value { color: var(--ink); font-weight: 600; }
   table.look {
     border-collapse: collapse; font-size: 13px; margin-bottom: 12px;
     font-variant-numeric: tabular-nums;
@@ -307,6 +331,15 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     overflow-wrap: anywhere;
   }
+  .look-reps { display: flex; flex-wrap: wrap; gap: 3px 20px; }
+  .rep-time { display: inline-flex; align-items: baseline; gap: 6px; }
+  /* the repetition's number, kept out of the way of its time */
+  .rep-time i {
+    font-style: normal; font-size: 11px; opacity: .55; min-width: 1.2em;
+    text-align: right;
+  }
+  .rep-time b { font-weight: 400; color: var(--ink); }
+  .rep-time[data-failed="true"] b { color: var(--fail); }
   /* wide screens keep the alternation; narrow ones turn the outermost level
      down the page, so nothing is ever pushed off the side */
   @media (max-width: 720px) {
@@ -315,7 +348,7 @@
 </style>
 </head>
 <body>
-<header><b>Yuclid</b><span id="version">__YUCLID_VERSION__</span><span id="where" title="the directory holding .yuclid">__YUCLID_ROOT__</span></header>
+<header><b>Yuclid</b><span id="version">__YUCLID_VERSION__</span><span id="where" title="the workspace these runs are recorded in">__YUCLID_ROOT__</span><span id="who" title="the account and machine these runs belong to">__YUCLID_WHO__</span></header>
 <main>
   <nav id="runs"></nav>
   <div id="panes">
@@ -531,7 +564,7 @@ const confirmChip = (dim, value) => {
 // what the configuration declares, and which of it the next run should cover.
 // The gestures are the ones the Dimensions panel already uses, so a value is
 // taken out of a run the same way it is dropped from one
-let config = null;
+let config = null, configError = null;
 const chosen = {};
 const typed = {};
 const describePreset = name => {
@@ -812,10 +845,24 @@ const temporaryBlock = () => {
 
 const loadConfig = async () => {
   config = await ask("/api/config");
+  const go = document.getElementById("launch-go");
   if (config.error) {
     document.getElementById("launch-body").textContent = config.error;
+    // there is no space to choose from, so there is nothing Start could start
+    go.disabled = true;
+    go.title = config.error;
+    tell("");
+    document.getElementById("launch-size").textContent = "";
+    // kept as an error rather than as a configuration, so that opening the
+    // pane again looks for the file rather than remembering that there was none
+    const failed = config;
+    config = null;
+    configError = failed.error;
     return;
   }
+  go.disabled = false;
+  go.title = "";
+  configError = null;
   // nothing is chosen to begin with: a new run is built by saying what it
   // should cover, not by paring back a space you never asked for
   for (const [dim, values] of Object.entries(config.dimensions)) {
@@ -1601,8 +1648,8 @@ const renderRun = run => {
     button.title = "open New run with this run's points, to change before starting";
     button.onclick = async () => {
       if (!config) await loadConfig();
-      if (!config || config.error) {
-        return say((config && config.error) || "no configuration to run", true);
+      if (!config) {
+        return say(configError || "no configuration to run", true);
       }
       show("launch");
       seedLaunch(lastRun && lastRun.id === run.id ? lastRun : run);
@@ -2177,6 +2224,15 @@ const renderSpace = () => {
     body.innerHTML = "";
     body.append(buildNest(roster.order, values, sizes, 0, [], 0));
   }
+  // Moving between points compares each in turn; leaving the space altogether
+  // gives the selected point its own table back. On the space itself rather
+  // than on each leaf, so that crossing the gap between two points does not
+  // flicker the panel below.
+  body.onmouseleave = () => {
+    if (against === null) return;
+    against = null;
+    renderLook();
+  };
 
   const held = roster.points.size;
   says.textContent =
@@ -2326,6 +2382,44 @@ const fillLeaf = (leaf, point, state) => {
 
 const nameOf = id => coords(roster.order, id.split("\u0000"));
 
+// The same point, built out of parts so that the values can be told from the
+// dimension names. Every point in a run carries the same dimensions, so those
+// are the half that says nothing: the values are what distinguishes this point
+// from the one beside it, and they are what the eye should land on.
+const named = id => {
+  const whole = document.createElement("span");
+  whole.className = "look-who";
+  const key = id.split("\u0000");
+  if (!roster || roster.order.length !== key.length) {
+    whole.textContent = nameOf(id);
+    return whole;
+  }
+  roster.order.forEach((dim, i) => {
+    if (i > 0) {
+      const comma = document.createElement("span");
+      comma.className = "coord-dim";
+      comma.textContent = ", ";
+      whole.append(comma);
+    }
+    const label = document.createElement("span");
+    label.className = "coord-dim";
+    label.textContent = `${dim}=`;
+    const value = document.createElement("span");
+    value.className = "coord-value";
+    value.textContent = key[i];
+    whole.append(label, value);
+  });
+  return whole;
+};
+
+// a separator, in the colour the dimension names use
+const faint = text => {
+  const span = document.createElement("span");
+  span.className = "coord-dim";
+  span.textContent = text;
+  return span;
+};
+
 // The panel under the space. Everything in it comes from records the page is
 // already polling, so a point being measured fills in as its repetitions land
 // — redrawn only when a number has actually changed, like the rest of the page.
@@ -2360,11 +2454,15 @@ const lookHead = (subject, point, held) => {
   const head = document.createElement("div");
   head.className = "row look-head";
 
-  const who = document.createElement("b");
-  who.textContent = held
-    ? `${nameOf(pinned)} — ${nameOf(subject)}`
-    : nameOf(subject);
-  head.append(who);
+  if (held) {
+    head.append(named(pinned), faint("—"), named(subject));
+  } else {
+    head.append(named(subject));
+  }
+
+  // the same dot the state uses between its own parts, so the whole line reads
+  // as one sentence rather than as a heading with things after it
+  head.append(faint("·"));
 
   const state = document.createElement("span");
   state.style.color = "var(--dim)";
@@ -2378,8 +2476,8 @@ const lookHead = (subject, point, held) => {
   how.style.color = "var(--dim)";
   how.style.fontSize = "12.5px";
   how.textContent = held
-    ? "move over another point to compare it, or click the pinned one to let go"
-    : "move over another point to compare them";
+    ? "move off the space to come back to this one"
+    : "move over another point to compare them, or click again to let go";
   head.append(how);
   return head;
 };
@@ -2411,7 +2509,7 @@ const metricTable = (rows, comparing) => {
   const table = document.createElement("table");
   table.className = "look";
   const columns = comparing
-    ? ["metric", "pinned", "this one", "Δ"]
+    ? ["metric", "selected", "other", "Δ"]
     : ["metric", "n", "median", "mean", "stddev", "min", "max"];
 
   const head = table.insertRow();
@@ -2462,14 +2560,27 @@ const lookFooter = point => {
   const foot = document.createElement("div");
   foot.className = "look-foot";
 
+  // one item per repetition rather than one run-on string: a point measured
+  // twenty times is a row somebody has to read, and reading it means seeing
+  // where one time ends and the next begins
   const reps = (point.reps || []).filter(r => r.seconds !== null);
   if (reps.length > 0) {
-    foot.append(
-      lookLine(
-        "repetitions",
-        reps.map(r => `${r.rep}: ${lapse(r.seconds)}`).join("   ")
-      )
-    );
+    const line = lookLine("repetitions", "");
+    line.lastChild.className = "look-reps";
+    for (const r of reps) {
+      const item = document.createElement("span");
+      item.className = "rep-time";
+      const which = document.createElement("i");
+      which.textContent = r.rep;
+      const took = document.createElement("b");
+      took.textContent = lapse(r.seconds);
+      // a repetition that failed took as long as it took, and saying so is
+      // the difference between a slow measurement and no measurement
+      if (r.failed) item.dataset.failed = "true";
+      item.append(which, took);
+      line.lastChild.append(item);
+    }
+    foot.append(line);
   }
 
   // the last repetition's captures: the earlier ones are the same names with a

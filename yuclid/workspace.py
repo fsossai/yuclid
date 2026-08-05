@@ -81,6 +81,18 @@ def open_root(start=None, workspace=None):
     return root
 
 
+def work_of(root):
+    """The directory a workspace is about.
+
+    A workspace sitting beside the work is named `.yuclid`, and the work is the
+    directory holding it. One put somewhere else is the whole of it: the
+    configuration, the runs and everything they wrote are in the one place, so
+    that a workspace can be moved, copied or served without carrying a second
+    path around.
+    """
+    return os.path.dirname(root) if os.path.basename(root) == DIRNAME else root
+
+
 def create_run(root, stamp, **manifest):
     """Claim a directory for this run, and say what run it is.
 

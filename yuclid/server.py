@@ -221,9 +221,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             html = f.read()
         html = html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
         html = html.replace(b"__YUCLID_VERSION__", __version__.encode())
-        # the directory holding .yuclid, which is the one the runs are about
-        watching = self.server.base
-        return html.replace(b"__YUCLID_ROOT__", watching.encode())
+        # The workspace, which is where everything shown on the page comes
+        # from. With --workspace it is not the working directory, and then it
+        # is the one worth naming: two servers on one directory look identical
+        # otherwise.
+        # the workspace, named by the directory it is about: the `.yuclid` on
+        # the end of the usual one says nothing, since every workspace is one
+        html = html.replace(b"__YUCLID_ROOT__", self.server.base.encode())
+        return html.replace(b"__YUCLID_WHO__", whoami().encode())
 
     def manifest(self, run_id):
         directory = workspace.run_directory(self.server.root, run_id)
@@ -628,6 +633,23 @@ def check_points(points, declared):
     return checked
 
 
+def whoami():
+    """`user@machine`, short and free.
+
+    Worth saying on the page because the browser is often not on the machine
+    doing the work: a forwarded port looks exactly like a local one, and the
+    runs are the other host's. The short name rather than `ssh_target`'s fully
+    qualified one — this is a label, not something to paste into ssh, and it
+    costs no subprocess.
+    """
+    host = workspace.hostname()
+    try:
+        return "{}@{}".format(getpass.getuser(), host)
+    except Exception:
+        # no account to name: the host alone is still worth having
+        return host
+
+
 def ssh_target():
     """`user@host` as it would be typed from somewhere else.
 
@@ -961,8 +983,19 @@ def launch(args):
     # Serving an empty directory is useful: it can launch the first run from
     # the browser. Use the same workspace creation path as `yuclid run` rather
     # than requiring a run to have happened here already.
-    directory = os.path.abspath(args.directory or os.getcwd())
-    root = workspace.open_root(directory, args.workspace)
+    root = workspace.open_root(args.directory, args.workspace)
+    # everything this server is about comes from the workspace: the runs it
+    # lists, the configuration it offers, and the directory a run it starts is
+    # started in. Otherwise `--workspace` would move only half of it, and the
+    # page would describe one place while starting runs in another.
+    directory = workspace.work_of(root)
+    if args.workspace is not None and args.directory is not None:
+        report(
+            LogLevel.WARNING,
+            "--workspace decides where everything is, so {} is ignored".format(
+                args.directory
+            ),
+        )
     if not any(os.path.isfile(os.path.join(directory, name)) for name in DEFAULT_INPUTS):
         report(
             LogLevel.WARNING,
