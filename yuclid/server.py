@@ -568,6 +568,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if presets:
             argv += ["-p"] + list(presets)
 
+        # the run's own order, not a selection: which dimension the space
+        # panel nests outermost afterwards is decided here, once, rather than
+        # by whatever order the configuration happened to declare them in
+        order = request.get("order")
+        if order is not None:
+            if not isinstance(order, list) or not all(
+                isinstance(d, str) for d in order
+            ):
+                return {"error": "order must be a list of dimension names"}
+            unknown = [d for d in order if d not in declared]
+            if unknown:
+                return {"error": "unknown dimension in order: {}".format(", ".join(unknown))}
+            if len(set(order)) != len(order):
+                return {"error": "order names the same dimension more than once"}
+            argv += ["--order"] + order
+
         repeat = request.get("repeat")
         repeat = 1 if repeat is None else repeat
         if not isinstance(repeat, int) or not 1 <= repeat <= 10000:

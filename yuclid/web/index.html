@@ -96,6 +96,7 @@
   .bar[data-mood="paused"] div { background: var(--pause); }
   .bar[data-mood="failed"] div { background: var(--fail); }
   .bar[data-mood="dead"] div { background: var(--warn); }
+  .bar[data-mood="done"] div { background: var(--dim); }
   .state { font-weight: 600; }
   .state[data-mood="fine"] { color: var(--accent); }
   .state[data-mood="paused"] { color: var(--pause); }
@@ -110,10 +111,9 @@
   button.act:disabled { opacity: .4; cursor: not-allowed; }
   button.act.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--warn); }
   /* the Control panel is pause/stop/kill, not a set of things to encourage —
-     a neutral halo on hover rather than the same green a "go" action gets */
+     no halo, no green: just enough of a background shift to say it's there */
   button.act[data-op]:hover:not(:disabled) {
-    border-color: var(--ink); color: var(--ink);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 18%, transparent);
+    border-color: var(--line); background: var(--chip);
   }
   #name {
     padding: 4px 8px; border: 1px solid transparent; border-radius: 6px;
@@ -125,6 +125,10 @@
   .dim-row > b {
     display: block; color: var(--dim); font-weight: 600; font-size: 12.5px;
   }
+  /* the run's own dimensions: values sit beside the name, not under it, and
+     a dropped one stays exactly where it was rather than jumping to its own
+     list further down */
+  #dims .dim-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 10px; }
   .dim-head { display: flex; align-items: baseline; gap: 8px; }
   .dim-head .pick {
     border: 0; background: none; color: var(--dim); font: inherit;
@@ -159,6 +163,15 @@
     opacity: .55; cursor: grab;
   }
   .chip.gone:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .chip.order { cursor: grab; }
+  .chip.order[data-over="true"] { border-color: var(--accent); color: var(--accent); }
+  /* which metric is colouring the space right now, in the same hot the
+     heatmap itself uses rather than the chip's usual warn-on-hover */
+  .chip.heat-pick:hover:not(:disabled) { border-color: var(--hot); color: var(--hot); }
+  .chip.heat-pick[data-focused="true"] {
+    border-color: var(--hot); color: var(--hot); font-weight: 600;
+    background: color-mix(in srgb, var(--hot) 14%, transparent);
+  }
   /* a long point list scrolls inside its own box rather than pushing the
      controls that act on it off the page */
   .zone.points { max-height: 32vh; overflow-y: auto; align-items: flex-start; }
@@ -306,9 +319,10 @@
   }
   /* a point is its repetitions, side by side and filled as they are measured */
   .leaf {
-    display: flex; gap: 2px; flex: 1 1 0; min-width: 0; min-height: 18px;
+    display: flex; gap: 2px; flex: 1 1 0; min-width: 0; min-height: 30px;
     padding: 3px; border: 1px solid var(--line); border-radius: 5px;
     overflow: hidden;
+    position: relative; container-type: inline-size;
   }
   .leaf .rep {
     flex: 1 1 0; min-width: 2px; border-radius: 2px;
@@ -319,9 +333,15 @@
   .leaf .rep[data-mark="done"] { background: var(--accent); }
   .leaf .rep[data-mark="failed"] { background: var(--fail); }
   .leaf .rep[data-mark="running"] { background: color-mix(in srgb, var(--dim) 55%, transparent); }
+  /* the bars are opaque and fill nearly the whole box, so while a point is
+     heat-coloured they would leave only the thin padding ring showing it —
+     the heat tint is the point's own colour then, not the status marks' */
+  .leaf[data-heat="true"] .rep { background: transparent; }
 
   .leaf[data-state="done"] { border-color: var(--accent); color: var(--accent); }
-  .leaf[data-state="running"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  /* green is earned by every repetition being done, not just some of them —
+     still running gets the same neutral grey the in-flight rep bar does */
+  .leaf[data-state="running"] { border-color: var(--dim); color: var(--dim); background: color-mix(in srgb, var(--dim) 14%, transparent); }
   .leaf[data-state="pending"] { color: var(--dim); }
   .leaf[data-state="failed"] { border-color: var(--fail); color: var(--fail); }
   .leaf[data-state="killed"] { border-color: var(--warn); color: var(--warn); }
@@ -341,8 +361,28 @@
   .leaf[data-pinned="true"] {
     outline: 2px solid var(--ink); outline-offset: 1px;
   }
+  /* How far this point is from the pinned one, in the percentage the Δ column
+     shows. A point too narrow to hold the number keeps the shade on its own. */
+  .leaf[data-delta]::after {
+    content: attr(data-delta);
+    display: none;
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 1px 5px; border-radius: 3px;
+    font-size: 14px; line-height: 1.2; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--ink);
+    background: color-mix(in srgb, var(--panel) 78%, transparent);
+  }
+  @container (min-width: 66px) {
+    .leaf[data-delta]::after { display: block; }
+  }
   #space-look:not(:empty) {
     margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  }
+  #space-heat:not(:empty) {
+    margin-top: 14px; display: flex; flex-direction: column; gap: 8px;
   }
   .look-head { margin-bottom: 10px; }
   /* A failure, in three voices. Yuclid's own words recede; the command it ran
@@ -377,11 +417,13 @@
     text-transform: uppercase; letter-spacing: .05em; padding: 2px 14px 4px 0;
   }
   table.look th:not(:first-child) { text-align: right; }
-  table.look td { padding: 2px 14px 2px 0; cursor: pointer; }
-  table.look tr:hover td { background: var(--chip); }
-  table.look tr[data-focused="true"] td { color: var(--hot); font-weight: 600; }
+  table.look td { padding: 2px 14px 2px 0; }
+  table.look tr[data-focused="true"] td { font-weight: 600; }
   .look-foot { font-size: 12.5px; color: var(--dim); }
   .look-foot > div { display: flex; gap: 10px; margin-top: 3px; }
+  /* a section of its own, not just another line: room enough that
+     "captures" reads as a new part of the footer, not a stray label */
+  .look-foot > .look-section { margin-top: 12px; }
   .look-label {
     flex: 0 0 8em; color: var(--dim); font-weight: 600; font-size: 12px;
   }
@@ -467,13 +509,14 @@
     </section>
     <section id="space" hidden>
       <div class="row" style="margin-bottom: 10px">
-        <button class="act" id="space-back">← the run</button>
+        <button class="act" id="space-back">← back</button>
         <h2 style="margin: 0">Space — every point of the run, nested by dimension</h2>
       </div>
       <div class="row" style="margin: 8px 0">
         <span id="space-says" style="color: var(--dim)"></span>
       </div>
       <div id="space-body"></div>
+      <div id="space-heat"></div>
       <div id="space-look"></div>
     </section>
     <section id="nothing" hidden>
@@ -518,7 +561,7 @@
       </div>
     </section>
     <section>
-      <h2>Dimensions — click to drop, drag back to restore</h2>
+      <h2>Dimensions</h2>
       <div id="dims"></div>
     </section>
     <section id="gaps-section" hidden>
@@ -680,6 +723,10 @@ let config = null, configError = null;
 let wanted = null;
 const chosen = {};
 const typed = {};
+// the order the next run tries dimensions in, first slowest to last fastest;
+// starts as the configuration's own order, and is only sent along if the
+// drag below actually changes it
+let dimOrder = [];
 const describePreset = name => {
   const parts = Object.entries(config.presets[name]).map(
     ([dim, values]) => `${dim}=${values.join(",")}`
@@ -992,9 +1039,42 @@ const resetLaunch = () => {
   pointsOpen = false;
   basedOn = null;
   wanted = new Set(config.metrics || []);
+  dimOrder = Object.keys(config.dimensions);
   document.getElementById("launch-repeat").value = 1;
   document.getElementById("launch-parallel").value = 1;
   document.getElementById("launch-name").value = "";
+};
+
+// each dimension is a chip that can be dragged onto another to swap places,
+// the same gesture the Dimensions panel already uses for a value dragged
+// back into a run — dragOver marks the chip it would land on, drop moves it
+const renderOrderZone = () => {
+  const zone = document.createElement("div");
+  zone.className = "zone";
+  dimOrder.forEach(dim => {
+    const chip = document.createElement("span");
+    chip.className = "chip order";
+    chip.textContent = dim;
+    chip.title = "drag to reorder";
+    chip.draggable = true;
+    chip.ondragstart = e => e.dataTransfer.setData("text/plain", dim);
+    chip.ondragover = e => {
+      e.preventDefault();
+      chip.dataset.over = "true";
+    };
+    chip.ondragleave = () => (chip.dataset.over = "false");
+    chip.ondrop = e => {
+      e.preventDefault();
+      chip.dataset.over = "false";
+      const dragged = e.dataTransfer.getData("text/plain");
+      if (!dragged || dragged === dim || !dimOrder.includes(dragged)) return;
+      dimOrder.splice(dimOrder.indexOf(dragged), 1);
+      dimOrder.splice(dimOrder.indexOf(dim), 0, dragged);
+      renderLaunch();
+    };
+    zone.append(chip);
+  });
+  return zone;
 };
 
 const renderLaunch = () => {
@@ -1035,6 +1115,19 @@ const renderLaunch = () => {
       zone.append(pill);
     }
     row.append(zone);
+    body.append(row);
+  }
+
+  // the order the run tries points in, and the order the space panel nests
+  // them by afterwards — the same list the run itself carries in its plan,
+  // so dragging it here is the only place this needs setting
+  if (dimOrder.length > 1) {
+    const row = document.createElement("div");
+    row.className = "dim-row";
+    const label = document.createElement("b");
+    label.textContent = "order — drag to reorder; the first varies slowest, the last fastest";
+    row.append(label);
+    row.append(renderOrderZone());
     body.append(row);
   }
 
@@ -1555,6 +1648,11 @@ document.getElementById("launch-go").onclick = async () => {
   };
   const metrics = chosenMetrics();
   if (metrics !== null) common.metrics = metrics;
+  // only said when it would change anything: the configuration's own order
+  // is already what a run does without this
+  if (JSON.stringify(dimOrder) !== JSON.stringify(Object.keys(config.dimensions))) {
+    common.order = dimOrder;
+  }
   const answer = await ask(
     "/api/runs",
     points ? {points, ...common} : {select: selection(), ...common}
@@ -1586,15 +1684,14 @@ const renderDims = run => {
 
   dims.innerHTML = "";
   for (const [dim, values] of Object.entries(run.dimensions || {})) {
-    const kept = values.filter(v => !v.dropped);
-    const gone = values.filter(v => v.dropped);
-
     const row = document.createElement("div");
     row.className = "dim-row";
     const label = document.createElement("b");
     label.textContent = dim;
     row.append(label);
 
+    // one zone for every value, dropped or not: a dropped value stays right
+    // where it was, greyed out, rather than jumping to a list of its own
     const zone = document.createElement("div");
     zone.className = "zone";
     zone.ondragover = e => {
@@ -1609,21 +1706,30 @@ const renderDims = run => {
       if (value) send({op: "add", coords: {[dim]: [value]}});
     };
 
-    for (const {value} of kept) {
+    for (const {value, dropped} of values) {
       if (asking && asking.dim === dim && asking.value === value) {
         zone.append(confirmChip(dim, value));
         continue;
       }
       const chip = document.createElement("button");
-      chip.className = "chip";
-      chip.textContent = value;
       chip.disabled = !live;
-      chip.title = live ? `drop ${dim}=${value}` : "";
-      chip.onclick = e => {
-        e.stopPropagation();
-        asking = {dim, value};
-        renderDims(lastRun);
-      };
+      if (dropped) {
+        chip.className = "chip gone";
+        chip.textContent = value;
+        chip.draggable = live;
+        chip.title = live ? `drag up or double-click to restore ${dim}=${value}` : "";
+        chip.ondragstart = e => e.dataTransfer.setData("text/plain", value);
+        chip.ondblclick = () => send({op: "add", coords: {[dim]: [value]}});
+      } else {
+        chip.className = "chip";
+        chip.textContent = value;
+        chip.title = live ? `drop ${dim}=${value}` : "";
+        chip.onclick = e => {
+          e.stopPropagation();
+          asking = {dim, value};
+          renderDims(lastRun);
+        };
+      }
       zone.append(chip);
     }
     row.append(zone);
@@ -1654,26 +1760,6 @@ const renderDims = run => {
       row.append(form);
     }
 
-    if (gone.length) {
-      const away = document.createElement("div");
-      away.className = "zone";
-      const hint = document.createElement("span");
-      hint.className = "hint";
-      hint.textContent = "dropped:";
-      away.append(hint);
-      for (const {value} of gone) {
-        const chip = document.createElement("button");
-        chip.className = "chip gone";
-        chip.textContent = value;
-        chip.disabled = !live;
-        chip.draggable = live;
-        chip.title = live ? `drag up or double-click to restore ${dim}=${value}` : "";
-        chip.ondragstart = e => e.dataTransfer.setData("text/plain", value);
-        chip.ondblclick = () => send({op: "add", coords: {[dim]: [value]}});
-        away.append(chip);
-      }
-      row.append(away);
-    }
     dims.append(row);
   }
 };
@@ -1852,7 +1938,9 @@ const renderRun = run => {
   document.getElementById("rcount").textContent =
     `[${run.completed}/${run.total}] ${percent}%`;
   const bar = document.getElementById("rbar");
-  bar.dataset.mood = run.mood;
+  // green means going: a run that ended without anything wrong is still
+  // "fine", but the bar reserves that colour for one still moving
+  bar.dataset.mood = !run.live && run.mood === "fine" ? "done" : run.mood;
   const fill = bar.firstElementChild;
   if (bar.dataset.run === run.id) {
     // the same run moving along: worth animating, because it is progress
@@ -2422,11 +2510,18 @@ const remember = record => {
     point.done = (point.done || 0) + (record.repetitions || 1);
     keepSamples(point, record);
     if (record.failed) point.failed = true;
+    // "point.started" fires once for every repetition the point will run,
+    // not once each — so a repetition finishing with more still to come is
+    // still running, not back to waiting its turn
     point.status = point.failed
       ? "failed"
       : point.done >= point.target
       ? "done"
-      : "pending";
+      : "running";
+  } else if (record.type === "point.held") {
+    // a pause takes effect between repetitions: what remains is queued
+    // again, the same as a point that has not started yet
+    point.status = "pending";
   } else if (record.type === "point.killed") {
     // a repetition abandoned is one fewer to do; a point abandoned is over
     if (record.scope === "rep") {
@@ -2522,10 +2617,22 @@ let spaceLeaves = new Map();
 // being compared against it, and the metric colouring the space
 let pinned = null, against = null, focused = null;
 let lookShows = "";
+// dimensions held fixed to the pinned point's own value: unchecking one
+// shrinks the heatmap to only the points that vary in the dimensions still
+// checked, instead of comparing the pinned point against the whole space
+const fixedDims = new Set();
+// the metric browser below the space needs no pinned point at all — a
+// dimension left unchecked there is instead held to a value chosen here,
+// dim name to the value it's sliced at
+const heatSlice = new Map();
+let spaceHeatShows = "";
 
 const forgetLook = () => {
   pinned = against = focused = null;
   lookShows = "";
+  fixedDims.clear();
+  heatSlice.clear();
+  spaceHeatShows = "";
 };
 
 const renderSpace = () => {
@@ -2580,6 +2687,7 @@ const renderSpace = () => {
     const held = String(id === pinned);
     if (leaf.dataset.pinned !== held) leaf.dataset.pinned = held;
   }
+  renderSpaceHeat(values);
   renderLook();
 };
 
@@ -2596,40 +2704,234 @@ const heatScale = () => {
     if (stat) values.set(id, stat.median);
   }
   if (values.size === 0) return null;
-  const middle = pinned ? values.get(pinned) : undefined;
-  if (middle === undefined) {
-    const all = [...values.values()];
-    return {values, low: Math.min(...all), high: Math.max(...all)};
+  const middle = pinned === null ? undefined : values.get(pinned);
+  // A change against nothing is not a percentage, and neither is a change
+  // against zero: with no baseline to be relative to, the space falls back
+  // to the plain low-to-high picture of the metric's own values.
+  if (middle === undefined || middle === 0) {
+    // no pin: a dimension left unchecked in the browser below the space is
+    // held to whatever value was chosen there, rather than to a pin's
+    const sliceIndexes = [...heatSlice]
+      .map(([dim, value]) => [roster.order.indexOf(dim), value])
+      .filter(([i]) => i >= 0);
+    const shown = new Map();
+    for (const [id, value] of values) {
+      const point = roster.points.get(id);
+      if (sliceIndexes.every(([i, want]) => point.key[i] === want)) {
+        shown.set(id, value);
+      }
+    }
+    if (shown.size === 0) return null;
+    const all = [...shown.values()];
+    return {values: shown, low: Math.min(...all), high: Math.max(...all)};
   }
-  // centred on the pinned value, and as far one way as the other, so that a
-  // cell's colour means the same amount above as below
+  // A dimension held fixed narrows the comparison to points that match the
+  // pin along it — the marginal effect of whatever dimensions are still
+  // free to vary, rather than the whole space at once
+  const pin = roster.points.get(pinned);
+  const fixedIndexes = [...fixedDims]
+    .map(dim => roster.order.indexOf(dim))
+    .filter(i => i >= 0);
+  const matches = id => {
+    const point = roster.points.get(id);
+    return fixedIndexes.every(i => point.key[i] === pin.key[i]);
+  };
+  // Every included point as a percentage of the pinned one — the same figure
+  // the Δ column shows — and the largest of them either way, so a colour
+  // means the same distance above the pin as below.
+  const shown = new Map();
+  const changes = new Map();
   let reach = 0;
-  for (const value of values.values()) {
-    reach = Math.max(reach, Math.abs(value - middle));
+  for (const [id, value] of values) {
+    if (!matches(id)) continue;
+    const change = (100 * (value - middle)) / Math.abs(middle);
+    shown.set(id, value);
+    changes.set(id, change);
+    reach = Math.max(reach, Math.abs(change));
   }
-  return {values, middle, reach};
+  return {values: shown, changes, middle, reach};
+};
+
+// The distance from the pinned point, as the Δ column says it. The sign is
+// the whole point, so it is always shown; a difference too small to survive
+// one decimal is written as plain zero rather than as a signed nothing.
+const deltaText = change => {
+  const shown = Math.abs(change) < 0.05 ? 0 : change;
+  return `${shown > 0 ? "+" : ""}${shown.toFixed(1)}%`;
 };
 
 const paintLeaf = (leaf, id, point, scale) => {
   const value = scale ? scale.values.get(id) : undefined;
   if (value === undefined) {
+    // left out of the heatmap, by a slice or by having nothing measured for
+    // this metric: its progress and its own done/running/failed colour are
+    // exactly what an ordinary, unheated point would show
     if (leaf.style.background) leaf.style.background = "";
+    if (leaf.style.borderColor) leaf.style.borderColor = "";
     if (leaf.dataset.heat) delete leaf.dataset.heat;
+    if ("delta" in leaf.dataset) delete leaf.dataset.delta;
     return;
   }
-  let tint;
+  let hue, tint, label;
   if (scale.middle === undefined) {
-    // no pin: one hue, faint at the bottom of the range and full at the top
+    // no pin: one hue, faint at the bottom of the range and full at the top,
+    // and the point's own median rather than a change against anything
+    hue = "var(--hot)";
     const share =
       scale.high === scale.low ? 1 : (value - scale.low) / (scale.high - scale.low);
-    tint = `color-mix(in srgb, var(--hot) ${Math.round(12 + 58 * share)}%, transparent)`;
+    tint = `color-mix(in srgb, ${hue} ${Math.round(12 + 58 * share)}%, transparent)`;
+    label = figure(value);
   } else {
-    const off = scale.reach === 0 ? 0 : (value - scale.middle) / scale.reach;
-    const hue = off < 0 ? "var(--cool)" : "var(--hot)";
+    // pinned: how far this point is from that one as a percentage of it, the
+    // furthest such percentage in the space being full colour either way
+    const change = scale.changes.get(id);
+    const off = scale.reach === 0 ? 0 : change / scale.reach;
+    hue = off < 0 ? "var(--cool)" : "var(--hot)";
     tint = `color-mix(in srgb, ${hue} ${Math.round(70 * Math.abs(off))}%, transparent)`;
+    label = deltaText(change);
   }
   leaf.style.background = tint;
+  // the contour is the fill, not a leftover of whatever status colour the
+  // point had before it was heat-coloured, and not a stronger shade of its
+  // own that would draw a second edge around it
+  leaf.style.borderColor = tint;
   leaf.dataset.heat = "true";
+  if (leaf.dataset.delta !== label) leaf.dataset.delta = label;
+};
+
+// every metric this run has recorded anywhere, not just on the point on
+// screen — the browser below the space offers all of them regardless of
+// which point, if any, is pinned
+const allMetricNames = () => {
+  const names = new Set();
+  for (const point of roster.points.values()) {
+    for (const name of Object.keys(point.samples || {})) names.add(name);
+  }
+  return [...names].sort();
+};
+
+// A metric heatmap that needs no pinned point at all: choose a metric,
+// every point colours by its own median; pin one afterward and the same
+// picker turns into a percentage against it. The dimension row underneath
+// stays in this one place either way — a dimension unchecked here is held
+// to a chosen value with nothing pinned (a slice of the space), or to the
+// pinned point's own value once something is (the marginal effect on it),
+// which is also why the value it's held to can only be chosen in the first
+// case: the second already has an answer, the pinned point itself.
+const renderSpaceHeat = axisValues => {
+  const box = document.getElementById("space-heat");
+  const metrics = allMetricNames();
+  const signature = JSON.stringify([
+    focused, pinned, [...heatSlice], [...fixedDims], metrics,
+  ]);
+  if (signature === spaceHeatShows) return;
+  spaceHeatShows = signature;
+  box.innerHTML = "";
+  if (metrics.length === 0) return;
+
+  const picker = document.createElement("div");
+  picker.className = "row look-menu";
+  for (const name of metrics) {
+    const button = document.createElement("button");
+    button.className = "chip heat-pick";
+    button.textContent = name;
+    button.dataset.focused = String(focused === name);
+    button.title = `colour every point by ${name}`;
+    button.onclick = () => {
+      // a point already pinned gets the percentage view immediately, the
+      // same as pinning it after the metric was already picked — enabling a
+      // metric never has to mean losing the point that was selected first
+      focused = focused === name ? null : name;
+      renderSpace();
+    };
+    picker.append(button);
+  }
+  box.append(picker);
+
+  if (focused !== null && roster.order.length > 0) {
+    // the set this row reads and writes depends on whether a point is
+    // pinned — fixedDims (no stored value, held to the pin) with one, else
+    // heatSlice (dim → chosen value), never both at once
+    const held = dim => (pinned !== null ? fixedDims.has(dim) : heatSlice.has(dim));
+
+    const dims = document.createElement("div");
+    dims.className = "row look-menu";
+
+    if (roster.order.length > 1) {
+      const all = document.createElement("button");
+      all.className = "loglink";
+      all.textContent = "all";
+      all.title = "let every dimension vary";
+      all.onclick = () => {
+        if (pinned !== null) fixedDims.clear();
+        else heatSlice.clear();
+        renderSpace();
+      };
+      const none = document.createElement("button");
+      none.className = "loglink";
+      none.textContent = "none";
+      none.title = "hold every dimension to a single value";
+      none.onclick = () => {
+        roster.order.forEach((dim, i) => {
+          if (held(dim)) return;
+          if (pinned !== null) fixedDims.add(dim);
+          else heatSlice.set(dim, axisValues[i][0]);
+        });
+        renderSpace();
+      };
+      dims.append(all, none);
+    }
+
+    roster.order.forEach((dim, i) => {
+      const opt = document.createElement("label");
+      opt.className = "metric";
+      const vary = document.createElement("input");
+      vary.type = "checkbox";
+      vary.checked = !held(dim);
+      vary.title = vary.checked
+        ? `hold ${dim} to a single value`
+        : `let ${dim} vary again`;
+      vary.onchange = () => {
+        if (pinned !== null) {
+          if (vary.checked) fixedDims.delete(dim);
+          else fixedDims.add(dim);
+        } else {
+          if (vary.checked) heatSlice.delete(dim);
+          else heatSlice.set(dim, axisValues[i][0]);
+        }
+        renderSpace();
+      };
+      opt.append(vary, document.createTextNode(" " + dim));
+      dims.append(opt);
+
+      if (!held(dim)) return;
+      const select = document.createElement("select");
+      if (pinned !== null) {
+        // nothing to choose: it's already held to the pinned point's own
+        // value, and letting someone pick a different one here would be a
+        // slice, not the marginal effect on the point that's pinned
+        select.disabled = true;
+        select.title = "held to the pinned point's own value";
+        const option = document.createElement("option");
+        option.textContent = roster.points.get(pinned).key[i];
+        select.append(option);
+      } else {
+        for (const value of axisValues[i]) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value;
+          option.selected = heatSlice.get(dim) === value;
+          select.append(option);
+        }
+        select.onchange = () => {
+          heatSlice.set(dim, select.value);
+          renderSpace();
+        };
+      }
+      dims.append(select);
+    });
+    box.append(dims);
+  }
 };
 
 const buildNest = (order, values, sizes, depth, prefix, base) => {
@@ -2925,16 +3227,12 @@ const metricTable = (rows, comparing) => {
 
   for (const {name, one, two, change} of rows) {
     const row = table.insertRow();
+    // which metric is colouring the space, said here too — chosen with the
+    // buttons below the space now, not by clicking into this table
     row.dataset.focused = String(focused === name);
-    // clicking a metric colours the whole space by it; clicking it again lets
-    // the space go back to being about progress
-    row.onclick = () => {
-      focused = focused === name ? null : name;
-      renderSpace();
-    };
     const cells = comparing
       ? [name, one ? figure(one.median) : "", two ? figure(two.median) : "",
-         change === null ? "" : `${change > 0 ? "+" : ""}${change.toFixed(1)}%`]
+         change === null ? "" : deltaText(change)]
       : [name, two ? String(two.n) : "0", two ? figure(two.median) : "",
          two ? figure(two.mean) : "", two ? figure(two.stddev) : "",
          two ? figure(two.min) : "", two ? figure(two.max) : ""];
@@ -2984,6 +3282,11 @@ const lookFooter = point => {
   // repetition's share of it set off from the next by a separator line
   const trials = point.trials || [];
   if (trials.length > 0) {
+    const heading = document.createElement("div");
+    heading.className = "look-label look-section";
+    heading.textContent = "captures";
+    foot.append(heading);
+
     const picker = document.createElement("div");
     picker.className = "row look-menu";
     for (const [stream, label] of [["out", "stdout"], ["err", "stderr"], ["all", "stdout+stderr"]]) {
@@ -3129,6 +3432,31 @@ logOrderButton.onclick = () => {
 };
 renderLogOrder();
 
+// What a control operation did, in the words the person who asked would
+// use — mirrors `describe_op` in run.py exactly, reading back the same
+// `op`/`effect` pair the CLI's own log line is built from, rather than
+// printing the raw request the run was sent
+const describeOp = (op, effect) => {
+  effect = effect || {};
+  const kind = op.op;
+  if (kind === "drop")
+    return `dropped ${effect.dropped || 0} point(s), ${
+      (effect.total || 0) - (effect.completed || 0)} unit(s) remain`;
+  if (kind === "add")
+    return `added ${effect.added || 0} point(s), restored ${effect.restored || 0}`;
+  if (kind === "kill")
+    return `killed ${effect.killed || 0} point(s), ${effect.commands || 0} command(s)`;
+  if (kind === "stop")
+    return `stopped: ${effect.abandoned || 0} point(s) abandoned, ${
+      effect.interrupted || 0} interrupted`;
+  if (kind === "repeat")
+    return `${effect.retargeted || 0} point(s) now ask for ${effect.repeat} repetition(s)`;
+  if (kind === "order") return `reordered ${effect.reordered || 0} pending point(s)`;
+  if (kind === "pause") return "paused";
+  if (kind === "resume") return "resumed";
+  return kind;
+};
+
 // most lines are read, not scanned for a number, so they stay plain text;
 // a finished point is read for what it measured, so that part alone is an
 // array of parts instead of a string — the value lifted out, the rest
@@ -3150,7 +3478,8 @@ const summarize = record => {
   }
   if (record.type === "point.killed")
     return `${at}  ${coords(order, record.key)} ${record.scope} abandoned`;
-  if (record.type === "op.applied") return `${at}  control: ${JSON.stringify(record.op)}`;
+  if (record.type === "op.applied")
+    return `${at}  control: ${describeOp(record.op, record.effect)}`;
   if (record.type === "plan") return `${at}  plan: ${record.points.length} point(s)`;
   if (record.type === "run.started") return `${at}  run started`;
   if (record.type === "run.finished") return `${at}  run ${record.state}`;
