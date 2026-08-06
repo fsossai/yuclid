@@ -84,6 +84,13 @@
     margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
     letter-spacing: .08em; color: var(--dim); font-weight: 600;
   }
+  #log-order-state { text-transform: none; letter-spacing: normal; }
+  .loglink {
+    margin-left: 6px; border: 0; background: none; color: var(--dim);
+    font: inherit; text-transform: none; letter-spacing: normal;
+    cursor: pointer; text-decoration: underline;
+  }
+  .loglink:hover { color: var(--accent); }
   .bar { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
   .bar div { height: 100%; background: var(--accent); width: 0; transition: width .3s, background .3s; }
   .bar[data-mood="paused"] div { background: var(--pause); }
@@ -216,6 +223,9 @@
     margin: 0; max-height: 40vh; overflow: auto; font-size: 12.5px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim);
   }
+  /* what a point measured, lifted off the log's own dim default; the metric's
+     name stays dim beside it, so only the number itself draws the eye */
+  .log-metric { color: var(--ink); }
   #says { margin: 0; color: var(--dim); min-height: 1.5em; }
   #nothing { border-bottom: 0; }
   #nothing-says { margin: 0; color: var(--dim); }
@@ -304,7 +314,11 @@
     flex: 1 1 0; min-width: 2px; border-radius: 2px;
     background: color-mix(in srgb, var(--dim) 18%, transparent);
   }
-  .leaf .rep[data-done="true"] { background: currentColor; }
+  /* each bar is marked by what that one repetition did, not by the point as
+     a whole: a point still running can already show a finished bar green */
+  .leaf .rep[data-mark="done"] { background: var(--accent); }
+  .leaf .rep[data-mark="failed"] { background: var(--fail); }
+  .leaf .rep[data-mark="running"] { background: color-mix(in srgb, var(--dim) 55%, transparent); }
 
   .leaf[data-state="done"] { border-color: var(--accent); color: var(--accent); }
   .leaf[data-state="running"] { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
@@ -312,8 +326,7 @@
   .leaf[data-state="failed"] { border-color: var(--fail); color: var(--fail); }
   .leaf[data-state="killed"] { border-color: var(--warn); color: var(--warn); }
   .leaf[data-state="dropped"] { opacity: .4; border-style: dashed; color: var(--dim); }
-  .leaf[data-state="skipped"], .leaf[data-state="aside"] { opacity: .45; color: var(--dim); }
-  .leaf[data-state="aside"] { border-style: dashed; }
+  .leaf[data-state="aside"] { opacity: .45; color: var(--dim); border-style: dashed; }
   /* a cell the space never had: drawn, because the hole is the information */
   .leaf[data-state="absent"] {
     border-style: dotted; opacity: .3;
@@ -385,6 +398,44 @@
   }
   .rep-time b { font-weight: 400; color: var(--ink); }
   .rep-time[data-failed="true"] b { color: var(--fail); }
+  .look-menu { display: flex; gap: 10px; font-family: inherit; }
+  .look-capture {
+    margin-top: 6px; padding: 6px 8px; border: 1px solid var(--line);
+    border-radius: 6px; background: var(--panel); max-height: 30vh;
+    overflow-y: auto;
+  }
+  /* ".look-foot > div" outweighs a bare ".look-capture" by one type
+     selector, so undoing its flex row here needs the same shape to win */
+  .look-foot > .look-capture { display: block; }
+  /* each repetition nests its own share of the pane behind a rule, so the
+     "repetition N" text reads as UI chrome the moment you see it's not
+     indented like the file content it introduces */
+  .look-run { border-left: 3px solid var(--accent); padding-left: 10px; margin-bottom: 14px; }
+  .look-run:last-child { margin-bottom: 0; }
+  .look-run-head {
+    font-weight: 700; color: var(--accent); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
+  }
+  /* still running: the same shape as a finished repetition, but grey rather
+     than the accent colour a done one earns */
+  .look-run-running { border-left-color: var(--dim); }
+  .look-run-running > .look-run-head { color: var(--dim); }
+  .look-trial-head {
+    font-weight: 600; color: var(--cool); font-size: 11px;
+    margin: 6px 0 3px 8px; border-left: 2px solid var(--line); padding-left: 8px;
+  }
+  .look-text {
+    margin: 0 0 8px 8px; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .look-run-body > .look-text:last-child,
+  .look-run-body > .look-text:only-child { margin-bottom: 0; }
+  /* a chatty repetition is cut to a handful of lines rather than pushing
+     every other one out of the scrollable pane; "more" is what un-cuts it */
+  .look-text.look-text-folded { max-height: 12em; overflow: hidden; margin-bottom: 2px; }
+  .look-more { display: block; margin: 0 0 8px 8px; font-size: 11px; }
+  /* text the UI wrote itself, not the file: an empty stream, an error, "no
+     captures yet" — set apart from real output at a glance */
+  .look-meta { font-style: italic; color: var(--dim); }
   /* wide screens keep the alternation; narrow ones turn the outermost level
      down the page, so nothing is ever pushed off the side */
   @media (max-width: 720px) {
@@ -477,7 +528,7 @@
       <p id="gaps-how" style="color: var(--dim)"></p>
     </section>
     <section>
-      <h2>Log</h2>
+      <h2>Log <span id="log-order-state"></span> <button id="log-order" class="loglink">reverse</button></h2>
       <pre id="log"></pre>
     </section>
     </div>
@@ -486,6 +537,12 @@
 <script>
 const TOKEN = "__YUCLID_TOKEN__";
 let current = null, since = 0, live = false, lines = [], asking = null, editing = false;
+// a preference, not a run's state: it carries over from one run to the next
+let logNewestFirst = true;
+
+// which stream the space panel's point inspector shows, remembered across
+// points so picking "stderr" once keeps showing stderr for the next point too
+let lookStream = "all";
 
 const ask = async (path, body, method) => {
   const options = {headers: {Authorization: "Bearer " + TOKEN}};
@@ -2209,10 +2266,10 @@ const renderGapActions = (run, missing) => {
     row.innerHTML = "";
     const question = document.createElement("span");
     question.className = "confirm";
-    question.append(`measure the ${missing} missing point(s)?`);
+    question.append(`run the ${missing} missing point(s)?`);
     const yes = document.createElement("button");
     yes.className = "yes";
-    yes.textContent = "run them";
+    yes.textContent = "proceed";
     yes.onclick = fill;
     const no = document.createElement("button");
     no.className = "no";
@@ -2286,6 +2343,9 @@ const at = key => key.join("\u0000");
 // truncated, bounded so that no run can grow the page without end.
 const SAMPLE_MEMORY = 4000;
 const TRIAL_MEMORY = 200;
+// a capture longer than this folds behind a "more" button, so one chatty
+// repetition does not push every other one out of view
+const CAPTURE_FOLD_LINES = 8;
 
 // Every metric of every repetition, which `point.finished` already carries and
 // the panel used to throw away. Kept per point so that the inspector can say
@@ -2384,10 +2444,9 @@ const remember = record => {
     point.settled = record.rule;
     point.status = "done";
   } else if (record.type === "point.skipped") {
-    // remembered rather than set, because the plan the run writes when it ends
-    // calls this point done — which it is, but it was another run that did it
+    // a point resumed from a previous recording is still done: the plan
+    // record already says so, this just carries the repetition count along
     point.done = record.repetitions || point.done;
-    point.skipped = true;
   }
 };
 
@@ -2455,8 +2514,6 @@ const stateOf = point =>
     ? "absent"
     : point.aside
     ? "aside"
-    : point.skipped
-    ? "skipped"
     : point.status || "pending";
 
 let spaceShows = "";
@@ -2624,7 +2681,20 @@ const buildLeaf = (order, key, index) => {
     renderSpace();
   };
   leaf.onmouseenter = () => {
-    if (!pinned || pinned === id || against === id) return;
+    // back on the pinned point itself: the comparison ends, and its own
+    // details return, the same as a fresh click
+    if (pinned !== null && pinned === id) {
+      if (against === null) return;
+      against = null;
+      renderLook();
+      return;
+    }
+    if (against === id) return;
+    // nothing measured yet is nothing to look at: whatever was shown before
+    // — a pinned point's own details, or an earlier hover — stays up rather
+    // than blanking out over an empty one
+    const candidate = roster.points.get(id);
+    if (!candidate || !(candidate.reps && candidate.reps.length)) return;
     against = id;
     renderLook();
   };
@@ -2643,9 +2713,23 @@ const fillLeaf = (leaf, point, state) => {
     }
   }
   const done = point ? point.done || 0 : 0;
+  // point.reps carries one entry per repetition this browser watched finish,
+  // in order, so it says which of the filled bars failed; a repetition
+  // counted done without one (skipped, resumed from a previous recording)
+  // has nothing to say it failed, so it reads as an ordinary success
+  const reps = point ? point.reps || [] : [];
   [...leaf.children].forEach((rep, i) => {
-    const filled = String(i < done);
-    if (rep.dataset.done !== filled) rep.dataset.done = filled;
+    const mark =
+      i < reps.length
+        ? reps[i].failed
+          ? "failed"
+          : "done"
+        : i < done
+        ? "done"
+        : i === done && state === "running"
+        ? "running"
+        : "pending";
+    if (rep.dataset.mark !== mark) rep.dataset.mark = mark;
   });
   leaf.title = point
     ? `${leaf.dataset.of}\n${state}${wanted > 1 ? `  ${done}/${wanted}` : ""}`
@@ -2708,9 +2792,12 @@ const renderLook = () => {
   }
 
   const point = roster.points.get(subject);
-  // there is a comparison only once a second point is in play: on its own, a
-  // pinned point is described rather than measured against itself
-  const held = against && pinned !== against ? roster.points.get(pinned) : null;
+  // there is a comparison only once a point is pinned and a second one is
+  // hovered; an unpinned hover has nothing to compare against, and a pinned
+  // point on its own is described rather than measured against itself
+  const held = pinned !== null && against !== null && pinned !== against
+    ? roster.points.get(pinned)
+    : null;
   const rows = metricRows(held, point);
   const signature = JSON.stringify([
     subject, pinned, focused, point.done, point.status, rows,
@@ -2754,7 +2841,9 @@ const lookHead = (subject, point, held) => {
   how.style.fontSize = "12.5px";
   how.textContent = held
     ? "move off the space to come back to this one"
-    : "move over another point to compare them, or click again to let go";
+    : pinned === subject
+    ? "move over another point to compare them, or click again to let go"
+    : "click to pin this point and compare it against another";
   head.append(how);
   return head;
 };
@@ -2782,17 +2871,46 @@ const metricRows = (held, point) => {
   });
 };
 
+// How wide the metric-name column and the number columns need to be to fit
+// anything any point in this run could show — computed over the whole
+// roster rather than just the rows on screen, so the table does not resize
+// as hovering moves from a point with short figures to one with long ones
+const metricColumnWidths = () => {
+  let name = "metric".length;
+  let number = Math.max(
+    "selected".length, "other".length, "median".length,
+    "mean".length, "stddev".length, "min".length, "max".length,
+  );
+  for (const point of roster.points.values()) {
+    for (const [metric, values] of Object.entries(point.samples || {})) {
+      name = Math.max(name, metric.length);
+      const stat = summary(values);
+      if (!stat) continue;
+      number = Math.max(number, String(stat.n).length);
+      for (const value of [stat.median, stat.mean, stat.stddev, stat.min, stat.max]) {
+        number = Math.max(number, figure(value).length);
+      }
+    }
+  }
+  return {name, number};
+};
+
 const metricTable = (rows, comparing) => {
   const table = document.createElement("table");
   table.className = "look";
   const columns = comparing
     ? ["metric", "selected", "other", "Δ"]
     : ["metric", "n", "median", "mean", "stddev", "min", "max"];
+  const widths = metricColumnWidths();
+  // "Δ" has no bound worth precomputing — a percentage against a chosen
+  // pair can be anything — so it gets a comfortable fixed allowance instead
+  const widthOf = column => (column === "metric" ? widths.name : column === "Δ" ? 7 : widths.number);
 
   const head = table.insertRow();
   for (const column of columns) {
     const cell = document.createElement("th");
     cell.textContent = column;
+    cell.style.minWidth = `${widthOf(column)}ch`;
     head.append(cell);
   }
 
@@ -2860,23 +2978,127 @@ const lookFooter = point => {
     foot.append(line);
   }
 
-  // the last repetition's captures: the earlier ones are the same names with a
-  // different suffix, and one line per trial of one repetition is enough to
-  // find them all
+  // every repetition's captures this browser has seen, one pane rather than
+  // one per trial per repetition — stdout, stderr, or the two merged in the
+  // order they actually arrived, picked once for the whole point, each
+  // repetition's share of it set off from the next by a separator line
   const trials = point.trials || [];
-  const last = trials.length ? trials[trials.length - 1].rep : null;
-  for (const trial of trials.filter(t => t.rep === last)) {
-    if (trial.stem) {
-      const line = lookLine("captures", `${trial.stem}.out`);
-      line.lastChild.title = "click to copy";
-      line.lastChild.style.cursor = "pointer";
-      line.lastChild.onclick = () =>
-        copyPath(line.lastChild, `${trial.stem}.out`);
-      foot.append(line);
+  if (trials.length > 0) {
+    const picker = document.createElement("div");
+    picker.className = "row look-menu";
+    for (const [stream, label] of [["out", "stdout"], ["err", "stderr"], ["all", "stdout+stderr"]]) {
+      const opt = document.createElement("label");
+      opt.className = "metric";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = "look-stream";
+      radio.value = stream;
+      radio.checked = stream === lookStream;
+      radio.onchange = () => {
+        lookStream = stream;
+        fillCaptures();
+      };
+      opt.append(radio, document.createTextNode(" " + label));
+      picker.append(opt);
     }
-    if (trial.command) foot.append(lookLine("command", trial.command));
+    foot.append(picker);
+
+    const pane = document.createElement("div");
+    pane.className = "look-capture";
+    foot.append(pane);
+
+    const meta = text => {
+      const span = document.createElement("span");
+      span.className = "look-meta";
+      span.textContent = text;
+      return span;
+    };
+
+    const fillCaptures = async () => {
+      pane.replaceChildren(meta("…"));
+      // a repetition still in flight has a capture file still being written:
+      // reading it now must not cache the half written answer as though it
+      // were the whole thing, so a running one is fetched fresh every time
+      // rather than through the once-and-done cache
+      const completed = new Set((point.reps || []).map(r => r.rep));
+      const reps = [...new Set(trials.map(t => t.rep))];
+      const blocks = await Promise.all(
+        reps.map(async rep => {
+          const running = !completed.has(rep);
+          const group = trials.filter(t => t.rep === rep && t.stem);
+          const texts = await Promise.all(
+            group.map(t => captureText(t.stem, lookStream, !running))
+          );
+          const run = document.createElement("div");
+          run.className = running ? "look-run look-run-running" : "look-run";
+          const head = document.createElement("div");
+          head.className = "look-run-head";
+          head.textContent = running ? `repetition ${rep} — running` : `repetition ${rep}`;
+          run.append(head);
+          const body = document.createElement("div");
+          body.className = "look-run-body";
+          if (group.length === 0) {
+            body.append(meta("(running, nothing captured yet)"));
+          }
+          group.forEach((t, i) => {
+            // a repetition run more than once (parallel trials) gets its own
+            // sub-header; a single trial doesn't need to say so
+            if (group.length > 1) {
+              const trialHead = document.createElement("div");
+              trialHead.className = "look-trial-head";
+              trialHead.textContent = `trial ${t.trial}`;
+              body.append(trialHead);
+            }
+            const {text, meta: isMeta} = texts[i];
+            const pre = document.createElement("pre");
+            pre.className = isMeta ? "look-text look-meta" : "look-text";
+            pre.textContent = text;
+            const long = !isMeta && text.split("\n").length > CAPTURE_FOLD_LINES;
+            if (long) pre.classList.add("look-text-folded");
+            body.append(pre);
+            if (long) {
+              const toggle = document.createElement("button");
+              toggle.className = "loglink look-more";
+              toggle.textContent = "more";
+              toggle.onclick = () => {
+                const folded = pre.classList.toggle("look-text-folded");
+                toggle.textContent = folded ? "more" : "less";
+              };
+              body.append(toggle);
+            }
+          });
+          run.append(body);
+          return run;
+        })
+      );
+      // a slower fetch for an earlier point must not overwrite what a later,
+      // faster one already put here
+      if (pane.isConnected) {
+        pane.replaceChildren(...(blocks.length ? blocks : [meta("(nothing captured yet)")]));
+      }
+    };
+    fillCaptures();
   }
   return foot;
+};
+
+// a finished trial's capture never changes, so once read it is read for
+// good; a running one changes on every poll, so the caller says which this
+// is rather than this function guessing from the stem alone
+const captureCache = new Map();
+const captureText = async (stem, stream, cacheable = true) => {
+  const key = `${stream} ${stem}`;
+  if (cacheable && captureCache.has(key)) return captureCache.get(key);
+  const r = await ask(`/api/runs/${current}/tail?stream=${stream}&since=0&stem=${encodeURIComponent(stem)}`);
+  // an error or a truly empty stream both read as UI chrome, not file
+  // content, so the caller can style them apart from the real thing
+  const result = r.error
+    ? {text: r.error, meta: true}
+    : r.text
+    ? {text: r.text, meta: false}
+    : {text: "(empty)", meta: true};
+  if (cacheable) captureCache.set(key, result);
+  return result;
 };
 
 const lookLine = (label, text) => {
@@ -2893,29 +3115,63 @@ const lookLine = (label, text) => {
 document.getElementById("rspace").onclick = () => show("space");
 document.getElementById("space-back").onclick = () => show("detail");
 
+// the state says how it reads now; the button beside it only ever says what
+// clicking it does
+const logOrderState = document.getElementById("log-order-state");
+const logOrderButton = document.getElementById("log-order");
+const renderLogOrder = () => {
+  logOrderState.textContent = logNewestFirst ? "most recent first" : "oldest first";
+};
+logOrderButton.onclick = () => {
+  logNewestFirst = !logNewestFirst;
+  renderLogOrder();
+  drawLog();
+};
+renderLogOrder();
+
+// most lines are read, not scanned for a number, so they stay plain text;
+// a finished point is read for what it measured, so that part alone is an
+// array of parts instead of a string — the value lifted out, the rest
+// (including the metric's own name) left in the log's ordinary dim colour
 const summarize = record => {
   const at = stamp(record.time);
   const order = roster ? roster.order : null;
   if (record.type === "point.started") return `${at}  ${coords(order, record.key)} started`;
-  if (record.type === "point.finished")
-    return `${at}  ${coords(order, record.key || [])} ${record.failed ? "FAILED" : "completed"} ${
-      record.metrics ? Object.entries(record.metrics).map(([k, v]) => `${k}=${v}`).join(" ") : ""}`;
+  if (record.type === "point.finished") {
+    const parts = [
+      `${at}  ${coords(order, record.key || [])} ` +
+        `${record.failed ? "FAILED" : "completed"} rep ${(record.rep || 0) + 1} `,
+    ];
+    Object.entries(record.metrics || {}).forEach(([name, value], i) => {
+      if (i > 0) parts.push(" ");
+      parts.push(`${name}=`, {text: String(value)});
+    });
+    return parts;
+  }
   if (record.type === "point.killed")
     return `${at}  ${coords(order, record.key)} ${record.scope} abandoned`;
   if (record.type === "op.applied") return `${at}  control: ${JSON.stringify(record.op)}`;
   if (record.type === "plan") return `${at}  plan: ${record.points.length} point(s)`;
   if (record.type === "run.started") return `${at}  run started`;
   if (record.type === "run.finished") return `${at}  run ${record.state}`;
+  // one per trial per repetition, and the command it names is already shown
+  // live above — noise in a log meant to say what happened, not what is
+  // about to
+  if (record.type === "trial.started") return null;
   return `${at}  ${record.type}`;
 };
 
 const absorb = payload => {
   if (!payload.records.length) return;
   since = payload.seq;
-  lines.push(...payload.records.map(summarize));
-  lines = lines.slice(-300);
   for (const record of payload.records) {
+    // remembered before it is summarized: a plan and the point it names can
+    // land in the same batch, and the point's line needs the plan's own
+    // dimension names already in the roster to read as dim=value rather
+    // than a bare, orderless dot-joined key
     remember(record);
+    const line = summarize(record);
+    if (line !== null) lines.push(line);
     if (record.type === "op.applied") {
       const kind = (record.op || {}).op;
       if (kind === "pause" && pausedAt === null) pausedAt = record.time;
@@ -2925,15 +3181,38 @@ const absorb = payload => {
       }
     }
   }
+  lines = lines.slice(-300);
 };
 
 const drawLog = () => {
   const log = document.getElementById("log");
-  const wanted = lines.join("\n");
-  if (log.textContent === wanted) return;
-  const stuck = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
-  log.textContent = wanted;
-  if (stuck) log.scrollTop = log.scrollHeight;
+  // a line is either a plain string or, for what a point measured, an array
+  // of parts — some of them {text} rather than a bare string, the value
+  // alone lifted off the log's own dim default colour
+  const ordered = logNewestFirst ? [...lines].reverse() : lines;
+  const signature = JSON.stringify([logNewestFirst, lines]);
+  if (log.dataset.shows === signature) return;
+  log.dataset.shows = signature;
+  // the newest line is at the top when reversed, at the bottom otherwise —
+  // "stuck" follows the edge new lines actually arrive at
+  const stuck = logNewestFirst
+    ? log.scrollTop <= 20
+    : log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.replaceChildren();
+  ordered.forEach((line, i) => {
+    if (i > 0) log.append("\n");
+    for (const part of typeof line === "string" ? [line] : line) {
+      if (typeof part === "string") {
+        log.append(part);
+      } else {
+        const el = document.createElement("span");
+        el.className = "log-metric";
+        el.textContent = part.text;
+        log.append(el);
+      }
+    }
+  });
+  if (stuck) log.scrollTop = logNewestFirst ? 0 : log.scrollHeight;
 };
 
 const refresh = async () => {

@@ -14,6 +14,7 @@ import yuclid.workspace as workspace
 import yuclid.control as control
 from datetime import datetime
 import http.server
+import urllib.parse
 import subprocess
 import threading
 import getpass
@@ -37,6 +38,10 @@ FAILURES = 3
 # a point list arrives in one request, and a request is not the place to hand
 # over an unbounded one
 POINT_LIMIT = 20000
+# how much of a growing capture file one poll reads: enough that a live tail
+# keeps up with a chatty command, not so much that one answer is unbounded
+TAIL_CHUNK = 1 << 18
+TAIL_STREAMS = ("out", "err", "all")
 # how a run is started from here: the same interpreter, whether yuclid is
 # installed or being run from a checkout
 ENTRY_POINT = "import sys; from yuclid.cli import main; sys.exit(main())"
@@ -80,10 +85,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self.permitted():
             return
         path = self.path.split("?")[0]
+        # unquoted: a value can carry anything a path can, `/` included, which
+        # is exactly what a capture's stem is
         query = dict(
-            pair.split("=", 1)
-            for pair in self.path.partition("?")[2].split("&")
-            if "=" in pair
+            (urllib.parse.unquote(k), urllib.parse.unquote(v))
+            for k, v in (
+                pair.split("=", 1)
+                for pair in self.path.partition("?")[2].split("&")
+                if "=" in pair
+            )
         )
         try:
             if path in ("/", "/index.html"):
@@ -100,6 +110,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             match = re.fullmatch(r"/api/runs/([^/]+)/progress", path)
             if match:
                 return self.respond(200, self.progress(match.group(1), query))
+            match = re.fullmatch(r"/api/runs/([^/]+)/tail", path)
+            if match:
+                return self.respond(200, self.tail(match.group(1), query))
         except FileNotFoundError:
             return self.respond(404, {"error": "no such run"})
         self.respond(404, {"error": "no such resource"})
@@ -322,6 +335,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
         since = int(query.get("since") or 0)
         records = workspace.read_progress(manifest["directory"], since=since)
         return {"records": records, "seq": records[-1]["seq"] if records else since}
+
+    def tail(self, run_id, query):
+        """A byte range of a trial's captures, so a click can see one that
+        already finished.
+
+        `stream`, `since` and `stem` all come from the request — unlike
+        everywhere else in this handler, which derives the path itself and
+        trusts nothing the caller supplies. Naming a stem is only safe
+        because it is checked against every stem this run has ever recorded
+        starting a trial for: not a path taken on faith, a name recognised.
+        """
+        manifest = self.manifest(run_id)
+        stream = query.get("stream")
+        if stream not in TAIL_STREAMS:
+            return {"error": "stream must be one of {}".format(", ".join(TAIL_STREAMS))}
+        try:
+            since = max(0, int(query.get("since") or 0))
+        except ValueError:
+            since = 0
+
+        seen = scan(manifest["directory"])
+        stem = query.get("stem")
+        if stem is None or stem not in seen["stems"]:
+            return {"error": "no such capture"}
+
+        try:
+            with open("{}.{}".format(stem, stream), "rb") as f:
+                size = os.fstat(f.fileno()).st_size
+                # a stale offset from a stream that has since been replaced —
+                # the same file at a smaller size — starts over rather than
+                # erroring
+                start = since if since <= size else 0
+                f.seek(start)
+                raw = f.read(TAIL_CHUNK)
+        except FileNotFoundError:
+            # the trial has started but this particular file has not been
+            # opened yet — nothing to read, not a problem
+            return {"text": "", "offset": since, "stem": stem}
+
+        return {
+            "text": raw.decode("utf-8", errors="replace"),
+            "offset": start + len(raw),
+            "stem": stem,
+        }
 
     def export_run(self, run_id):
         """Copy this run's JSONL into the working directory.
@@ -777,6 +834,10 @@ def scan(directory):
     plan = None
     completed, total, current, failed = 0, 0, None, False
     command, broken, wrong = None, [], []
+    # every stem this run has ever named, live or long finished — what a
+    # capture-viewing request is checked against, so it can only ever open a
+    # file this run itself chose to write
+    stems = set()
     # a plan snapshot is only written when the run is steered, so between two
     # operations it says what was true then. What has happened since is in the
     # records after it, and is folded back in before anything reads the plan
@@ -809,6 +870,9 @@ def scan(directory):
             command = None
         if kind == "trial.started":
             command = record.get("command")
+            trial_stem = record.get("stem")
+            if trial_stem is not None:
+                stems.add(trial_stem)
         if kind == "setup.failed":
             broken.append(
                 {"label": record.get("label"), "command": record.get("command"),
@@ -862,6 +926,7 @@ def scan(directory):
         "current": current,
         "failed": failed,
         "command": command,
+        "stems": stems,
         "setup_failures": broken,
         # a run where nothing works fails once per point, and every one of them
         # carries what it printed: the most recent are the ones worth sending,

@@ -497,9 +497,13 @@ class Progress:
 
     def __init__(self, path):
         self.lock = threading.Lock()
+        # `finish` reopens an existing run and appends to its progress file:
+        # starting back at 0 would write records a client already holds a
+        # higher seq for, and its incremental /progress polling would never
+        # see them
+        self.seq = last_seq(path) if path is not None else 0
         # compiling a script is not a run and has nothing to record
         self.stream = open(path, "a") if path is not None else None
-        self.seq = 0
 
     def emit(self, kind, **fields):
         if self.stream is None:
@@ -517,6 +521,28 @@ class Progress:
         with self.lock:
             self.stream.close()
             self.stream = None
+
+
+def last_seq(path):
+    """The highest seq already written to a progress file, or 0.
+
+    What a fresh `Progress` continuing that file must count up from, so its
+    records keep the sequence strictly increasing across the reopen.
+    """
+    seq = 0
+    try:
+        with open(path) as f:
+            for line in f:
+                if not line.endswith("\n"):
+                    break
+                try:
+                    record = json.loads(line)
+                except ValueError:
+                    continue
+                seq = max(seq, record.get("seq", 0))
+    except OSError:
+        pass
+    return seq
 
 
 def read_progress(directory, since=0):

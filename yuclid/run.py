@@ -10,6 +10,7 @@ import subprocess
 import itertools
 import json
 import csv
+import select
 import signal
 import sys
 import time
@@ -1493,13 +1494,23 @@ class Trials:
         self.held = set()
         self.terminated = set()
 
-    def spawn(self, key, command, env, cwd):
+    def spawn(self, key, command, env, cwd, capture_paths=None):
+        """Run a command, capturing what it prints.
+
+        Ordinarily through a pipe, held in memory until the command ends —
+        fine for a metric, which is quick and needs only the final string.
+        `capture_paths`, a `(out, err, all)` tuple of paths, is for a trial: it
+        writes each stream to its own file as the command runs rather than
+        after, so a reader elsewhere can watch it grow, and tees every chunk
+        into a third file in the order it actually arrived, which is the only
+        way a merged view can be more than a guess reconstructed afterward.
+        """
         process = subprocess.Popen(
             command,
             shell=True,
             env=env,
             cwd=cwd,
-            universal_newlines=True,
+            universal_newlines=capture_paths is None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
@@ -1507,13 +1518,55 @@ class Trials:
         with self.lock:
             self.active.setdefault(key, set()).add(process)
         try:
-            stdout, stderr = process.communicate()
+            if capture_paths is None:
+                stdout, stderr = process.communicate()
+            else:
+                stdout, stderr = self._pump(process, capture_paths)
         finally:
             with self.lock:
                 self.active.get(key, set()).discard(process)
                 killed = process.pid in self.terminated
                 self.terminated.discard(process.pid)
         return stdout, stderr, process.returncode, killed
+
+    def _pump(self, process, capture_paths):
+        """Read both pipes as they fill, so a trial's captures are live.
+
+        `select` on both descriptors at once, rather than reading one and then
+        the other, is what keeps this from deadlocking on a command that fills
+        one pipe while nothing is draining it — the same reason
+        `subprocess.communicate()` multiplexes the two internally. Here every
+        chunk is also written to a shared file in the order it was seen, which
+        is what makes that file a real interleaving rather than two captures
+        stitched together after the fact.
+        """
+        out_path, err_path, all_path = capture_paths
+        out_chunks, err_chunks = [], []
+        with open(out_path, "wb") as out_f, open(err_path, "wb") as err_f, open(
+            all_path, "wb"
+        ) as all_f:
+            pending = {
+                process.stdout.fileno(): (process.stdout, out_f, out_chunks),
+                process.stderr.fileno(): (process.stderr, err_f, err_chunks),
+            }
+            while pending:
+                ready, _, _ = select.select(list(pending), [], [])
+                for fd in ready:
+                    stream, own_file, chunks = pending[fd]
+                    chunk = os.read(fd, 65536)
+                    if not chunk:
+                        stream.close()
+                        del pending[fd]
+                        continue
+                    own_file.write(chunk)
+                    own_file.flush()
+                    all_f.write(chunk)
+                    all_f.flush()
+                    chunks.append(chunk)
+        process.wait()
+        stdout = b"".join(out_chunks).decode("utf-8", errors="replace")
+        stderr = b"".join(err_chunks).decode("utf-8", errors="replace")
+        return stdout, stderr
 
     def kill(self, scope, keys=None):
         """End what is running: this repetition of it, the point, or neither.
@@ -1752,16 +1805,16 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 stem=point_id,
             )
             stdout, stderr, returncode, was_killed = trials.spawn(
-                entry["key"], command, execution["env"], settings["cwd"]
+                entry["key"],
+                command,
+                execution["env"],
+                settings["cwd"],
+                capture_paths=(
+                    f"{point_id}.out",
+                    f"{point_id}.err",
+                    f"{point_id}.all",
+                ),
             )
-
-            with open(f"{point_id}.out", "w") as output_file:
-                if stdout:
-                    output_file.write(stdout)
-
-            with open(f"{point_id}.err", "w") as error_file:
-                if stderr:
-                    error_file.write(stderr)
 
             if was_killed:
                 # a command we terminated ourselves did not fail: it was
