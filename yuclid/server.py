@@ -1160,23 +1160,84 @@ def bind(root, base, port):
         )
 
 
+def launch_background(args):
+    """As `launch`, except a child does the serving and this returns once it
+    is up, instead of occupying the terminal until the server stops.
+
+    Detached the same way a run started from the page is: a session of its
+    own, so it outlives this one. The child is never told `--quiet`,
+    regardless of what was asked here — its log is the only way this waits to
+    learn the address, or why there is none, and that line has to be in it.
+    """
+    directory = os.path.abspath(args.directory) if args.directory else os.getcwd()
+    root = workspace.open_root(directory, args.workspace)
+
+    argv = ["serve", directory, "--port", str(args.port)]
+    if args.workspace is not None:
+        argv += ["--workspace", os.path.abspath(args.workspace)]
+    if args.open:
+        argv.append("--open")
+    if args.force:
+        argv.append("--force")
+
+    log_path = os.path.join(root, "serve.log")
+    log = open(log_path, "w")
+    child = subprocess.Popen(
+        # unbuffered: this waits on the very line a pipe would deliver at
+        # once, but a file redirection only flushes once its buffer fills,
+        # which "the address is up" is in no hurry to do
+        [sys.executable, "-u", "-c", ENTRY_POINT] + argv,
+        cwd=directory,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    deadline = time.monotonic() + 20.0
+    url = None
+    while url is None and time.monotonic() < deadline:
+        with open(log_path) as f:
+            for line in f:
+                match = re.search(r"\bopen: (http://\S+)", line)
+                if match:
+                    url = match.group(1)
+        if url is not None or child.poll() is not None:
+            break
+        time.sleep(0.1)
+
+    if url is None:
+        reason = "the server did not start"
+        with open(log_path) as f:
+            for line in f:
+                match = re.search(r": FATAL: (.+)$", line.rstrip("\n"))
+                if match:
+                    reason = match.group(1)
+        report(LogLevel.FATAL, reason, hint="see {}".format(log_path))
+    if not args.quiet:
+        report(LogLevel.INFO, "watching", root)
+        report(
+            LogLevel.INFO,
+            "open",
+            url,
+            hint="stop with: kill {}".format(child.pid),
+        )
+
+
 def launch(args):
+    if args.background:
+        return launch_background(args)
+
     # Serving an empty directory is useful: it can launch the first run from
     # the browser. Use the same workspace creation path as `yuclid run` rather
     # than requiring a run to have happened here already.
-    root = workspace.open_root(args.directory, args.workspace)
-    # everything this server is about comes from the workspace: the runs it
-    # lists, the configuration it offers, and the directory a run it starts is
-    # started in. Otherwise `--workspace` would move only half of it, and the
-    # page would describe one place while starting runs in another.
-    directory = workspace.work_of(root)
-    if args.workspace is not None and args.directory is not None:
-        report(
-            LogLevel.WARNING,
-            "--workspace decides where everything is, so {} is ignored".format(
-                args.directory
-            ),
-        )
+    #
+    # `directory` is the work — the configuration, and the cwd a run started
+    # from here gets — resolved exactly as `yuclid run` resolves its own cwd.
+    # `--workspace` only ever moves the state (the runs, their logs and their
+    # captures), same as it does for `run`; it does not imply the work moved
+    # too, so the two are independent rather than one swallowing the other.
+    directory = os.path.abspath(args.directory) if args.directory else os.getcwd()
+    root = workspace.open_root(directory, args.workspace)
     if not any(os.path.isfile(os.path.join(directory, name)) for name in DEFAULT_INPUTS):
         report(
             LogLevel.WARNING,

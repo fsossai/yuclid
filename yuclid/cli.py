@@ -257,7 +257,8 @@ def get_parser():
         metavar="DIR",
         nargs="?",
         default=None,
-        help="The directory holding .yuclid (default: the working directory)",
+        help="The directory to watch: its configuration, and the cwd a run "
+        "started from here gets (default: the working directory)",
     )
     serve_parser.add_argument(
         "--workspace",
@@ -278,6 +279,14 @@ def get_parser():
         default=False,
         action="store_true",
         help="Open the page in a browser once the server is up",
+    )
+    serve_parser.add_argument(
+        "-b",
+        "--background",
+        default=False,
+        action="store_true",
+        help="Start the server detached and return as soon as it is up, "
+        "instead of occupying the terminal until it is stopped",
     )
     serve_parser.add_argument(
         "--force",

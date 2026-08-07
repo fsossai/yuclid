@@ -3208,7 +3208,7 @@ const metricTable = (rows, comparing) => {
   const table = document.createElement("table");
   table.className = "look";
   const columns = comparing
-    ? ["metric", "selected", "other", "Δ"]
+    ? ["metric", "selected", "±", "other", "±", "Δ"]
     : ["metric", "n", "median", "mean", "stddev", "min", "max"];
   const widths = metricColumnWidths();
   // "Δ" has no bound worth precomputing — a percentage against a chosen
@@ -3238,7 +3238,8 @@ const metricTable = (rows, comparing) => {
     // buttons below the space now, not by clicking into this table
     row.dataset.focused = String(focused === name);
     const cells = comparing
-      ? [name, one ? figure(one.median) : "", two ? figure(two.median) : "",
+      ? [name, one ? figure(one.median) : "", one ? figure(one.stddev) : "",
+         two ? figure(two.median) : "", two ? figure(two.stddev) : "",
          change === null ? "" : deltaText(change)]
       : [name, two ? String(two.n) : "0", two ? figure(two.median) : "",
          two ? figure(two.mean) : "", two ? figure(two.stddev) : "",

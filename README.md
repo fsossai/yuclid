@@ -2,8 +2,6 @@
 
 *Combinatorially explode your experiments*
 
-<p><img src="space.png" align="right" width="350" height="298"/></p>
-
 Yuclid is a CLI + Web UI tool for orchestrating and visualizing experiments in N-dimensional irregular spaces of parameters.
 It collects custom metrics in a single JSONL file for easy post-processing.
 Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
