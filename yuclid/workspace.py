@@ -15,7 +15,6 @@ import itertools
 import threading
 import shutil
 import socket
-import errno
 import json
 import time
 import os
@@ -29,7 +28,7 @@ MANIFEST = "manifest.json"
 NAME = "name"
 PROGRESS = "progress.jsonl"
 CONTROL = "control.sock"
-RESULTS = "results.yuclid.jsonl"
+RESULTS = "results.jsonl"
 POINTS = "points.json"
 # point lists handed to a run on its command line live here rather than in the
 # run's own directory: the command has to name a file that exists before the
@@ -48,49 +47,39 @@ def hostname():
     return socket.gethostname().split(".")[0]
 
 
-def root_path(start=None, workspace=None):
-    """Where this invocation keeps its state.
+def workspace_of(chosen=None):
+    """The workspace: where the configuration is, and where a run executes.
 
-    Normally `.yuclid` beside the work, which is what makes a directory of
-    experiments self-contained. `workspace` names the directory itself instead,
-    for the times when the work and the record of it cannot live together: a
-    read-only checkout, a scratch filesystem worth more than the home one, or
-    several working directories reporting into one place.
+    Named explicitly with `--workspace`, or the working directory when it is
+    not — the same rule every command follows, so the same invocation always
+    means the same place. Its state directory is always `.yuclid` underneath
+    it; there is no separate way to move that on its own.
     """
-    if workspace is not None:
-        return os.path.abspath(workspace)
-    return os.path.join(os.path.abspath(start or os.getcwd()), DIRNAME)
+    return os.path.abspath(chosen) if chosen is not None else os.getcwd()
 
 
-def find_root(start=None, workspace=None):
-    """The state directory of `start`, or None.
+def root_path(workspace=None):
+    """Where a workspace keeps its state: always `.yuclid` beneath it."""
+    return os.path.join(workspace_of(workspace), DIRNAME)
+
+
+def find_root(workspace=None):
+    """The state directory of a workspace, or None.
 
     Looked up in one directory and not searched for upwards, the same rule the
     configuration follows. Walking up would be worse than inconsistent here:
     `yuclid tplot` already keeps a cache in `~/.yuclid`, so every run made
     anywhere below a home directory would be recorded into it.
     """
-    root = root_path(start, workspace)
+    root = root_path(workspace)
     return root if os.path.isdir(root) else None
 
 
-def open_root(start=None, workspace=None):
+def open_root(workspace=None):
     """As `find_root`, creating the directory when there is none."""
-    root = root_path(start, workspace)
+    root = root_path(workspace)
     os.makedirs(os.path.join(root, RUNS), exist_ok=True)
     return root
-
-
-def work_of(root):
-    """The directory a workspace is about.
-
-    A workspace sitting beside the work is named `.yuclid`, and the work is the
-    directory holding it. One put somewhere else is the whole of it: the
-    configuration, the runs and everything they wrote are in the one place, so
-    that a workspace can be moved, copied or served without carrying a second
-    path around.
-    """
-    return os.path.dirname(root) if os.path.basename(root) == DIRNAME else root
 
 
 def create_run(root, stamp, **manifest):
@@ -374,22 +363,11 @@ def clear_server(root):
 def run_of_output(root, path):
     """The run that wrote this result file, if this directory holds it.
 
-    Matched by inode: the run directory holds a hard link to the very file, so
-    the two names are the same file however either of them was reached. A run
-    whose output landed on another filesystem is matched by path instead, since
-    there it is a symlink rather than a link.
+    Matched by path: a run records the destination it keeps its results.jsonl
+    copied to, and that is the name this checks against, whichever run left it.
     """
-    try:
-        wanted = os.stat(path).st_ino
-    except OSError:
-        return None
     absolute = os.path.abspath(path)
     for manifest in list_runs(root):
-        try:
-            if os.stat(os.path.join(manifest["directory"], RESULTS)).st_ino == wanted:
-                return manifest
-        except OSError:
-            pass
         if manifest.get("output") == absolute:
             return manifest
     return None
@@ -464,28 +442,14 @@ def write_name(directory, name):
     return name
 
 
-def link_results(directory, output):
-    """A second name, in the run directory, for the file the run writes.
+def results_path(directory):
+    """Where a run keeps what it has measured so far.
 
-    A hard link rather than a copy: both names see the records as they are
-    appended, neither is a duplicate, and the run keeps its data once the
-    working directory has been tidied. Across filesystems there is no such link,
-    so a symlink stands in and the manifest records where the file really is.
+    Always this same name, in the run's own directory: every trial appends
+    here directly, so it is the one file that is never behind what the run
+    has actually done, whatever `--output` eventually asks to be copied to.
     """
-    target = os.path.join(directory, RESULTS)
-    if os.path.exists(target):
-        return
-    try:
-        os.link(output, target)
-        return
-    except OSError as e:
-        if e.errno not in (errno.EXDEV, errno.EPERM, errno.EMLINK):
-            report(LogLevel.WARNING, "cannot keep the results in the run directory", str(e))
-            return
-    try:
-        os.symlink(os.path.abspath(output), target)
-    except OSError as e:
-        report(LogLevel.WARNING, "cannot keep the results in the run directory", str(e))
+    return os.path.join(directory, RESULTS)
 
 
 class Progress:

@@ -7,19 +7,12 @@ presets, and ordering only when the experiment needs them.
 
 ## Files and formats
 
-The default configuration is the first of `yuclid.json`, `yuclid.yaml`, or
-`yuclid.yml` found in the current directory. Name other files with `-i`:
-
-```sh
-yuclid run -i base.json machine.yaml
-```
+A workspace has exactly one configuration: the first of `yuclid.json`,
+`yuclid.yaml`, or `yuclid.yml` found in it. There is no way to name another
+file or merge several — one workspace, one configuration.
 
 JSON and YAML have the same structure. YAML support requires
 `pip install 'yuclid[yaml]'`.
-
-When several files are supplied, `space` and `presets` are merged by key;
-`env`, `trials`, `metrics`, `setup`, and `order` are appended in file order.
-Later definitions of the same space or preset key replace earlier ones.
 
 Exactly seven top-level fields are recognized:
 

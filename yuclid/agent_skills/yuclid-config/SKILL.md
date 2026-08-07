@@ -43,19 +43,20 @@ Two scopes with **different, non-interchangeable** variable sets.
   metric commands read those files.
 
 **`${yuclid.workspace}` is reserved and available in every scope** — trials, metrics,
-setup, `env`, and a compiled script. It is the directory the run records itself in:
-`./.yuclid` normally, and whatever `--workspace DIR` says otherwise. Use it for anything
-the configuration generates and means to keep beside the runs — built binaries,
-generated corpora, a shared scratch directory:
+setup, `env`, and a compiled script. It is the workspace itself: the working directory
+normally, or whatever `--workspace DIR` names instead — the same directory holding the
+configuration, and the one a trial actually executes in. Use it for anything the
+configuration generates and means to keep beside the run — built binaries, generated
+corpora, a shared scratch directory:
 
 ```json
 { "setup": { "global": ["mkdir -p ${yuclid.workspace}/data"] } }
 ```
 
 Because it follows `--workspace`, the same configuration puts its data on a scratch
-filesystem when the state is sent there, without a second flag or an environment
-variable to keep in step. A dimension called `workspace` is refused, since one of the two
-would shadow the other.
+filesystem when the whole workspace is moved there, without a second flag or an
+environment variable to keep in step. A dimension called `workspace` is refused, since
+one of the two would shadow the other.
 
 **Global scope** — `env` and `setup.global`, which run once and have no current point:
 
@@ -436,7 +437,7 @@ then invokes `yuclid run`, which is how one config serves several machines:
 ```bash
 export machine="local"
 export nruns="3"
-yuclid run -i yuclid.json --select nthreads=28 impl=base cxx=clang++ "$@"
+yuclid run --select nthreads=28 impl=base cxx=clang++ "$@"
 ```
 
 Keep that driver in the repo next to the config — it is the honest record of how a run was
@@ -479,21 +480,6 @@ full point, which would rebuild for every thread count and malloc. `parallel` na
 serialized. Put the machine identity in the output path (`$machine`) so one checkout can
 hold results from several hosts.
 
-### Splitting a config across files
-
-`-i` merges: `space` and `presets` merge as dicts; `env`, `trials`, `metrics` and `order`
-concatenate. Two uses:
-
-- **Metric overlays** — an extra file containing nothing but a `metrics` array of
-  fine-grained timers, added only when you need them:
-  `yuclid run -i yuclid.json -i yuclid.more.json -m sc.pgain sc.Kernel`
-- **Variants** — a near-copy that adds a dimension (say a build-parameter `k` threaded
-  through the output path and the `make` line) kept as its own file rather than conditioned
-  into the main one.
-
-Since `space` merges per key, a second file can also redefine one dimension wholesale —
-e.g. narrowing `program` to a single benchmark — while inheriting everything else.
-
 ### Ordering for experimental hygiene
 
 `order` is not only cosmetic. Put the dimension you are comparing **last** so it varies
@@ -524,10 +510,6 @@ nothing, and an empty metric drops the entire point from the results.
   in JSON.
 - **Quote nesting.** Metric commands run through a shell; prefer single quotes inside the
   JSON double-quoted string.
-- **Multiple inputs merge.** `yuclid run -i base.json local.json` merges `space` and
-  `presets` as dicts (later wins per key) and concatenates `env`, `trials`, `metrics` and
-  `order` — useful for machine-specific overlays. `env` concatenating means a second file
-  adds a group after the first file's, which is exactly the order you want.
 - Conditions are Python, not shell: `and`/`or`/`not`, `==`, `'quoted strings'`.
 - **`--select` yields strings.** Values supplied on the command line for a `null`
   dimension arrive as strings, so `"yuclid.nthreads > 1"` raises
@@ -612,13 +594,14 @@ in its run directory.
 `yuclid run --points <that>` re-runs exactly what a result file contains. `yuclid replay`
 is built on the same mechanism.
 
-## Keeping state elsewhere
+## Using a different workspace
 
-`--workspace DIR` names the directory Yuclid records itself in, instead of `./.yuclid`:
-the runs, their logs and their captured output. `yuclid run`, `yuclid serve` and every
-command that reads or steers a recorded run take it. For `yuclid serve` the workspace is
-the whole of what it is about — the configuration it offers and the directory it starts
-runs in come from there too — so a workspace can be moved or served on its own.
+`--workspace DIR` makes DIR the workspace instead of the working directory: the
+configuration is read from there, a run executes there, and its state — `.yuclid`, always
+directly underneath — lives there too. `yuclid run`, `yuclid serve` and every command that
+reads or steers a recorded run take it, and all mean the same directory by it, so a
+workspace can be moved, copied or served from somewhere else without carrying a second
+path around.
 
 ## Verify before handing off
 

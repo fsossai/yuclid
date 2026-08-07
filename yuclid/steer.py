@@ -268,11 +268,15 @@ def launch_finish(args, parser):
     if workspace.state_of(manifest) == workspace.RUNNING:
         report(LogLevel.FATAL, "run {} is still going".format(args.run))
     output = manifest.get("output")
-    if not output or not os.path.exists(output):
+    # what `--continue-run` actually resumes from is this run's own
+    # results.jsonl, not the copy --output was last asked to keep — that copy
+    # may never even have been made, if the run was started from the page
+    live = workspace.results_path(manifest["directory"])
+    if not output or not os.path.exists(live):
         report(
             LogLevel.FATAL,
             "the results of run {} are gone".format(args.run),
-            output or "",
+            live,
             hint="there is nothing to resume from, so start the run again",
         )
 
@@ -281,8 +285,10 @@ def launch_finish(args, parser):
     argv = strip_option(argv, "--output")
     argv = strip_option(argv, "--output-dir")
     argv = strip_option(argv, "--continue-run")
-    argv = [x for x in argv if x != "--resume"]
-    argv += ["-o", output, "--resume", "--continue-run", args.run]
+    argv = [x for x in argv if x not in ("--resume", "--no-copy-output")]
+    argv += ["-o", output, "--continue-run", args.run]
+    if getattr(args, "no_copy_output", False):
+        argv.append("--no-copy-output")
 
     report(LogLevel.INFO, "resuming", " ".join(argv))
     yuclid.run.launch(as_run(parser, argv))
@@ -311,7 +317,7 @@ def launch_replay(args, parser):
     argv = strip_option(argv, "-o")
     argv = strip_option(argv, "--output")
     argv = strip_option(argv, "--output-dir")
-    argv = [x for x in argv if x != "--resume"]
+    argv = [x for x in argv if x not in ("--resume", "--no-copy-output")]
 
     if args.repeat is not None:
         argv = strip_option(argv, "-r")
@@ -320,6 +326,8 @@ def launch_replay(args, parser):
     if args.parallel_trials is not None:
         argv = strip_option(argv, "--parallel-trials")
         argv += ["--parallel-trials", str(args.parallel_trials)]
+    if getattr(args, "no_copy_output", False):
+        argv.append("--no-copy-output")
 
     if not args.no_steering:
         root = find_root_or_fail(args)

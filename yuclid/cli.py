@@ -5,6 +5,7 @@ import yuclid.tplot
 import yuclid.run
 import yuclid.log
 import argparse
+import os
 
 
 def get_parser():
@@ -13,15 +14,6 @@ def get_parser():
 
     # run subcommand
     run_parser = subparsers.add_parser("run", help="Run experiments and collect data")
-    run_parser.add_argument(
-        "-i",
-        "--inputs",
-        default=None,
-        nargs="*",
-        help="Specify one or more configuration files, in JSON or YAML. "
-        "Defaults to whichever of yuclid.json, yuclid.yaml or yuclid.yml "
-        "exists. Objects and lists will be joined",
-    )
     run_parser.add_argument(
         "--order",
         default=[],
@@ -72,8 +64,9 @@ def get_parser():
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
-        "records, their logs and their captured output",
+        help="The workspace to run in, instead of the working directory: "
+        "where the configuration is, where trials execute, and where the "
+        "run is recorded",
     )
     run_parser.add_argument(
         "--until",
@@ -200,6 +193,14 @@ def get_parser():
         # instead of starting one of its own
         help=argparse.SUPPRESS,
     )
+    run_parser.add_argument(
+        "--no-copy-output",
+        default=False,
+        action="store_true",
+        # internal: how `serve` starts a run without keeping --output's copy
+        # current on every repetition — nobody reads it until Export asks for it
+        help=argparse.SUPPRESS,
+    )
 
     # plot subcommand — GUI
     plot_parser = subparsers.add_parser("plot", help="Plot data in a GUI")
@@ -225,7 +226,7 @@ def get_parser():
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Read the runs recorded in DIR instead of ./.yuclid",
+        help="The workspace to list runs from, instead of the working directory",
     )
     runs_parser.add_argument(
         "-n",
@@ -250,22 +251,15 @@ def get_parser():
 
     # serve subcommand
     serve_parser = subparsers.add_parser(
-        "serve", help="Watch and steer the runs of a directory in a browser"
-    )
-    serve_parser.add_argument(
-        "directory",
-        metavar="DIR",
-        nargs="?",
-        default=None,
-        help="The directory to watch: its configuration, and the cwd a run "
-        "started from here gets (default: the working directory)",
+        "serve", help="Watch and steer the runs of a workspace in a browser"
     )
     serve_parser.add_argument(
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
-        "records, their logs and their captured output",
+        help="The workspace to watch, instead of the working directory: its "
+        "configuration, its runs, and the directory a run started from here "
+        "executes in",
     )
     serve_parser.add_argument(
         "--port",
@@ -310,7 +304,16 @@ def get_parser():
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Read the runs recorded in DIR instead of ./.yuclid",
+        help="The workspace this run belongs to, instead of the working "
+        "directory",
+    )
+    finish_parser.add_argument(
+        "--no-copy-output",
+        default=False,
+        action="store_true",
+        # internal: how `serve` finishes a run without keeping --output's copy
+        # current on every repetition
+        help=argparse.SUPPRESS,
     )
 
     # replay subcommand
@@ -322,7 +325,8 @@ def get_parser():
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Read the runs recorded in DIR instead of ./.yuclid",
+        help="The workspace this run belongs to, instead of the working "
+        "directory",
     )
     replay_parser.add_argument(
         "--no-steering",
@@ -356,6 +360,14 @@ def get_parser():
         const=-1,
         metavar="N",
         help="Run trials in parallel, instead of as the original did",
+    )
+    replay_parser.add_argument(
+        "--no-copy-output",
+        default=False,
+        action="store_true",
+        # internal: how `serve` replays a run without keeping --output's copy
+        # current on every repetition
+        help=argparse.SUPPRESS,
     )
 
     # skills subcommand
@@ -461,8 +473,8 @@ def _add_steering_parsers(subparsers):
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Keep Yuclid's state in DIR instead of ./.yuclid: the runs it "
-        "records, their logs and their captured output",
+        help="The workspace this run belongs to, instead of the working "
+        "directory",
     )
         p.add_argument(
             "--run",
@@ -756,6 +768,16 @@ def main():
 
 
 def dispatch(args):
+    # every command that has --workspace means the same thing by it: the
+    # directory to run as though sitting in, configuration and all. Resolved
+    # once, here, so nothing downstream re-resolves it against a cwd that has
+    # already moved — the value itself has done its job once this returns
+    if hasattr(args, "workspace"):
+        import yuclid.workspace as _workspace
+
+        os.chdir(_workspace.workspace_of(args.workspace))
+        args.workspace = None
+
     if args.command == "run":
         yuclid.run.launch(args)
     elif args.command == "serve":

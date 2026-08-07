@@ -245,12 +245,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         html = html.replace(b"__YUCLID_TOKEN__", self.server.token.encode())
         html = html.replace(b"__YUCLID_VERSION__", __version__.encode())
         # The workspace, which is where everything shown on the page comes
-        # from. With --workspace it is not the working directory, and then it
-        # is the one worth naming: two servers on one directory look identical
-        # otherwise.
-        # the workspace, named by the directory it is about: the `.yuclid` on
-        # the end of the usual one says nothing, since every workspace is one
-        html = html.replace(b"__YUCLID_ROOT__", self.server.base.encode())
+        # from — worth naming, since two servers on two workspaces would
+        # otherwise look identical
+        html = html.replace(b"__YUCLID_ROOT__", self.server.workspace.encode())
         return html.replace(b"__YUCLID_WHO__", whoami().encode())
 
     def manifest(self, run_id):
@@ -381,23 +378,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         }
 
     def export_run(self, run_id):
-        """Copy this run's JSONL into the working directory.
+        """Copy this run's results.jsonl into the workspace, under --output's name.
 
-        `--workspace` can keep a run's data far from where a person is sitting;
-        this puts a copy of it exactly where they are, under its own name, so
-        it can be picked up without knowing where the workspace is.
+        Read from the run's own results.jsonl rather than trusting --output's
+        copy to exist — a run started from the page keeps no such copy on its
+        own, this being the one thing that makes it.
         """
         manifest = self.manifest(run_id)
         output = manifest.get("output")
-        if not output or not os.path.exists(output):
-            return {"error": "the results of run {} are gone".format(run_id)}
-        if not output.lower().endswith(".jsonl"):
+        if not output or not output.lower().endswith(".jsonl"):
             return {"error": "run {} was not recorded as JSONL".format(run_id)}
-        destination = os.path.join(self.server.base, os.path.basename(output))
-        if os.path.abspath(destination) == os.path.abspath(output):
+        source = os.path.join(manifest["directory"], workspace.RESULTS)
+        if not os.path.exists(source):
+            return {"error": "the results of run {} are gone".format(run_id)}
+        destination = os.path.join(self.server.workspace, os.path.basename(output))
+        if os.path.abspath(destination) == os.path.abspath(source):
             return {"path": destination}
         try:
-            shutil.copyfile(output, destination)
+            shutil.copyfile(source, destination)
         except OSError as e:
             return {"error": "cannot write {}: {}".format(destination, e)}
         return {"path": destination}
@@ -454,7 +452,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """
         from yuclid import run as runner
 
-        directory = self.server.base
+        directory = self.server.workspace
         inputs = [
             name
             for name in runner.DEFAULT_INPUTS
@@ -504,7 +502,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if "error" in config:
             return config
 
-        argv = ["run"] + self.elsewhere()
+        argv = ["run"]
         declared = config["dimensions"]
 
         # a point list says exactly what to run, so it stands in for the
@@ -619,20 +617,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if name:
             argv += ["--name", name]
 
+        # nobody here is watching --output's copy repetition by repetition;
+        # the page reads progress.jsonl instead, and Export makes one on request
+        argv += ["--no-copy-output"]
+
         answer, _ = self.spawn(argv, os.path.join(self.server.root, "run.log"))
         return answer
-
-    def elsewhere(self):
-        """`--workspace` for a child, when this server keeps its state away.
-
-        Said only when it has to be: a run whose recorded command names an
-        absolute workspace cannot be replayed from a copy of the directory
-        somewhere else, and the ordinary case has nothing to name.
-        """
-        beside = os.path.join(self.server.base, workspace.DIRNAME)
-        if os.path.abspath(self.server.root) == beside:
-            return []
-        return ["--workspace", self.server.root]
 
     def spawn(self, argv, log_path):
         """Start yuclid, and answer with the name of the run it made.
@@ -646,7 +636,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             log = open(log_path, "w")
             child = subprocess.Popen(
                 [sys.executable, "-c", ENTRY_POINT] + argv,
-                cwd=self.server.base,
+                cwd=self.server.workspace,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -683,7 +673,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             log = open(log_path, "w")
             child = subprocess.Popen(
                 [sys.executable, "-c", ENTRY_POINT] + argv,
-                cwd=self.server.base,
+                cwd=self.server.workspace,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -720,11 +710,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if manifest["state"] == workspace.RUNNING:
             return {"error": "run {} is still going".format(run_id)}
 
+        # nobody here is watching --output's copy repetition by repetition;
+        # the page reads progress.jsonl instead, and Export makes one on request
         argv = {
-            "finish": ["finish", run_id],
-            "replay": ["replay", run_id],
-            "restart": ["replay", run_id, "--no-steering"],
-        }[mode] + self.elsewhere()
+            "finish": ["finish", run_id, "--no-copy-output"],
+            "replay": ["replay", run_id, "--no-copy-output"],
+            "restart": ["replay", run_id, "--no-steering", "--no-copy-output"],
+        }[mode]
 
         with self.server.lock:
             started = self.server.finishing.get(run_id)
@@ -1087,13 +1079,13 @@ def dimensions_of(plan):
 class Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, root, base, port):
+    def __init__(self, root, workspace, port):
         super().__init__(("127.0.0.1", port), Handler)
+        # the workspace: the configuration this server watches, and the
+        # directory a run it starts is started in. Its state directory is
+        # always workspace/.yuclid, which is what `root` already is
+        self.workspace = workspace
         self.root = root
-        # where the work is, which is not always where its record is kept:
-        # --workspace separates them, and the configuration and the runs
-        # started from here belong to the work
-        self.base = base
         self.token = secrets.token_urlsafe(24)
         # runs started from here, so a second request cannot start them again
         self.finishing = dict()
@@ -1110,7 +1102,7 @@ PORT_HINT = "pick a free one above {}, e.g. --port {}".format(
 )
 
 
-def bind(root, base, port):
+def bind(root, workspace, port):
     """Take the port, or say why it could not be had.
 
     Failing to listen is the whole command failing, and a traceback is a poor
@@ -1124,7 +1116,7 @@ def bind(root, base, port):
             hint=["a port is between 0 and 65535", PORT_HINT],
         )
     try:
-        return Server(root, base, port)
+        return Server(root, workspace, port)
     except PermissionError:
         report(
             LogLevel.FATAL,
@@ -1169,12 +1161,11 @@ def launch_background(args):
     regardless of what was asked here — its log is the only way this waits to
     learn the address, or why there is none, and that line has to be in it.
     """
-    directory = os.path.abspath(args.directory) if args.directory else os.getcwd()
-    root = workspace.open_root(directory, args.workspace)
+    # dispatch() has already chdir'd to the workspace, so cwd is it
+    directory = os.getcwd()
+    root = workspace.open_root()
 
-    argv = ["serve", directory, "--port", str(args.port)]
-    if args.workspace is not None:
-        argv += ["--workspace", os.path.abspath(args.workspace)]
+    argv = ["serve", "--port", str(args.port)]
     if args.open:
         argv.append("--open")
     if args.force:
@@ -1227,17 +1218,15 @@ def launch(args):
     if args.background:
         return launch_background(args)
 
-    # Serving an empty directory is useful: it can launch the first run from
+    # Serving an empty workspace is useful: it can launch the first run from
     # the browser. Use the same workspace creation path as `yuclid run` rather
     # than requiring a run to have happened here already.
     #
-    # `directory` is the work — the configuration, and the cwd a run started
-    # from here gets — resolved exactly as `yuclid run` resolves its own cwd.
-    # `--workspace` only ever moves the state (the runs, their logs and their
-    # captures), same as it does for `run`; it does not imply the work moved
-    # too, so the two are independent rather than one swallowing the other.
-    directory = os.path.abspath(args.directory) if args.directory else os.getcwd()
-    root = workspace.open_root(directory, args.workspace)
+    # dispatch() has already chdir'd to the workspace --workspace named, or
+    # left it as the working directory when it named none — so cwd is it,
+    # the same rule every command follows.
+    directory = os.getcwd()
+    root = workspace.open_root()
     if not any(os.path.isfile(os.path.join(directory, name)) for name in DEFAULT_INPUTS):
         report(
             LogLevel.WARNING,

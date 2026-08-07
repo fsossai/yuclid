@@ -102,10 +102,10 @@ def describe_missing(df, dimensions):
 def find_run(files):
     """The run that wrote these results, when one in this directory did.
 
-    A dataset is a plain file and says nothing about how it was made, but the
-    run directory holds a hard link to that very file, so the run can be found
-    by inode. Only one run is looked for: merging several datasets makes the
-    question meaningless.
+    A dataset is a plain file and says nothing about how it was made, but a
+    run records the path it keeps its own copy at, so it can be found by that.
+    Only one run is looked for: merging several datasets makes the question
+    meaningless.
     """
     import yuclid.workspace as workspace
 

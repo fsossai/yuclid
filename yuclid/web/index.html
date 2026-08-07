@@ -858,7 +858,7 @@ const renderManage = async () => {
   const kept = document.createElement("p");
   kept.style.color = "var(--dim)";
   kept.textContent =
-    "The .jsonl results in the working directory stay.";
+    "The .jsonl results in the workspace stay.";
   block.append(kept);
 
   const room = document.createElement("p");
@@ -1997,8 +1997,8 @@ const renderRun = run => {
     again.append(button);
   }
 
-  // a copy in the working directory, next to wherever the browser's user is
-  // sitting, regardless of where --workspace keeps the run itself
+  // a run started from this page keeps no --output copy of its own — this
+  // makes one, on request, in the workspace
   const exporter = document.getElementById("rexport");
   if (!run.output || !run.output.toLowerCase().endsWith(".jsonl")) {
     exporter.innerHTML = "";
@@ -2009,7 +2009,7 @@ const renderRun = run => {
     const button = document.createElement("button");
     button.className = "act";
     button.textContent = "Export";
-    button.title = "copy this run's JSONL into the current working directory";
+    button.title = "copy this run's JSONL into the workspace";
     button.onclick = async () => {
       const answer = await ask(`/api/runs/${run.id}/export`, {});
       if (answer.error) return say(answer.error, true);

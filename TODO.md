@@ -2,11 +2,6 @@
 
 ## Quick
 
-- add: option to run the `serve` in the background
-- add: stddev column when comparing "selected" and "other" in the space
-- fix: make sure cmd line options are consistent with what they do, especially `--workspace`
-- fix: "export run" should export the file results.yuclid.jsonl to the cwd
-
 ## Planned
 
 - add: alternative execution order that prioritizes exploration of the space rather then repetitions
@@ -23,3 +18,5 @@
 - change: readme image
 - research: find hyperfine users that extensively use parameter lists
 - research: how yuclid compares to hyperfine
+- add: mechanism to export data into nested directories
+- add: option to split the result w.r.t. a set of dimensions

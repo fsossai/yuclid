@@ -12,6 +12,7 @@ import json
 import csv
 import select
 import signal
+import shutil
 import sys
 import time
 import re
@@ -1991,6 +1992,10 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     result.update({name: v[k] for name, v in padded.items()})
                     writer.write(result)
             writer.flush()
+            # the copy --output asked for stays current with this repetition
+            # rather than only with the run as a whole, so it is worth reading
+            # from before the run is done with it
+            sync_output(settings)
         finally:
             if file_lock is not None:
                 file_lock.release()
@@ -2289,6 +2294,102 @@ def read_records(path, fmt):
                 yield None
 
 
+def write_records(destination, fmt, columns, records):
+    """`records` written fresh into `destination`, in `fmt`.
+
+    A record that failed to parse is skipped rather than carried over: it was
+    never a measurement to begin with, so continuing without it costs nothing
+    a resume was there to keep.
+    """
+    with open(destination, "w", newline="") as f:
+        writer = RecordWriter(f, fmt, columns, write_header=(fmt == "csv"))
+        for record in records:
+            if record is not None:
+                writer.write(record)
+
+
+def prepare_sync(settings):
+    """Get results.jsonl and --output's copy started from the same place.
+
+    `settings["synced"]` is how much of results.jsonl the copy already
+    reflects — `sync_output` reads from there on, so a rep that adds one
+    record appends one record rather than rewriting the whole file behind it.
+
+    A standalone `--resume` seeds results.jsonl from whatever --output already
+    held, and what came from there counts as already synced to it: seeding it
+    a second time, going the other way, is exactly the duplicate a resume was
+    meant not to produce. `finish` reopening a run's own directory needs no
+    seed — results.jsonl is already wherever an earlier attempt left it — but
+    still starts synced if --output already has something, since an earlier
+    attempt that did keep it current has already put it there.
+    """
+    settings["synced"] = 0
+    live = settings["live"]
+    if live is None or settings["dry_run"]:
+        return
+    source, destination = settings["resume"], settings["output"]
+    if source is not None and source != live:
+        # a source that does not exist yet is `load_recorded_points`'s to
+        # warn about, in its turn — there is simply nothing here to seed with
+        if os.path.isfile(source) and not (
+            os.path.exists(live) and os.path.getsize(live) > 0
+        ):
+            write_records(
+                live, "jsonl", None, read_records(source, settings["resume_format"])
+            )
+        settings["synced"] = os.path.getsize(live) if os.path.exists(live) else 0
+        return
+    if (
+        os.path.exists(live)
+        and os.path.exists(destination)
+        and os.path.getsize(destination) > 0
+    ):
+        settings["synced"] = os.path.getsize(live)
+
+
+def sync_output(settings):
+    """Keep --output (or --output-dir) matching the run's own results.jsonl.
+
+    Called after every repetition, so the copy somebody is looking at never
+    lags behind by more than the one that just finished — reading only what
+    `prepare_sync` has not already accounted for, appended rather than
+    rewritten, so this stays cheap regardless of how large results.jsonl has
+    grown. Skipped when nothing asked for a copy at all — always true of a run
+    `serve` started, since nobody is necessarily watching that file and
+    exporting one is a choice made from the page, not work to do every rep.
+    """
+    if settings["no_copy_output"] or settings["live"] is None:
+        return
+    live, destination = settings["live"], settings["output"]
+    if os.path.abspath(destination) == os.path.abspath(live):
+        return
+    if not os.path.isfile(live):
+        return
+    with open(live, "r") as f:
+        f.seek(settings["synced"])
+        added = f.read()
+        settings["synced"] = f.tell()
+
+    fresh = not os.path.exists(destination) or os.path.getsize(destination) == 0
+    if added == "" and not fresh:
+        return
+
+    out_dir = os.path.dirname(destination)
+    if out_dir and not os.path.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+    if settings["format"] == "jsonl":
+        # opened even with nothing to add, so an empty run still leaves the
+        # file --output named, the same as it always has
+        with open(destination, "a") as f:
+            f.write(added)
+        return
+    records = (json.loads(line) for line in added.splitlines() if line.strip())
+    with open(destination, "a", newline="") as f:
+        writer = RecordWriter(f, "csv", settings["columns"], write_header=fresh)
+        for record in records:
+            writer.write(record)
+
+
 def load_recorded_points(path, order, metric_names, fmt):
     """Count the records a previous run already wrote for each point.
 
@@ -2417,24 +2518,11 @@ def run_subspace_trials(settings, data, execution):
                 plan.repetition_done(entry)
             plan.finish(entry)
     else:
-        output_dir = os.path.dirname(settings["output"])
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir, exist_ok=True)
-        fresh = (
-            not os.path.exists(settings["output"])
-            or os.path.getsize(settings["output"]) == 0
-        )
-        with open(settings["output"], "a", newline="") as f:
-            if settings["run_dir"] is not None:
-                # only now does the file exist to be linked, so a run that never
-                # gets this far leaves no empty dataset behind
-                workspace.link_results(settings["run_dir"], settings["output"])
-            writer = RecordWriter(
-                f,
-                settings["format"],
-                record_columns(data, settings, execution["order"]),
-                write_header=fresh,
-            )
+        # every trial appends to results.jsonl directly, in the run's own
+        # directory — always JSON Lines, whatever --output eventually asks the
+        # finished copy to be written as
+        with open(settings["live"], "a") as f:
+            writer = RecordWriter(f, "jsonl", settings["columns"], write_header=False)
             if settings["parallel_trials"] != 0:
                 if settings["parallel_trials"] < 0:
                     max_workers = execution["subspace_size"]
@@ -2588,18 +2676,18 @@ def get_point_item_plan(item, subspace, order):
 def build_settings(args):
     settings = dict(vars(args))
 
-    # inputs
-    requested = args.inputs
-    if requested is None:
-        found = [name for name in DEFAULT_INPUTS if os.path.isfile(name)]
-        if len(found) > 1:
-            report(
-                LogLevel.WARNING,
-                "several default configurations found",
-                ", ".join(found),
-                hint="reading {}. Name the others with --inputs".format(found[0]),
-            )
-        requested = found[:1] or DEFAULT_INPUTS[:1]
+    # input: a workspace has exactly one configuration, named yuclid.json,
+    # yuclid.yaml or yuclid.yml
+    found = [name for name in DEFAULT_INPUTS if os.path.isfile(name)]
+    if len(found) > 1:
+        report(
+            LogLevel.WARNING,
+            "several default configurations found",
+            ", ".join(found),
+            hint="reading {}. A workspace has one configuration; remove "
+            "the others".format(found[0]),
+        )
+    requested = found[:1] or DEFAULT_INPUTS[:1]
 
     settings["inputs"] = []
     for file in requested:
@@ -2608,8 +2696,10 @@ def build_settings(args):
         else:
             settings["inputs"].append(file)
     # output
-    # `--resume` continues the file named by --output
+    # `--resume` reads what --output already holds, before this run's own
+    # results.jsonl has anything of its own to say
     settings["resume"] = None
+    settings["resume_format"] = None
     if args.resume:
         if args.output is None:
             report(
@@ -2626,6 +2716,9 @@ def build_settings(args):
         named = args.output
         is_csv = named is not None and named.lower().endswith(".csv")
         settings["format"] = "csv" if is_csv else "jsonl"
+
+    if settings["resume"] is not None:
+        settings["resume_format"] = settings["format"]
 
     if settings["fold"] and settings["format"] == "csv":
         report(
@@ -2733,7 +2826,20 @@ def build_settings(args):
 
     settings["timing"] = {"setup": 0.0, "experiments": 0.0}
     settings["cwd"] = os.getcwd()
+    # set only by `serve`: a run it starts is watched through its own progress
+    # file, not through --output, so keeping that copy current is work with no
+    # reader — offered instead through the page's own Export, on request
+    settings["no_copy_output"] = bool(getattr(args, "no_copy_output", False))
     build_run_directory(settings, args)
+
+    if getattr(args, "continue_run", None) is not None:
+        # `finish` reopens this run's own directory, and results.jsonl in it
+        # already holds everything an earlier attempt recorded — the file
+        # named by --output is only where the copy goes now, not where what
+        # is already done gets read back from
+        settings["resume"] = settings["live"]
+        settings["resume_format"] = "jsonl"
+    prepare_sync(settings)
 
     # `--replay ID` is `--points` with the list taken from a run: the points it
     # measured, whatever it was told along the way. Given both, the file wins —
@@ -2753,8 +2859,12 @@ def build_settings(args):
     settings["steering"] = Steering(settings, settings["progress"])
 
     report(LogLevel.INFO, "working directory", settings["cwd"])
-    report(LogLevel.INFO, "input configurations", ", ".join(requested))
-    report(LogLevel.INFO, "output data", settings["output"])
+    report(LogLevel.INFO, "input configuration", ", ".join(requested))
+    report(
+        LogLevel.INFO,
+        "output data",
+        settings["live"] if settings["no_copy_output"] else settings["output"],
+    )
     report(LogLevel.INFO, "temp directory", settings["trials_dir"])
     return settings
 
@@ -2768,13 +2878,12 @@ def build_run_directory(settings, args):
     settings["run_dir"] = None
     settings["run_id"] = None
     settings["root"] = None
+    settings["live"] = None
     # `${yuclid.workspace}` is answerable before a directory is claimed, and
     # stays answerable when none is — compiling a script writes no run, and the
     # script it writes still has to name the same place
     global WORKSPACE
-    WORKSPACE = workspace.work_of(
-        workspace.root_path(workspace=getattr(args, "workspace", None))
-    )
+    WORKSPACE = workspace.workspace_of(getattr(args, "workspace", None))
     settings["workspace"] = WORKSPACE
     settings["progress"] = workspace.Progress(None)
     settings["setup_dir"] = os.path.join(workspace.DIRNAME, "setup")
@@ -2819,6 +2928,9 @@ def build_run_directory(settings, args):
         )
     if args.name is not None:
         workspace.write_name(settings["run_dir"], args.name)
+    # every trial appends here, whatever --output eventually asks the run to
+    # also be copied to
+    settings["live"] = workspace.results_path(settings["run_dir"])
 
     if args.temp_dir is None:
         settings["trials_dir"] = os.path.join(settings["run_dir"], workspace.TRIALS)
@@ -3308,6 +3420,9 @@ def launch(args):
         settings["progress"].close()
         if previous is not None:
             signal.signal(signal.SIGINT, previous)
+        # a last one, so however this ended, the copy is not missing whatever
+        # the very last repetition added
+        sync_output(settings)
         # nothing is watching a run, so it records its own ending
         workspace.set_state(settings["run_dir"], state)
 
@@ -3343,6 +3458,10 @@ def execute(settings):
     validate_env_order(data["env"])
     env = build_environment(settings, data)
     order = define_order(settings, data)
+    # decided once, from the configuration rather than from whatever the
+    # first record happens to have, and needed only if --output ends up
+    # asking for a CSV copy of results.jsonl
+    settings["columns"] = record_columns(data, settings, order)
     validate_yvars_in_env(data["space"], data["env"])
     validate_yvars_in_setup(data["space"], data["setup"])
     validate_yvars_in_trials(data["space"], data["trials"])
@@ -3362,7 +3481,7 @@ def execute(settings):
     if settings["resume"] is not None:
         metric_names = {m["name"] for m in data["metrics"]}
         recorded = load_recorded_points(
-            settings["resume"], order, metric_names, settings["format"]
+            settings["resume"], order, metric_names, settings["resume_format"]
         )
         if settings["repeat"] > 1 and not settings["fold"]:
             report(
@@ -3392,6 +3511,6 @@ def execute(settings):
     )
 
     if not settings["dry_run"]:
-        metric_names = {m["name"] for m in data["metrics"]}
-        hint = "use `yuclid plot {}` to analyze the results".format(settings["output"])
-        report(LogLevel.INFO, "output data written to", settings["output"], hint=hint)
+        target = settings["live"] if settings["no_copy_output"] else settings["output"]
+        hint = "use `yuclid plot {}` to analyze the results".format(target)
+        report(LogLevel.INFO, "output data written to", target, hint=hint)
