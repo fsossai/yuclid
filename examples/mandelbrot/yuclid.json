@@ -1,0 +1,63 @@
+{
+  "env": [
+    {
+      "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic -fopenmp",
+      "WIDTH": "1200",
+      "HEIGHT": "1200",
+      "MAX_ITER": "2000"
+    }
+  ],
+  "space": {
+    "compiler": ["gcc", "clang"],
+    "threads": [1, 2, 4, 8],
+    "schedule": [
+      { "name": "static", "value": "static" },
+      { "name": "dynamic:10", "value": "dynamic,10", "condition": "yuclid.threads > 1" },
+      { "name": "dynamic:100", "value": "dynamic,100", "condition": "yuclid.threads > 1" },
+      { "name": "guided", "value": "guided", "condition": "yuclid.threads > 1" }
+    ]
+  },
+  "setup": {
+    "global": ["mkdir -p build"],
+    "point": [
+      {
+        "command": "${yuclid.compiler} $CFLAGS mandelbrot.c -o build/mandelbrot-${yuclid.compiler}",
+        "on": ["compiler"],
+        "parallel": true
+      }
+    ]
+  },
+  "trials": [
+    {
+      "command": [
+        "OMP_NUM_THREADS=${yuclid.threads}",
+        "OMP_SCHEDULE='${yuclid.schedule}'",
+        "./build/mandelbrot-${yuclid.compiler}",
+        "$WIDTH $HEIGHT $MAX_ITER"
+      ]
+    }
+  ],
+  "metrics": [
+    { "name": "seconds", "command": "awk '{print $1}' ${yuclid.@}.out" },
+    {
+      "name": "miterations_per_second",
+      "command": "awk '{print ($1>0)?$2/$1/1e6:0}' ${yuclid.@}.out"
+    },
+    { "name": "threads_used", "command": "awk '{print $3}' ${yuclid.@}.out" },
+    {
+      "name": "imbalance",
+      "command": "awk '{print $4}' ${yuclid.@}.out",
+      "condition": "yuclid.threads > 1"
+    }
+  ],
+  "presets": {
+    "quick": {
+      "threads": [1, 4],
+      "schedule": ["static", "dynamic:100"]
+    },
+    "scaling": {
+      "schedule": ["static", "guided"]
+    }
+  },
+  "order": ["compiler", "threads", "schedule"]
+}
