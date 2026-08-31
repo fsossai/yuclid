@@ -17,6 +17,19 @@ def _esc(text):
     return str(text).replace("_", r"\_")
 
 
+def norm_word(args):
+    """What the y values have been turned into, or None if they are raw.
+
+    `-r` divides the other way round, so the number is how many times the
+    reference is the value rather than the other way about. Said in one word
+    everywhere it is said at all, so the axis, the metric selector and the
+    title of a saved figure cannot disagree about what is being shown.
+    """
+    if not (args.x_norm or args.z_norm or args.ref_norm):
+        return None
+    return "reversed" if args.norm_reverse else "normalized"
+
+
 def get_current_config(ctx):
     df = ctx["df"]
     domains = ctx["domains"]
@@ -551,12 +564,14 @@ def update_plot(ctx, padding_factor=1.05):
         to_engineering_si(y_left, unit=args.unit),
         to_engineering_si(y_right, unit=args.unit),
     )
+    # the selector names every metric and marks the one on show; when the
+    # values have been normalized it says so on that one, since that is the
+    # metric the axis below is actually drawing
+    word = norm_word(args)
+    shown = rf"$\mathbf{{{_esc(y_axis)}}}$" + (f" ({word})" if word else "")
     title_parts = []
     for i, y in enumerate(args.y, start=1):
-        if y == y_axis:
-            title_parts.append(rf"{i}: $\mathbf{{{_esc(y)}}}$")
-        else:
-            title_parts.append(f"{i}: {y}")
+        title_parts.append(f"{i}: " + (shown if y == y_axis else f"{y}"))
     title = " | ".join(title_parts) + "\n" + y_range
     ctx["fig"].suptitle(title)
 
@@ -650,12 +665,9 @@ def update_plot(ctx, padding_factor=1.05):
     if top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
 
-    if args.x_norm or args.z_norm or args.ref_norm:
-        if args.norm_reverse:
-            normalized_label = f"{y_axis} (gain)"
-        else:
-            normalized_label = f"{y_axis} (normalized)"
-        ax_plot.set_ylabel(format_ylabel(normalized_label))
+    word = norm_word(args)
+    if word is not None:
+        ax_plot.set_ylabel(format_ylabel(f"{y_axis} ({word})"))
     else:
         ax_plot.set_ylabel(format_ylabel(y_axis))
 
@@ -682,13 +694,8 @@ def get_config_name(ctx):
     y_axis = ctx["y_axis"]
     args = ctx["args"]
     config = get_current_config(ctx)
-    if args.ref_norm or args.x_norm or args.z_norm:
-        if args.norm_reverse:
-            status = [f"{y_axis}", "gain"]
-        else:
-            status = [f"{y_axis}", "normalized"]
-    else:
-        status = [f"{y_axis}"]
+    word = norm_word(args)
+    status = [f"{y_axis}"] + ([word] if word else [])
     status += [str(v) for v in config.values()]
     name = "_".join(status)
     return name
@@ -722,7 +729,7 @@ def save_to_file(ctx, outfile=None):
             legend.set_visible(False)
 
     name = str(ctx["y_axis"])
-    s = "gain" if args.norm_reverse else "normalized"
+    s = norm_word(args)
     if args.ref_norm:
         wrt = " | ".join(args.ref_norm)
         title = rf"$\mathbf{{{_esc(name)}}}$ ({s} w.r.t {wrt})"

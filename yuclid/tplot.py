@@ -16,6 +16,7 @@ from yuclid.plot import (
     group_normalization,
     ref_normalization,
     get_config_name,
+    norm_word,
 )
 import yuclid.spread as spread
 import plotext as ptx
@@ -225,18 +226,23 @@ def _draw_chart(ctx, width=None, height=None):
 
     ptx.xlabel(str(args.x))
 
-    if args.x_norm or args.z_norm or args.ref_norm:
-        suffix = "gain" if args.norm_reverse else "normalized"
-        ptx.ylabel(f"{y_axis} ({suffix})")
+    word = norm_word(args)
+    if word is not None:
+        ptx.ylabel(f"{y_axis} ({word})")
     elif args.unit:
         ptx.ylabel(f"{y_axis} [{args.unit}]")
     else:
         ptx.ylabel(str(y_axis))
 
+    # the selector names every metric and brackets the one on show; when the
+    # values have been normalized it says so on that one, since that is the
+    # metric the axis below is actually drawing
     title_parts = []
     for i, y in enumerate(args.y, start=1):
-        marker = f"[{i}]" if y == y_axis else f"({i})"
-        title_parts.append(f"{marker} {y}")
+        if y == y_axis:
+            title_parts.append(f"[{i}] {y}" + (f" ({word})" if word else ""))
+        else:
+            title_parts.append(f"({i}) {y}")
     ptx.title(" | ".join(title_parts))
 
     _place_legend(sub_df, x_order, x_indices, y_axis, z_dom, colors, args, estimator)
