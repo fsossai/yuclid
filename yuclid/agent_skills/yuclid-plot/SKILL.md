@@ -1,6 +1,6 @@
 ---
 name: "yuclid-plot"
-description: "Suggest ways to visualize a yuclid result file"
+description: "Suggest ways to visualize a yuclid result file, defaulting to the workspace's most recent run when none is named"
 ---
 
 # Suggesting views of a yuclid dataset
@@ -20,17 +20,53 @@ and which metric answers the question?* Everything else follows.
 ## 1. Establish which file
 
 Everything below is about one dataset, so start from the file. If the user
-named it, use that. If not, look for the result files `yuclid run` writes in
-the working directory:
+named one, use it and skip the rest of this section.
+
+Invoked with no arguments, do not ask which file and do not `ls` for one:
+**default to the most recent run of the workspace**. The workspace is the
+directory holding `yuclid.json`, which is the working directory unless the user
+pointed somewhere else, and yuclid will name that run's results file itself:
 
 ```sh
-ls *.yuclid.jsonl *.yuclid.csv
+yuclid runs --last          # add --workspace DIR for a workspace elsewhere
+```
+
+That prints one absolute path and nothing else, which is what to pass on to
+`describe` and to every command suggested below.
+
+**Check that the path exists before using it.** It is the destination the run
+recorded, not proof of a file: a run started from the web UI never writes one,
+and one written months ago may have been moved or cleaned away. Every run also
+keeps its own copy, which is always there and always JSON Lines whatever
+format the destination was:
+
+```sh
+yuclid runs                 # run ids, state, progress, destination — newest first
+yuclid describe .yuclid/runs/RUN_ID/results.jsonl
+```
+
+So the order is: `yuclid runs --last`; if that path is missing, take the top id
+from `yuclid runs` and use `.yuclid/runs/<id>/results.jsonl` instead — under the
+workspace, so `DIR/.yuclid/runs/<id>/results.jsonl` when `--workspace DIR` is in
+play. Both are ordinary result files; `describe`, `plot`, `tplot` and `stats`
+all read either one.
+
+Say which run you settled on — its id, and whether it finished — before
+suggesting anything. The newest run is a default, not a certainty: if
+`yuclid runs` shows it stopped early or covering a different space from the
+one the user is asking about, say so and offer the run that fits instead.
+
+Only where there is no `.yuclid` at all — not a workspace, or a bare directory
+of result files someone copied there — fall back to looking for the files
+themselves:
+
+```sh
+ls -1 *.yuclid.jsonl *.yuclid.csv
 ```
 
 If exactly one turns up, say which one you are using and carry on. If several
 do, or none, **ask the user which file to look at** rather than guessing — the
-suggestions are worthless if they describe another experiment. The same applies
-when a directory holds results from several unrelated runs.
+suggestions are worthless if they describe another experiment.
 
 ## 2. Read the schema
 
@@ -129,8 +165,13 @@ yuclid stats FILE -y seconds -z pattern
 Three to five commands, most useful first, each with one line saying what
 question it answers — phrased in the terms of the experiment, not of the flags:
 "how the three kernels compare as the matrix grows", not "seconds by size
-grouped by variant". Prefer `tplot` for the first look — it stays in the
-terminal — and `plot` when the user wants a window or an export.
+grouped by variant".
+
+**Every command is `yuclid plot`.** `tplot` takes the same arguments and draws
+in the terminal instead of a window, but suggest it only where the user has
+asked for it by name, or asked to stay in the terminal, or said they are over
+SSH or without a display. Absent that, do not offer it as an alternative and do
+not mention it — one clear command per question is the point.
 
 Keep every name exactly as the schema spells it, and do not invent flags. If
 `describe` reported a large part of the space missing, say so: a view whose X
