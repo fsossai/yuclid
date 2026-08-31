@@ -1,1 +1,0 @@
-yuclid plot 20260831-170450.yuclid.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -l -A

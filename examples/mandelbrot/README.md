@@ -44,9 +44,6 @@ yuclid tplot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds
 # Show how much each schedule gains over static scheduling at each thread count.
 yuclid plot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds -X schedule=static -r -A
 
-# Show strong scaling for each compiler using the static schedule.
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z compiler -y seconds -L schedule=static -Z threads=1 -r -A
-
 # See whether slower runs correspond to uneven work distribution.
 yuclid tplot 20260731-120000.yuclid.jsonl -x threads -z schedule -y imbalance
 
@@ -57,6 +54,31 @@ yuclid plot 20260731-120000.yuclid.jsonl -x size -z schedule -y seconds -L threa
 yuclid plot 20260731-120000.yuclid.jsonl -x size -z threads -y miterations_per_second -L schedule=static
 ```
 
-The arrow keys move through dimensions that are not on the plot. Run
-`yuclid serve` in another terminal to monitor the space while the experiment
-is running.
+The arrow keys move through dimensions that are not on the plot, so one command
+is a whole family of plots rather than a single picture. The two animations
+below are the ones the README of the project shows, and the command above each
+of them is what produced it:
+
+```sh
+yuclid plot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
+```
+
+![Speedup by thread count and schedule, stepping through compiler and image size](plot.gif)
+
+The animation above is strong scaling against GCC at one thread with static
+scheduling. Its normalization reference specifies `threads`, `schedule`, and
+`compiler`, but deliberately leaves out `size`. The plot therefore uses the
+currently selected size as the reference size; that selection is displayed at
+the bottom of the plotter and changes as you move between sizes.
+
+```sh
+yuclid plot 20260731-120000.yuclid.jsonl -x threads -z compiler -y seconds -A
+```
+
+![Seconds by thread count and compiler, stepping through schedule and image size](bars.gif)
+
+The animation above shows the same measurements without a reference: seconds
+as they were measured, the two compilers side by side.
+
+Run `yuclid serve` in another terminal to monitor the space while the
+experiment is running.
