@@ -2,13 +2,16 @@
   "env": [
     {
       "CFLAGS": "-O3 -std=c11 -Wall -Wextra -pedantic -fopenmp",
-      "WIDTH": "1200",
-      "HEIGHT": "1200",
       "MAX_ITER": "2000"
     }
   ],
   "space": {
     "compiler": ["gcc", "clang"],
+    "size": [
+      { "name": "small", "value": 600 },
+      { "name": "medium", "value": 1200 },
+      { "name": "large", "value": 2400 }
+    ],
     "threads": [1, 2, 4, 8],
     "schedule": [
       { "name": "static", "value": "static" },
@@ -33,7 +36,7 @@
         "OMP_NUM_THREADS=${yuclid.threads}",
         "OMP_SCHEDULE='${yuclid.schedule}'",
         "./build/mandelbrot-${yuclid.compiler}",
-        "$WIDTH $HEIGHT $MAX_ITER"
+        "${yuclid.size} ${yuclid.size} $MAX_ITER"
       ]
     }
   ],
@@ -52,12 +55,14 @@
   ],
   "presets": {
     "quick": {
+      "size": ["small"],
       "threads": [1, 4],
       "schedule": ["static", "dynamic:100"]
     },
     "scaling": {
+      "size": ["medium"],
       "schedule": ["static", "guided"]
     }
   },
-  "order": ["compiler", "threads", "schedule"]
+  "order": ["compiler", "size", "threads", "schedule"]
 }
