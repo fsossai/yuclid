@@ -2617,6 +2617,27 @@ let spaceLeaves = new Map();
 // being compared against it, and the metric colouring the space
 let pinned = null, against = null, focused = null;
 let lookShows = "";
+// The way out of one point is usually the way into the next: over the edge of
+// a row, or across the gap between two nests, the mouse is off the space for
+// a few milliseconds on its way somewhere else. Dropping the comparison the
+// instant that happens is what flickers the panel between two hovers, so the
+// retreat waits long enough for an arrival to call it off.
+let retreat = null;
+const holdAgainst = () => {
+  if (retreat === null) return;
+  clearTimeout(retreat);
+  retreat = null;
+};
+const dropAgainst = () => {
+  holdAgainst();
+  if (against === null) return;
+  retreat = setTimeout(() => {
+    retreat = null;
+    if (against === null) return;
+    against = null;
+    renderLook();
+  }, 140);
+};
 // dimensions held fixed to the pinned point's own value: unchecking one
 // shrinks the heatmap to only the points that vary in the dimensions still
 // checked, instead of comparing the pinned point against the whole space
@@ -2628,6 +2649,7 @@ const heatSlice = new Map();
 let spaceHeatShows = "";
 
 const forgetLook = () => {
+  holdAgainst();
   pinned = against = focused = null;
   lookShows = "";
   fixedDims.clear();
@@ -2635,15 +2657,35 @@ const forgetLook = () => {
   spaceHeatShows = "";
 };
 
+// Whichever element the space is actually scrolled in: above the narrow
+// breakpoint #panes scrolls on its own, below it that rule is off and the
+// page scrolls instead. Restoring the wrong one restores nothing.
+const spaceScroller = () => {
+  const panes = document.getElementById("panes");
+  return panes.scrollHeight > panes.clientHeight
+    ? panes
+    : document.scrollingElement || document.documentElement;
+};
+
+// This runs every tick, and rebuilding any part of the space — the boxes
+// when a new point shows up, the heat picker, the look panel — shortens the
+// page for an instant, which the browser answers by clamping the scroll to
+// the new bottom. Without putting it back, scrolled down is exactly where a
+// routine refresh throws you off of. In a finally so the paths that empty
+// the space and give up restore it too.
 const renderSpace = () => {
+  const keep = spaceScroller();
+  const scrollTop = keep.scrollTop;
+  try {
+    drawSpace();
+  } finally {
+    if (keep.scrollTop !== scrollTop) keep.scrollTop = scrollTop;
+  }
+};
+
+const drawSpace = () => {
   const body = document.getElementById("space-body");
   const says = document.getElementById("space-says");
-  // this runs every tick, and rebuilding any part of the space below the
-  // fold — the heat picker, the look panel — changes its height; without
-  // this, scrolled down is exactly where a routine refresh throws you off
-  // of, snapped back up to wherever the shorter, stale content used to end
-  const panes = document.getElementById("panes");
-  const scrollTop = panes.scrollTop;
 
   if (!current) {
     body.innerHTML = "";
@@ -2672,11 +2714,7 @@ const renderSpace = () => {
   // gives the selected point its own table back. On the space itself rather
   // than on each leaf, so that crossing the gap between two points does not
   // flicker the panel below.
-  body.onmouseleave = () => {
-    if (against === null) return;
-    against = null;
-    renderLook();
-  };
+  body.onmouseleave = dropAgainst;
 
   const held = roster.points.size;
   says.textContent =
@@ -2695,7 +2733,6 @@ const renderSpace = () => {
   }
   renderSpaceHeat(values);
   renderLook();
-  panes.scrollTop = scrollTop;
 };
 
 // -- colouring the space by a metric ---------------------------------------
@@ -2985,11 +3022,15 @@ const buildLeaf = (order, key, index) => {
   // and moving over any other point compares that one against it. Clicking it
   // again lets it go.
   leaf.onclick = () => {
+    holdAgainst();
     pinned = pinned === id ? null : id;
     against = null;
     renderSpace();
   };
   leaf.onmouseenter = () => {
+    // arrived somewhere, so whatever leaving the last point set in motion is
+    // off: this point, not the empty panel, is what comes next
+    holdAgainst();
     // back on the pinned point itself: the comparison ends, and its own
     // details return, the same as a fresh click
     if (pinned !== null && pinned === id) {
@@ -3040,9 +3081,13 @@ const fillLeaf = (leaf, point, state) => {
         : "pending";
     if (rep.dataset.mark !== mark) rep.dataset.mark = mark;
   });
-  leaf.title = point
+  // written only when it changes: assigning the same title again while the
+  // browser is showing it tears the tooltip down and puts it back, which over
+  // a point measuring is a tooltip blinking twice a second under the cursor
+  const says = point
     ? `${leaf.dataset.of}\n${state}${wanted > 1 ? `  ${done}/${wanted}` : ""}`
     : `${leaf.dataset.of}\nnot in the space`;
+  if (leaf.title !== says) leaf.title = says;
 };
 
 // -- what is known about one point -----------------------------------------
