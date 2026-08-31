@@ -1961,9 +1961,12 @@ const renderRun = run => {
       ? `currently at (${coords(run.order, run.current)})`
       : "";
 
+  // the file the records are in, which for a run started here is the run's own
+  // results.jsonl: --output names a copy nobody made, and offering its name as
+  // a path would be offering one that leads nowhere
   const file = document.getElementById("rfile");
-  file.textContent = run.output || "";
-  file.onclick = () => copyPath(file, run.output);
+  file.textContent = run.results || "";
+  file.onclick = () => copyPath(file, run.results);
 
   renderCommand(run);
   renderSetupTrouble(run);
@@ -2365,7 +2368,7 @@ const renderGapActions = (run, missing) => {
     no.onclick = () => { choosing = false; renderGapActions(run, missing); };
     question.append(yes, no);
     row.append(question);
-    how.textContent = `they go into ${run.output || "the same results file"}`;
+    how.textContent = `they go into ${run.results || "the same results file"}`;
   };
   row.append(start);
   how.textContent = `${missing} point(s) of the space were never measured`;
@@ -2389,7 +2392,7 @@ const renderGapActions = (run, missing) => {
     select(answer.started);
     say(
       `measuring the ${missing} missing point(s) into ` +
-        `${run.output || "the same results file"}`
+        `${run.results || "the same results file"}`
     );
   };
 };

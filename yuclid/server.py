@@ -298,6 +298,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "created": manifest.get("created"),
             "ended": manifest.get("ended"),
             "output": manifest.get("output"),
+            "results": results_of(manifest),
             "argv": manifest.get("argv"),
             "replay_of": manifest.get("replay_of"),
             "order": plan["order"] if plan else [],
@@ -1042,6 +1043,21 @@ def gaps_of(plan, live):
         for p in plan["points"]
         if p["status"] in left_behind
     ]
+
+
+def results_of(manifest):
+    """The file this run's records are actually in.
+
+    `--output` names a copy, and the runs started from this page are told not
+    to make one — so for them the destination is a name and nothing else until
+    somebody presses Export, and naming it as the results would be pointing at
+    a file that has never existed. A run's own results.jsonl is the one that is
+    always there, which also covers a copy that was moved or cleaned away.
+    """
+    output = manifest.get("output")
+    if output and os.path.exists(output):
+        return output
+    return os.path.join(manifest["directory"], workspace.RESULTS)
 
 
 def dimensions_of(plan):
