@@ -130,8 +130,16 @@ def draw(
                 color = colors[j % len(colors)]
             else:
                 color = palette[z_val]
-            y_lower = ys_lower.xs(z_val)
-            y_upper = ys_upper.xs(z_val)
+            # Onto the x axis the plot actually draws, rather than onto the x
+            # values this one series happens to have. A series is short of a
+            # value wherever the space has no such point — a condition carved
+            # it out, or the run has not reached it — and the band would then
+            # be handed fewer numbers than there are places to put them.
+            # Reindexing leaves a NaN there, which fill_between skips, and it
+            # also puts the values in the axis's order rather than the sorted
+            # order the grouping came back in.
+            y_lower = ys_lower.xs(z_val).reindex(x_dom)
+            y_upper = ys_upper.xs(z_val).reindex(x_dom)
             if style == "area":
                 ax.fill_between(
                     x_dom,

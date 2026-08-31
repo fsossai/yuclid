@@ -351,7 +351,10 @@ def autospace_annotations(ctx, x_domain, ys, fontsize, padding_factor=1.10):
 
     y_adjust = {k: dict() for k in ys}
     for x in x_domain:
-        y_vals = [(z, ys[z][x]) for z in ys]
+        # only the series that have a point here: a space with conditions in it
+        # leaves a series short of some x, and there is no annotation to keep
+        # clear of where there is no measurement
+        y_vals = [(z, ys[z][x]) for z in ys if x in ys[z].index]
         lower_bound = -float("inf")
         for z, y in sorted(y_vals, key=lambda item: item[1]):
             box_bottom, box_top = y - h / 2, y + h / 2
@@ -365,6 +368,17 @@ def autospace_annotations(ctx, x_domain, ys, fontsize, padding_factor=1.10):
             y_adjust[z][x] = new_y
 
     return y_adjust
+
+
+def placed(x_adjust_z, y_adjust_z, x):
+    """Where this series' annotation for x goes, or None if it has no place.
+
+    A series is short of an x wherever the space has no such point, and a bar
+    that was never drawn has no position to write above.
+    """
+    if x not in x_adjust_z or x not in y_adjust_z:
+        return None, None
+    return x_adjust_z[x], y_adjust_z[x]
 
 
 def annotate(ctx, plot_type, sub_df, y_axis, palette):
@@ -411,10 +425,16 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
                 if not np.isnan(height) and height > 0:
                     yield p.get_x() + p.get_width() / 2
 
-        x_flat_gen = iter(x_flat_generator())
-        for z in z_domain:
-            for x in x_domain:
-                x_adjust[z][x] = next(x_flat_gen)
+        # one drawn bar per pair that has a measurement, in the order the bars
+        # were added. A space with conditions in it has no bar for some pairs,
+        # and walking every z against every x would ask for more bars than
+        # were drawn — so the pairs are the ones that exist, and the zip stops
+        # with whichever list runs out first rather than raising.
+        pairs = [
+            (z, x) for z in z_domain for x in x_domain if x in ys[z].index
+        ]
+        for (z, x), x_flat in zip(pairs, x_flat_generator()):
+            x_adjust[z][x] = x_flat
 
     annotation_format = f"{{:.{args.digits}f}}" if args.digits else "{:.2f}"
 
@@ -424,8 +444,9 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
         if args.annotate_max:
             y = ys[z].max()
             x = ys[z].idxmax()
-            xa = x_adjust[z][x]
-            ya = y_adjust[z][x]
+            xa, ya = placed(x_adjust[z], y_adjust[z], x)
+            if xa is None:
+                continue
             ax_plot.annotate(
                 annotation_format.format(y),
                 (xa, ya),
@@ -434,8 +455,9 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
         if args.annotate_min:
             y = ys[z].min()
             x = ys[z].idxmin()
-            xa = x_adjust[z][x]
-            ya = y_adjust[z][x]
+            xa, ya = placed(x_adjust[z], y_adjust[z], x)
+            if xa is None:
+                continue
             ax_plot.annotate(
                 annotation_format.format(y),
                 (xa, ya),
@@ -443,8 +465,9 @@ def annotate(ctx, plot_type, sub_df, y_axis, palette):
             )
         if args.annotate:
             for x, y in ys[z].items():
-                xa = x_adjust[z][x]
-                ya = y_adjust[z][x]
+                xa, ya = placed(x_adjust[z], y_adjust[z], x)
+                if xa is None:
+                    continue
                 ax_plot.annotate(
                     annotation_format.format(y),
                     (xa, ya),
