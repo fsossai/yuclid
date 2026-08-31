@@ -69,13 +69,13 @@ walk through those, so one command is a whole family of plots rather than a
 single picture — which is what the two animations below are stepping through:
 
 ```sh
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
+yuclid plot results.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
 ```
 
 ![Speedup by thread count and schedule, stepping through compiler and image size](https://raw.githubusercontent.com/fsossai/yuclid/master/examples/mandelbrot/plot.gif)
 
 ```sh
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z compiler -y seconds -A
+yuclid plot results.jsonl -x threads -z compiler -y seconds -A
 ```
 
 ![Seconds by thread count and compiler, stepping through schedule and image size](https://raw.githubusercontent.com/fsossai/yuclid/master/examples/mandelbrot/bars.gif)

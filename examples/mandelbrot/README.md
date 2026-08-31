@@ -36,22 +36,24 @@ yuclid run --select threads=4,8
 yuclid run --select size=small,medium
 yuclid run --repeat 3
 
-# At this point, a file like 20260731-120000.yuclid.jsonl is available.
+# Every run keeps its records in .yuclid/runs/<id>/results.jsonl, and also
+# copies them into the workspace; -o names that copy.
+yuclid run -o results.jsonl
 
 # Compare schedules as the number of threads grows.
-yuclid tplot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds
+yuclid tplot results.jsonl -x threads -z schedule -y seconds
 
 # Show how much each schedule gains over static scheduling at each thread count.
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds -X schedule=static -r -A
+yuclid plot results.jsonl -x threads -z schedule -y seconds -X schedule=static -r -A
 
 # See whether slower runs correspond to uneven work distribution.
-yuclid tplot 20260731-120000.yuclid.jsonl -x threads -z schedule -y imbalance
+yuclid tplot results.jsonl -x threads -z schedule -y imbalance
 
 # Check whether the image size changes which schedule wins.
-yuclid plot 20260731-120000.yuclid.jsonl -x size -z schedule -y seconds -L threads=8 -X schedule=static -r -A
+yuclid plot results.jsonl -x size -z schedule -y seconds -L threads=8 -X schedule=static -r -A
 
 # Confirm the work scales with the pixel count and not with anything else.
-yuclid plot 20260731-120000.yuclid.jsonl -x size -z threads -y miterations_per_second -L schedule=static
+yuclid plot results.jsonl -x size -z threads -y miterations_per_second -L schedule=static
 ```
 
 The arrow keys move through dimensions that are not on the plot, so one command
@@ -60,7 +62,7 @@ below are the ones the README of the project shows, and the command above each
 of them is what produced it:
 
 ```sh
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
+yuclid plot results.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
 ```
 
 ![Speedup by thread count and schedule, stepping through compiler and image size](plot.gif)
@@ -72,7 +74,7 @@ currently selected size as the reference size; that selection is displayed at
 the bottom of the plotter and changes as you move between sizes.
 
 ```sh
-yuclid plot 20260731-120000.yuclid.jsonl -x threads -z compiler -y seconds -A
+yuclid plot results.jsonl -x threads -z compiler -y seconds -A
 ```
 
 ![Seconds by thread count and compiler, stepping through schedule and image size](bars.gif)
