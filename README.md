@@ -2,9 +2,10 @@
 
 *Combinatorially explode your experiments*
 
-Yuclid is a CLI + Web UI tool for orchestrating and visualizing experiments in N-dimensional irregular spaces of parameters.
+Yuclid is a command-line tool with a Web UI for orchestrating and visualizing
+experiments across irregular, N-dimensional parameter spaces.
 It collects custom metrics in a single JSONL file for easy post-processing.
-Yuclid builds the Cartesian product of the dimensions you defined, and runs an experiment per point in that space.
+Yuclid builds the Cartesian product of the dimensions you define and runs an experiment at each point in that space.
 Experiments can be monitored and steered in real-time via CLI or Web UI.
 
 Check out the [examples](examples/README.md).
@@ -64,9 +65,10 @@ progress, then inspect and visualize the resulting dataset.
 - **`yuclid tplot`** provides the interactive plotter in a terminal.
 - **`yuclid stats`** plots the distribution of a selected metric.
 
-A plot puts two dimensions on the axes and leaves the rest free. The arrow keys
-walk through those, so one command is a whole family of plots rather than a
-single picture — which is what the two animations below are stepping through:
+A plot puts one dimension on the horizontal axis, uses another for the series,
+and leaves the rest free. The arrow keys walk through those, so one command is
+a whole family of plots rather than a single picture — which is what the two
+animations below are stepping through:
 
 ```sh
 yuclid plot results.jsonl -x threads -z schedule -y seconds -R threads=1 schedule=static compiler=gcc -r -l -A
@@ -103,9 +105,9 @@ yuclid skills install --directory .agents/skills    # custom or project director
 ```
 
 - **[`yuclid-config`](yuclid/agent_skills/yuclid-config/SKILL.md)** writes and fixes a configuration: the space, the trials,
-  and the commands that scrape the numbers out of them.
-- **[`yuclid-plot`](yuclid/agent_skills/yuclid-plot/SKILL.md)** reads a result file and suggests what is worth looking at,
-  as `yuclid plot` / `tplot` / `stats` commands that you can paste.
+  and the commands that extract metrics from their output.
+- **[`yuclid-plot`](yuclid/agent_skills/yuclid-plot/SKILL.md)** reads a result file, suggests useful views, and produces
+  ready-to-run `yuclid plot`, `tplot`, and `stats` commands.
 
 
 ## Reproducible scripts

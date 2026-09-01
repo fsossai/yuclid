@@ -70,7 +70,7 @@ yuclid run -p quick
 
 ## Space
 
-`space` maps each dimension name to its possible points. Dimension names may
+`space` maps each dimension name to its possible values. Dimension names may
 contain letters, digits, and underscores.
 
 Scalar points use the same value in commands and results:

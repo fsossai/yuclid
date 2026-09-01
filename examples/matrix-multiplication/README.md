@@ -1,11 +1,11 @@
 # Matrix multiplication
 
-Imagine having to find out which way of writing a matrix multiplication is
+Imagine having to find out which matrix-multiplication implementation is
 fastest. There are three loop orders to try, each of them with and without
 cache blocking, on matrices of several sizes. That is one program run per
 combination, and a number to collect from each.
 
-## The space
+## The Space
 
 The space has three dimensions: `size`, `variant` and `tile`. Every
 combination of the three is a point, and yuclid runs the trial once per point.
@@ -15,8 +15,8 @@ it depends on `size` alone.
 The `on: ["size"]` list says so, and the file is generated once per size rather than once per point. `parallel: true` allows
 those generations to run at the same time.
 The `quick` preset can be run with `yuclid run -p quick`.
-`order` lists `size` first, so yuclid varies it slowest and finishes
-everything about one matrix size before moving to the next.
+`order` lists `size` first, so yuclid varies it slowest and finishes every
+configuration for one matrix size before moving to the next.
 
 Set `"size": null` to require the user to provide a number via `-s`, for example `yuclid run -s size=100,200`.
 
@@ -26,7 +26,7 @@ Set `"size": null` to require the user to provide a number via `-s`, for example
 yuclid run
 yuclid run --dry-run
 yuclid run --preset quick
-yuclid run --select variant=dot size=512  # cut other variants and sizes
+yuclid run --select variant=dot size=512  # run only this variant and size
 yuclid run --select tile=32x32
 yuclid run --repeat 3                     # 3 runs per point
 

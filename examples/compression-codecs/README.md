@@ -1,22 +1,23 @@
 # Compression codecs
 
 Imagine having to pick a compression codec. There are three to compare at
-user-selected levels, on three kinds of data of different sizes. Both
-directions have to be timed, and the compressed size matters as much as the
+user-selected levels, across three types and sizes of data. Compression and
+decompression have to be timed, and the compressed size matters as much as the
 time.
 
-## The space
+## The Space
 
 A corpus depends on `kind` and `mebibytes`, not on the codec or the level. `on: ["kind", "mebibytes"]` builds
 each corpus once, and all codec/level combinations that need it share the file.
 Without that list the setup command would run for every point.
 
-The dimension `level` is undefined (`null`). This means that its values must be chosen be the user when the
+The dimension `level` is undefined (`null`). This means that its values must be chosen by the user when the
 run starts, for example, `-s level=1,6`.
 Values added during steering are preserved when the run is replayed.
 
-In this example many metrics are tracked. `ratio` and `compressed_bytes` are sizes, and
-`round_trip_ok` is 1 or 0. Any command that prints a number can be a metric.
+The metrics cover compression and decompression time, compressed size,
+compression ratio, and round-trip correctness. Any command that prints a
+number can be a metric.
 
 
 ## Running it

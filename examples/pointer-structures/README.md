@@ -1,6 +1,6 @@
 # Pointer structures, under the counters
 
-Imagine having to answer why one container is faster than another.
+Imagine having to explain why one data structure is faster than another.
 This example measures a sorted linked list,
 a binary search tree and a hash table with chaining doing the same five things,
 each built at two optimisation levels,
@@ -16,8 +16,9 @@ until `$BUDGET_MS` has elapsed, reporting how many it managed.
 
 That is why `time` is seconds per operation rather than a wall clock: the wall
 clock is the budget, and would read the same for every point in the run. `time`
-and `ops` are the two ways up of one measurement — how long one takes, and how
-many fit — and which to plot depends only on which reads better.
+and `ops` are two views of the same measurement: the time per operation and the
+number of operations completed. Which one to plot depends on which reads
+better.
 
 The operations are `build`, `lookup`, `absent` (searching for keys that are not
 there — a different branch profile), `traverse`, and `churn` (inserting a key
@@ -25,7 +26,7 @@ and taking it straight out again, so the container ends each operation the size
 it started).
 
 
-## The space
+## The Space
 
 Three structures, five operations, three sizes, two optimisation levels: the
 full product, 90 points.
@@ -51,8 +52,8 @@ there.
 
 ## Two ways of running one program
 
-The metric `alloc_syscalls` counts the times the allocator asked
-the kernel for memory, and it cannot come from the same invocation with `perf` like the others.
+The metric `alloc_syscalls` counts the times the allocator asked the kernel for
+memory. Unlike the other metrics, it requires a separate `strace` invocation.
 So there are two trials over the same program, each declaring the metrics it feeds:
 
 ```sh

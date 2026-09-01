@@ -15,7 +15,7 @@ does anything, and none of that is needed by `run`. A single invocation may
 take `--timeout` seconds (60 by default) before the case is failed, so a hang
 cannot block the suite.
 
-No dependencies beyond the standard library and whatever `yuclid` itself needs.
+The test suite requires only the standard library and Yuclid's own dependencies.
 The runner picks an interpreter that can import the **working copy** of yuclid
 (`PYTHONPATH` points at the repository, so nothing installed is used); override
 it with `--python` or `YUCLID_TEST_PYTHON`.
