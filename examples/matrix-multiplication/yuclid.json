@@ -10,10 +10,9 @@
     "variant": ["dot", "rows", "columns"],
     "tile": [
       { "name": "none", "value": 0 },
+      { "name": "16x16", "value": 16 },
       { "name": "32x32", "value": 32 },
-      { "name": "64x64", "value": 64 },
-      { "name": "128x128", "value": 128 },
-      { "name": "256x256", "value": 256 }
+      { "name": "64x64", "value": 64 }
     ]
   },
   "setup": {
