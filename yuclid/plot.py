@@ -590,10 +590,20 @@ def _update_series_toggle(ctx, palette):
         for label, color in zip(check.labels, label_colors):
             label.set_color(color)
 
+    _toggling = [False]
+
     def on_toggle(label):
+        if _toggling[0]:
+            return
         if label in ctx["hidden_series"]:
             ctx["hidden_series"].discard(label)
         else:
+            # Prevent hiding the last visible series
+            if len(ctx["hidden_series"]) + 1 >= len(labels):
+                _toggling[0] = True
+                check.set_active(labels.index(label))
+                _toggling[0] = False
+                return
             ctx["hidden_series"].add(label)
         update_plot(ctx)
         if "ax_table" in ctx:
