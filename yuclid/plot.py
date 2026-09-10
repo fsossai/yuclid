@@ -1,4 +1,5 @@
 from yuclid.log import report, LogLevel
+from matplotlib.widgets import CheckButtons
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import yuclid.spread as spread
@@ -158,11 +159,16 @@ def initialize_figure(ctx):
         [0.05, 0.95], [y, y], linewidth=4, transform=fig.transFigure, color="lightgrey"
     )
     fig.add_artist(line)
-    fig.subplots_adjust(top=0.92, bottom=0.1, hspace=0.3)
+    fig.subplots_adjust(top=0.92, bottom=0.1, right=0.80, hspace=0.3)
     fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
     fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
     ctx["ax_plot"] = ax_plot
     ctx["ax_table"] = ax_table
+
+    # Series toggle panel — populated after first update_plot
+    ctx["hidden_series"] = set()
+    ctx["check_ax"] = None
+    ctx["check_buttons"] = None
 
 
 def generate_dataframe(ctx):
@@ -546,6 +552,95 @@ def get_palette(values, colorblind=False):
         return {v: next(color_gen) for v in values}
 
 
+def _apply_series_visibility(ctx, hidden):
+    ax_plot = ctx["ax_plot"]
+    args = ctx["args"]
+    z_dom = ctx["z_dom"]
+    palette = ctx.get("palette", {})
+
+    # Build a map from color -> hidden boolean
+    import matplotlib.colors as mcolors
+    hidden_colors = set()
+    for z_val in z_dom:
+        if str(z_val) in hidden:
+            c = palette.get(z_val)
+            if c is not None:
+                hidden_colors.add(mcolors.to_rgba(c))
+
+    def _color_is_hidden(artist_color):
+        try:
+            return mcolors.to_rgba(artist_color) in hidden_colors
+        except (ValueError, TypeError):
+            return False
+
+    if args.lines:
+        for line in ax_plot.get_lines():
+            line.set_visible(not _color_is_hidden(line.get_color()))
+        for coll in ax_plot.collections:
+            fc = coll.get_facecolor()
+            if len(fc) > 0:
+                coll.set_visible(not _color_is_hidden(fc[0]))
+    else:
+        for patch in ax_plot.patches:
+            fc = patch.get_facecolor()
+            patch.set_visible(not _color_is_hidden(fc))
+
+    # Hide/show annotation texts
+    for text in ax_plot.texts:
+        cobj = text.get_color()
+        if cobj is not None:
+            text.set_visible(not _color_is_hidden(cobj))
+
+    # Dim legend entries for hidden series
+    legend = ax_plot.get_legend()
+    if legend:
+        for text, handle in zip(legend.get_texts(), legend.legend_handles):
+            label = text.get_text()
+            visible = label not in hidden
+            text.set_alpha(1.0 if visible else 0.3)
+            handle.set_alpha(0.6 if visible else 0.1)
+
+
+def _update_series_toggle(ctx, palette):
+    fig = ctx["fig"]
+    z_dom = ctx["z_dom"]
+    hidden = ctx.get("hidden_series", set())
+
+    # Remove old checkbox axes if the Z domain changed
+    if ctx.get("check_ax") is not None:
+        ctx["check_ax"].remove()
+        ctx["check_ax"] = None
+        ctx["check_buttons"] = None
+
+    labels = [str(z) for z in z_dom]
+    actives = [label not in hidden for label in labels]
+
+    # Size the panel based on number of series
+    n = len(labels)
+    panel_height = min(0.6, n * 0.05 + 0.05)
+    y_bottom = 0.5 - panel_height / 2
+    check_ax = fig.add_axes([0.82, y_bottom, 0.17, panel_height])
+    check_ax.set_frame_on(False)
+
+    label_colors = [palette.get(z, "black") for z in z_dom]
+    check = CheckButtons(check_ax, labels, actives,
+                         label_props={"color": label_colors},
+                         frame_props={"edgecolor": label_colors},
+                         check_props={"facecolor": label_colors})
+
+    def on_toggle(label):
+        if label in ctx["hidden_series"]:
+            ctx["hidden_series"].discard(label)
+        else:
+            ctx["hidden_series"].add(label)
+        _apply_series_visibility(ctx, ctx["hidden_series"])
+        fig.canvas.draw_idle()
+
+    check.on_clicked(on_toggle)
+    ctx["check_ax"] = check_ax
+    ctx["check_buttons"] = check
+
+
 def update_plot(ctx, padding_factor=1.05):
     args = ctx["args"]
     df = ctx["df"]
@@ -599,6 +694,7 @@ def update_plot(ctx, padding_factor=1.05):
         )
 
     palette = get_palette(ctx["z_dom"], colorblind=args.colorblind)
+    ctx["palette"] = palette
 
     # main plot generation
     if args.lines:
@@ -686,6 +782,14 @@ def update_plot(ctx, padding_factor=1.05):
         annotate(ctx, "lines", sub_df, y_axis, palette)
     else:
         annotate(ctx, "bars", sub_df, y_axis, palette)
+
+    # Apply hidden series visibility
+    hidden = ctx.get("hidden_series", set())
+    if hidden:
+        _apply_series_visibility(ctx, hidden)
+
+    # Build or rebuild the series toggle panel
+    _update_series_toggle(ctx, palette)
 
     ctx["fig"].canvas.draw_idle()
 
