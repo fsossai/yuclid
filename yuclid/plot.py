@@ -552,59 +552,10 @@ def get_palette(values, colorblind=False):
         return {v: next(color_gen) for v in values}
 
 
-def _apply_series_visibility(ctx, hidden):
-    ax_plot = ctx["ax_plot"]
-    args = ctx["args"]
-    z_dom = ctx["z_dom"]
-    palette = ctx.get("palette", {})
-
-    # Build a map from color -> hidden boolean
-    import matplotlib.colors as mcolors
-    hidden_colors = set()
-    for z_val in z_dom:
-        if str(z_val) in hidden:
-            c = palette.get(z_val)
-            if c is not None:
-                hidden_colors.add(mcolors.to_rgba(c))
-
-    def _color_is_hidden(artist_color):
-        try:
-            return mcolors.to_rgba(artist_color) in hidden_colors
-        except (ValueError, TypeError):
-            return False
-
-    if args.lines:
-        for line in ax_plot.get_lines():
-            line.set_visible(not _color_is_hidden(line.get_color()))
-        for coll in ax_plot.collections:
-            fc = coll.get_facecolor()
-            if len(fc) > 0:
-                coll.set_visible(not _color_is_hidden(fc[0]))
-    else:
-        for patch in ax_plot.patches:
-            fc = patch.get_facecolor()
-            patch.set_visible(not _color_is_hidden(fc))
-
-    # Hide/show annotation texts
-    for text in ax_plot.texts:
-        cobj = text.get_color()
-        if cobj is not None:
-            text.set_visible(not _color_is_hidden(cobj))
-
-    # Dim legend entries for hidden series
-    legend = ax_plot.get_legend()
-    if legend:
-        for text, handle in zip(legend.get_texts(), legend.legend_handles):
-            label = text.get_text()
-            visible = label not in hidden
-            text.set_alpha(1.0 if visible else 0.3)
-            handle.set_alpha(0.6 if visible else 0.1)
-
-
 def _update_series_toggle(ctx, palette):
     fig = ctx["fig"]
     z_dom = ctx["z_dom"]
-    hidden = ctx.get("hidden_series", set())
+    hidden = ctx.setdefault("hidden_series", set())
 
     # Remove old checkbox axes if the Z domain changed
     if ctx.get("check_ax") is not None:
@@ -623,10 +574,21 @@ def _update_series_toggle(ctx, palette):
     check_ax.set_frame_on(False)
 
     label_colors = [palette.get(z, "black") for z in z_dom]
-    check = CheckButtons(check_ax, labels, actives,
-                         label_props={"color": label_colors},
-                         frame_props={"edgecolor": label_colors},
-                         check_props={"facecolor": label_colors})
+    try:
+        check = CheckButtons(
+            check_ax,
+            labels,
+            actives,
+            label_props={"color": label_colors},
+            frame_props={"edgecolor": label_colors},
+            check_props={"facecolor": label_colors},
+        )
+    except TypeError:
+        # The styling arguments were added in Matplotlib 3.7. Keep the series
+        # controls functional when Yuclid is used with an older release.
+        check = CheckButtons(check_ax, labels, actives)
+        for label, color in zip(check.labels, label_colors):
+            label.set_color(color)
 
     def on_toggle(label):
         if label in ctx["hidden_series"]:
@@ -634,7 +596,8 @@ def _update_series_toggle(ctx, palette):
         else:
             ctx["hidden_series"].add(label)
         update_plot(ctx)
-        update_table(ctx)
+        if "ax_table" in ctx:
+            update_table(ctx)
 
     check.on_clicked(on_toggle)
     ctx["check_ax"] = check_ax
@@ -684,7 +647,6 @@ def update_plot(ctx, padding_factor=1.05):
         )
 
     palette = get_palette(ctx["z_dom"], colorblind=args.colorblind)
-    ctx["palette"] = palette
 
     # Filter out hidden series before plotting
     hidden = ctx.get("hidden_series", set())
@@ -694,15 +656,24 @@ def update_plot(ctx, padding_factor=1.05):
     else:
         plot_df = sub_df
 
-    # Compute title range from visible data only
-    if len(plot_df) > 0:
+    # Compute title range from visible data only. All series may be hidden;
+    # leave the controls available so the user can bring one back.
+    if plot_df.empty:
+        y_range = "[no visible data]"
+    else:
         y_left, y_right = plot_df[y_axis].min(), plot_df[y_axis].max()
-    y_range = "[{} - {}]".format(
-        to_engineering_si(y_left, unit=args.unit),
-        to_engineering_si(y_right, unit=args.unit),
-    )
+        y_range = "[{} - {}]".format(
+            to_engineering_si(y_left, unit=args.unit),
+            to_engineering_si(y_right, unit=args.unit),
+        )
     title = " | ".join(title_parts) + "\n" + y_range
     ctx["fig"].suptitle(title)
+
+    if plot_df.empty:
+        ax_plot.set_ylabel(y_axis)
+        _update_series_toggle(ctx, palette)
+        ctx["fig"].canvas.draw_idle()
+        return
 
     # main plot generation
     if args.lines:
