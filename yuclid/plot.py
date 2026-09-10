@@ -633,8 +633,8 @@ def _update_series_toggle(ctx, palette):
             ctx["hidden_series"].discard(label)
         else:
             ctx["hidden_series"].add(label)
-        _apply_series_visibility(ctx, ctx["hidden_series"])
-        fig.canvas.draw_idle()
+        update_plot(ctx)
+        update_table(ctx)
 
     check.on_clicked(on_toggle)
     ctx["check_ax"] = check_ax
@@ -653,22 +653,12 @@ def update_plot(ctx, padding_factor=1.05):
 
     ax_plot.clear()
 
-    # set figure title
-    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(
-        to_engineering_si(y_left, unit=args.unit),
-        to_engineering_si(y_right, unit=args.unit),
-    )
-    # the selector names every metric and marks the one on show; when the
-    # values have been normalized it says so on that one, since that is the
-    # metric the axis below is actually drawing
+    # Build title parts (range will be set after filtering hidden series)
     word = norm_word(args)
     shown = rf"$\mathbf{{{_esc(y_axis)}}}$" + (f" ({word})" if word else "")
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         title_parts.append(f"{i}: " + (shown if y == y_axis else f"{y}"))
-    title = " | ".join(title_parts) + "\n" + y_range
-    ctx["fig"].suptitle(title)
 
     if args.x_norm:
         sub_df = group_normalization("x", df, config, args, y_axis)
@@ -696,10 +686,28 @@ def update_plot(ctx, padding_factor=1.05):
     palette = get_palette(ctx["z_dom"], colorblind=args.colorblind)
     ctx["palette"] = palette
 
+    # Filter out hidden series before plotting
+    hidden = ctx.get("hidden_series", set())
+    if hidden:
+        visible_mask = ~sub_df[args.z].astype(str).isin(hidden)
+        plot_df = sub_df[visible_mask]
+    else:
+        plot_df = sub_df
+
+    # Compute title range from visible data only
+    if len(plot_df) > 0:
+        y_left, y_right = plot_df[y_axis].min(), plot_df[y_axis].max()
+    y_range = "[{} - {}]".format(
+        to_engineering_si(y_left, unit=args.unit),
+        to_engineering_si(y_right, unit=args.unit),
+    )
+    title = " | ".join(title_parts) + "\n" + y_range
+    ctx["fig"].suptitle(title)
+
     # main plot generation
     if args.lines:
         sns.lineplot(
-            data=sub_df,
+            data=plot_df,
             x=args.x,
             y=y_axis,
             hue=args.z,
@@ -715,7 +723,7 @@ def update_plot(ctx, padding_factor=1.05):
             spread.draw(
                 ax_plot,
                 [args.spread_measure],
-                sub_df,
+                plot_df,
                 x=args.x,
                 y=y_axis,
                 z=args.z,
@@ -723,7 +731,7 @@ def update_plot(ctx, padding_factor=1.05):
             )
     else:
         sns.barplot(
-            data=sub_df,
+            data=plot_df,
             ax=ax_plot,
             estimator=scipy.stats.gmean if args.geomean else np.median,
             palette=palette,
@@ -758,7 +766,10 @@ def update_plot(ctx, padding_factor=1.05):
         else:
             return f"{label} [{args.unit}]"
 
-    if top is not None:
+    # Y limits from visible data only (override the precomputed top)
+    if hidden and len(plot_df) > 0:
+        ax_plot.set_ylim(bottom=0.0, top=plot_df[y_axis].max() * padding_factor)
+    elif top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
 
     word = norm_word(args)
@@ -779,14 +790,9 @@ def update_plot(ctx, padding_factor=1.05):
         ax_plot.set_yticks(sorted(set(list(ax_plot.get_yticks()) + [1.0])))
 
     if args.lines:
-        annotate(ctx, "lines", sub_df, y_axis, palette)
+        annotate(ctx, "lines", plot_df, y_axis, palette)
     else:
-        annotate(ctx, "bars", sub_df, y_axis, palette)
-
-    # Apply hidden series visibility
-    hidden = ctx.get("hidden_series", set())
-    if hidden:
-        _apply_series_visibility(ctx, hidden)
+        annotate(ctx, "bars", plot_df, y_axis, palette)
 
     # Build or rebuild the series toggle panel
     _update_series_toggle(ctx, palette)
