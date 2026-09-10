@@ -1,4 +1,5 @@
 from yuclid.log import report, LogLevel
+from matplotlib.widgets import CheckButtons
 import matplotlib.lines as mlines
 import matplotlib.pyplot as plt
 import yuclid.spread as spread
@@ -158,11 +159,16 @@ def initialize_figure(ctx):
         [0.05, 0.95], [y, y], linewidth=4, transform=fig.transFigure, color="lightgrey"
     )
     fig.add_artist(line)
-    fig.subplots_adjust(top=0.92, bottom=0.1, hspace=0.3)
+    fig.subplots_adjust(top=0.92, bottom=0.1, right=0.80, hspace=0.3)
     fig.canvas.mpl_connect("key_press_event", lambda event: on_key(event, ctx))
     fig.canvas.mpl_connect("close_event", lambda event: on_close(event, ctx))
     ctx["ax_plot"] = ax_plot
     ctx["ax_table"] = ax_table
+
+    # Series toggle panel — populated after first update_plot
+    ctx["hidden_series"] = set()
+    ctx["check_ax"] = None
+    ctx["check_buttons"] = None
 
 
 def generate_dataframe(ctx):
@@ -546,6 +552,68 @@ def get_palette(values, colorblind=False):
         return {v: next(color_gen) for v in values}
 
 
+def _update_series_toggle(ctx, palette):
+    fig = ctx["fig"]
+    z_dom = ctx["z_dom"]
+    hidden = ctx.setdefault("hidden_series", set())
+
+    # Remove old checkbox axes if the Z domain changed
+    if ctx.get("check_ax") is not None:
+        ctx["check_ax"].remove()
+        ctx["check_ax"] = None
+        ctx["check_buttons"] = None
+
+    labels = [str(z) for z in z_dom]
+    actives = [label not in hidden for label in labels]
+
+    # Size the panel based on number of series
+    n = len(labels)
+    panel_height = min(0.6, n * 0.05 + 0.05)
+    y_bottom = 0.5 - panel_height / 2
+    check_ax = fig.add_axes([0.82, y_bottom, 0.17, panel_height])
+    check_ax.set_frame_on(False)
+
+    label_colors = [palette.get(z, "black") for z in z_dom]
+    try:
+        check = CheckButtons(
+            check_ax,
+            labels,
+            actives,
+            label_props={"color": label_colors},
+            frame_props={"edgecolor": label_colors},
+            check_props={"facecolor": label_colors},
+        )
+    except TypeError:
+        # The styling arguments were added in Matplotlib 3.7. Keep the series
+        # controls functional when Yuclid is used with an older release.
+        check = CheckButtons(check_ax, labels, actives)
+        for label, color in zip(check.labels, label_colors):
+            label.set_color(color)
+
+    _toggling = [False]
+
+    def on_toggle(label):
+        if _toggling[0]:
+            return
+        if label in ctx["hidden_series"]:
+            ctx["hidden_series"].discard(label)
+        else:
+            # Prevent hiding the last visible series
+            if len(ctx["hidden_series"]) + 1 >= len(labels):
+                _toggling[0] = True
+                check.set_active(labels.index(label))
+                _toggling[0] = False
+                return
+            ctx["hidden_series"].add(label)
+        update_plot(ctx)
+        if "ax_table" in ctx:
+            update_table(ctx)
+
+    check.on_clicked(on_toggle)
+    ctx["check_ax"] = check_ax
+    ctx["check_buttons"] = check
+
+
 def update_plot(ctx, padding_factor=1.05):
     args = ctx["args"]
     df = ctx["df"]
@@ -558,22 +626,12 @@ def update_plot(ctx, padding_factor=1.05):
 
     ax_plot.clear()
 
-    # set figure title
-    y_left, y_right = sub_df[y_axis].min(), sub_df[y_axis].max()
-    y_range = "[{} - {}]".format(
-        to_engineering_si(y_left, unit=args.unit),
-        to_engineering_si(y_right, unit=args.unit),
-    )
-    # the selector names every metric and marks the one on show; when the
-    # values have been normalized it says so on that one, since that is the
-    # metric the axis below is actually drawing
+    # Build title parts (range will be set after filtering hidden series)
     word = norm_word(args)
     shown = rf"$\mathbf{{{_esc(y_axis)}}}$" + (f" ({word})" if word else "")
     title_parts = []
     for i, y in enumerate(args.y, start=1):
         title_parts.append(f"{i}: " + (shown if y == y_axis else f"{y}"))
-    title = " | ".join(title_parts) + "\n" + y_range
-    ctx["fig"].suptitle(title)
 
     if args.x_norm:
         sub_df = group_normalization("x", df, config, args, y_axis)
@@ -600,10 +658,37 @@ def update_plot(ctx, padding_factor=1.05):
 
     palette = get_palette(ctx["z_dom"], colorblind=args.colorblind)
 
+    # Filter out hidden series before plotting
+    hidden = ctx.get("hidden_series", set())
+    if hidden:
+        visible_mask = ~sub_df[args.z].astype(str).isin(hidden)
+        plot_df = sub_df[visible_mask]
+    else:
+        plot_df = sub_df
+
+    # Compute title range from visible data only. All series may be hidden;
+    # leave the controls available so the user can bring one back.
+    if plot_df.empty:
+        y_range = "[no visible data]"
+    else:
+        y_left, y_right = plot_df[y_axis].min(), plot_df[y_axis].max()
+        y_range = "[{} - {}]".format(
+            to_engineering_si(y_left, unit=args.unit),
+            to_engineering_si(y_right, unit=args.unit),
+        )
+    title = " | ".join(title_parts) + "\n" + y_range
+    ctx["fig"].suptitle(title)
+
+    if plot_df.empty:
+        ax_plot.set_ylabel(y_axis)
+        _update_series_toggle(ctx, palette)
+        ctx["fig"].canvas.draw_idle()
+        return
+
     # main plot generation
     if args.lines:
         sns.lineplot(
-            data=sub_df,
+            data=plot_df,
             x=args.x,
             y=y_axis,
             hue=args.z,
@@ -619,7 +704,7 @@ def update_plot(ctx, padding_factor=1.05):
             spread.draw(
                 ax_plot,
                 [args.spread_measure],
-                sub_df,
+                plot_df,
                 x=args.x,
                 y=y_axis,
                 z=args.z,
@@ -627,7 +712,7 @@ def update_plot(ctx, padding_factor=1.05):
             )
     else:
         sns.barplot(
-            data=sub_df,
+            data=plot_df,
             ax=ax_plot,
             estimator=scipy.stats.gmean if args.geomean else np.median,
             palette=palette,
@@ -662,7 +747,10 @@ def update_plot(ctx, padding_factor=1.05):
         else:
             return f"{label} [{args.unit}]"
 
-    if top is not None:
+    # Y limits from visible data only (override the precomputed top)
+    if hidden and len(plot_df) > 0:
+        ax_plot.set_ylim(bottom=0.0, top=plot_df[y_axis].max() * padding_factor)
+    elif top is not None:
         ax_plot.set_ylim(top=top * padding_factor, bottom=0.0)
 
     word = norm_word(args)
@@ -683,9 +771,12 @@ def update_plot(ctx, padding_factor=1.05):
         ax_plot.set_yticks(sorted(set(list(ax_plot.get_yticks()) + [1.0])))
 
     if args.lines:
-        annotate(ctx, "lines", sub_df, y_axis, palette)
+        annotate(ctx, "lines", plot_df, y_axis, palette)
     else:
-        annotate(ctx, "bars", sub_df, y_axis, palette)
+        annotate(ctx, "bars", plot_df, y_axis, palette)
+
+    # Build or rebuild the series toggle panel
+    _update_series_toggle(ctx, palette)
 
     ctx["fig"].canvas.draw_idle()
 
