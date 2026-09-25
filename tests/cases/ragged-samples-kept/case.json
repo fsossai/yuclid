@@ -1,0 +1,16 @@
+{
+  "description": "metrics with different sample counts each keep exactly their own samples: no padding, no NaN, and each sample keeps its own type",
+  "records": [
+    {
+      "a": "1",
+      "two": [
+        1,
+        2
+      ],
+      "one": 9
+    }
+  ],
+  "stdout_not_contains": [
+    "NaN"
+  ]
+}

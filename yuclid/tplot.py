@@ -166,6 +166,7 @@ def _draw_chart(ctx, width=None, height=None):
     colors = ctx["colors"]
 
     config = get_current_config(ctx)
+    df = df.dropna(subset=[y_axis])
     sub_df = get_projection(df, config)
 
     if args.x_norm:
@@ -490,8 +491,8 @@ def launch(args):
     locate_files(ctx)
     generate_dataframe(ctx)
     combine_dimensions(ctx)
-    generate_derived_metrics(ctx)
     explode_array_metrics(ctx)
+    generate_derived_metrics(ctx)
     validate_args(ctx)
     reorder_and_numericize(ctx)
     rescale(ctx)

@@ -143,6 +143,30 @@ def record_columns(data, settings, order):
     return list(order) + names
 
 
+def flatten_record(record):
+    """The CSV rows of one record: row k holds sample k of every array metric.
+
+    A cell holds one value, so a repetition that printed several takes as many
+    rows as its longest array. A number belongs to the repetition, not to any
+    one sample, so it fills the first row only, and every other cell with no
+    sample of its own is left empty. The dimensions, which are text, are what
+    tell the rows of one point from another, so they fill every row.
+    """
+    rows = max([len(v) for v in record.values() if isinstance(v, list)] + [1])
+    flat = []
+    for k in range(rows):
+        row = dict()
+        for name, value in record.items():
+            if isinstance(value, list):
+                row[name] = value[k] if k < len(value) else ""
+            elif isinstance(value, str):
+                row[name] = value
+            else:
+                row[name] = value if k == 0 else ""
+        flat.append(row)
+    return flat
+
+
 class RecordWriter:
     """Appends records to the result dataset, as JSON Lines or as CSV."""
 
@@ -165,7 +189,8 @@ class RecordWriter:
 
     def write(self, record):
         if self.format == "csv":
-            self.writer.writerow(record)
+            for row in flatten_record(record):
+                self.writer.writerow(row)
         else:
             self.stream.write(json.dumps(record) + "\n")
 
@@ -871,47 +896,87 @@ def apply_user_selectors(settings, subspace):
 
 
 def normalize_metrics(metrics):
-    valid = {"name", "command", "condition", "default"}
-    normalized = []
+    valid = {"name", "command", "condition", "default", "array"}
+    declared = []
     if isinstance(metrics, list):
         for metric in metrics:
             if not isinstance(metric, dict):
                 report(LogLevel.FATAL, "each metric must be a dict", metric)
             if "name" not in metric:
                 report(LogLevel.FATAL, "each metric must have a 'name' field", metric)
-            if "command" not in metric:
-                report(
-                    LogLevel.FATAL, "each metric must have a 'command' field", metric
-                )
-            if not set(metric.keys()).issubset(valid):
-                report(
-                    LogLevel.WARNING,
-                    "metric has unexpected fields",
-                    ", ".join(set(metric.keys()) - valid),
-                    hint="valid fields: {}".format(", ".join(valid)),
-                )
-            normalized.append(
-                {
-                    "name": metric["name"],
-                    "command": normalize_command(metric["command"]),
-                    "condition": metric.get("condition", "True"),
-                    "default": normalize_default(metric),
-                }
-            )
+            declared.append(metric)
     elif isinstance(metrics, dict):
         for name, command in metrics.items():
-            if not isinstance(command, str):
-                report(LogLevel.FATAL, "metric command must be a string", command)
-            normalized.append(
-                {
-                    "name": name,
-                    "command": normalize_command(command),
-                    "condition": "True",
-                    "default": None,
-                }
+            # a bare command is the common case, and an object is how the same
+            # short form says anything more about that one metric
+            if isinstance(command, dict):
+                if "name" in command:
+                    report(
+                        LogLevel.FATAL,
+                        "metric '{}' is already named by its key".format(name),
+                        hint="drop the 'name' field, or use the list form",
+                    )
+                declared.append(dict(command, name=name))
+            elif isinstance(command, str):
+                declared.append({"name": name, "command": command})
+            else:
+                report(
+                    LogLevel.FATAL,
+                    "metric command must be a string or an object",
+                    command,
+                )
+
+    normalized = []
+    for metric in declared:
+        if "command" not in metric:
+            report(LogLevel.FATAL, "each metric must have a 'command' field", metric)
+        if not set(metric.keys()).issubset(valid):
+            report(
+                LogLevel.WARNING,
+                "metric has unexpected fields",
+                ", ".join(set(metric.keys()) - valid),
+                hint="valid fields: {}".format(", ".join(sorted(valid))),
             )
+        array = metric.get("array", False)
+        if not isinstance(array, bool):
+            report(
+                LogLevel.FATAL,
+                "metric '{}': array must be true or false".format(metric["name"]),
+                repr(array),
+            )
+        normalized.append(
+            {
+                "name": metric["name"],
+                "command": normalize_command(metric["command"]),
+                "condition": metric.get("condition", "True"),
+                "default": normalize_default(metric),
+                "array": array,
+            }
+        )
     validate_defaults(normalized)
     return normalized
+
+
+def array_metrics(data, settings):
+    """The metrics recorded as an array even when they printed one value.
+
+    A record's shape otherwise follows what was printed: one value is a number
+    and several are an array. A metric that is a series by nature asks to stay
+    an array regardless, so that every record holds the same kind of value in
+    its column; a name declared several times is an array if any declaration
+    says so, since it is still one column.
+    """
+    if settings["arrays"]:
+        return {metric["name"] for metric in data["metrics"]}
+    return {metric["name"] for metric in data["metrics"] if metric["array"]}
+
+
+def shape_metrics(collected, arrays):
+    """What a repetition records for each metric: a number, or an array."""
+    return {
+        name: values if name in arrays or len(values) != 1 else values[0]
+        for name, values in collected.items()
+    }
 
 
 def normalize_default(metric):
@@ -1941,35 +2006,10 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     int_or_float(line) for line in output_elements
                 ]
 
-        # metrics may disagree on how many samples they produced: the shorter
-        # ones leave gaps. Kept as plain lists so that an integer metric is not
-        # widened to float by a float metric of the same point.
-        samples = max((len(v) for v in collected_metrics.values()), default=0)
-        # A default is a constant for the point, so it stands for every sample
-        # the measured metrics produced rather than for the first one and a row
-        # of NaNs. Where nothing was measured at all, the point is still worth
-        # a row: one sample of nothing but defaults.
-        if len(defaults) > 0:
-            samples = max(samples, 1)
-            for name, value in defaults.items():
-                collected_metrics[name] = [value] * samples
-        padded = {
-            name: values + [float("nan")] * (samples - len(values))
-            for name, values in collected_metrics.items()
-        }
-
-        if not settings["fold"]:
-            NaNs = [
-                name
-                for name, values in collected_metrics.items()
-                if len(values) < samples
-            ]
-            if len(NaNs) > 0:
-                report(
-                    LogLevel.WARNING,
-                    "the following metrics generated some NaNs",
-                    " ".join(NaNs),
-                )
+        # A default is a constant for the point, recorded once per repetition
+        # like any metric that printed a single value.
+        for name, value in defaults.items():
+            collected_metrics[name] = [value]
 
         if killed or trials.take_skip(entry["key"]):
             # a kill that landed once the commands had already run: the
@@ -1984,13 +2024,14 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         if file_lock is not None:
             file_lock.acquire()
         try:
-            if settings["fold"]:
-                result.update(padded)
+            # one record per repetition: each metric keeps exactly the values
+            # it printed, however many that was, whatever the others printed.
+            # A repetition that measured nothing at all has no record to write
+            if len(collected_metrics) > 0:
+                result.update(
+                    shape_metrics(collected_metrics, settings["array_metrics"])
+                )
                 writer.write(result)
-            else:
-                for k in range(samples):
-                    result.update({name: v[k] for name, v in padded.items()})
-                    writer.write(result)
             writer.flush()
             # the copy --output asked for stays current with this repetition
             # rather than only with the run as a whole, so it is worth reading
@@ -2318,12 +2359,15 @@ def prepare_sync(settings):
     A standalone `--resume` seeds results.jsonl from whatever --output already
     held, and what came from there counts as already synced to it: seeding it
     a second time, going the other way, is exactly the duplicate a resume was
-    meant not to produce. `finish` reopening a run's own directory needs no
-    seed — results.jsonl is already wherever an earlier attempt left it — but
-    still starts synced if --output already has something, since an earlier
-    attempt that did keep it current has already put it there.
+    meant not to produce. The seeding itself waits for `seed_live`, once the
+    configuration is known: a CSV only becomes records again by knowing which
+    of its columns are metrics. `finish` reopening a run's own directory needs
+    no seed — results.jsonl is already wherever an earlier attempt left it —
+    but still starts synced if --output already has something, since an
+    earlier attempt that did keep it current has already put it there.
     """
     settings["synced"] = 0
+    settings["seed"] = False
     live = settings["live"]
     if live is None or settings["dry_run"]:
         return
@@ -2331,12 +2375,9 @@ def prepare_sync(settings):
     if source is not None and source != live:
         # a source that does not exist yet is `load_recorded_points`'s to
         # warn about, in its turn — there is simply nothing here to seed with
-        if os.path.isfile(source) and not (
+        settings["seed"] = os.path.isfile(source) and not (
             os.path.exists(live) and os.path.getsize(live) > 0
-        ):
-            write_records(
-                live, "jsonl", None, read_records(source, settings["resume_format"])
-            )
+        )
         settings["synced"] = os.path.getsize(live) if os.path.exists(live) else 0
         return
     if (
@@ -2390,13 +2431,148 @@ def sync_output(settings):
             writer.write(record)
 
 
-def load_recorded_points(path, order, metric_names, fmt):
-    """Count the records a previous run already wrote for each point.
+def number_or_text(text):
+    """A CSV cell read back as the number it was written from."""
+    for kind in (int, float):
+        try:
+            return kind(text)
+        except ValueError:
+            pass
+    return text
+
+
+def regroup_rows(rows, metric_names, arrays):
+    """The records a CSV's rows were flattened from, one per repetition.
+
+    `flatten_record` lays a repetition out as rows in which every metric
+    occupies the first rows and leaves the rest empty. So a row carries on the
+    repetition above it when it is the same point and no metric reappears in
+    it, and it starts a new one otherwise. The one layout this cannot read is a
+    repetition whose every metric printed the same number of values: its rows
+    are all full, exactly like repetitions that printed one value each, and are
+    read as those. Whether that happened is returned alongside, so the caller
+    can say so where it matters.
+    """
+    records, ambiguous = [], False
+    point, first, previous, current = None, None, None, None
+
+    def record_of(point, samples):
+        record = dict(point)
+        for name, values in samples.items():
+            record[name] = (
+                values if name in arrays or len(values) != 1 else values[0]
+            )
+        return record
+
+    for row in rows:
+        here = tuple(
+            (k, "" if v is None else v)
+            for k, v in row.items()
+            if k is not None and k not in metric_names
+        )
+        filled = {
+            k: number_or_text(v)
+            for k, v in row.items()
+            if k in metric_names and v not in (None, "")
+        }
+        names = set(filled)
+        carries_on = (
+            current is not None
+            and here == point
+            and names <= previous
+            and names != first
+        )
+        if carries_on:
+            for name, value in filled.items():
+                current[name].append(value)
+        else:
+            if current is not None:
+                records.append(record_of(point, current))
+                # a full row after a full row of the same point: two
+                # repetitions, or one that printed several values everywhere
+                if here == point and names == first == previous and names:
+                    ambiguous = True
+            point, first, current = here, names, {k: [v] for k, v in filled.items()}
+        previous = names
+    if current is not None:
+        records.append(record_of(point, current))
+    return records, ambiguous
+
+
+def owning_run_records(settings, path, rows, order):
+    """The records of the run that wrote this CSV, if one here still has them.
+
+    A CSV --output is a copy of a run's own results.jsonl, which keeps every
+    repetition as the record it was. That run is only trusted while the CSV
+    still says what it wrote, row for row, since the file may have been edited,
+    or overwritten by another run since.
+    """
+    if settings["root"] is None:
+        return None
+    key = lambda row: tuple(str(row.get(d, "")) for d in order)
+    wanted = [key(row) for row in rows]
+    absolute = os.path.abspath(path)
+    for manifest in workspace.list_runs(settings["root"]):
+        if manifest.get("output") != absolute:
+            continue
+        if os.path.basename(manifest["directory"]) == settings["run_id"]:
+            continue
+        live = workspace.results_path(manifest["directory"])
+        if not os.path.isfile(live):
+            continue
+        records = list(read_records(live, "jsonl"))
+        if any(record is None for record in records):
+            continue
+        flattened = [key(row) for record in records for row in flatten_record(record)]
+        if flattened == wanted:
+            return records
+    return None
+
+
+def resume_records(settings, order, metric_names, arrays):
+    """The records --resume continues from, one per recorded repetition.
+
+    JSON Lines holds them as they are. A CSV holds them flattened, so they are
+    taken from the run that wrote it when there is one, and rebuilt from its
+    rows when there is not, which says so if that could miscount.
+    """
+    path, fmt = settings["resume"], settings["resume_format"]
+    if fmt != "csv":
+        return list(read_records(path, fmt))
+    with open(path, "r", newline="") as f:
+        rows = list(csv.DictReader(f))
+    records = owning_run_records(settings, path, rows, order)
+    if records is not None:
+        return records
+    records, ambiguous = regroup_rows(rows, metric_names, arrays)
+    if ambiguous and settings["repeat"] > 1:
+        report(
+            LogLevel.WARNING,
+            "counting each full row of {} as one repetition".format(path),
+            hint="no run in this workspace holds its records, so nothing marks "
+            "where a repetition ends: one whose every metric printed several "
+            "values is counted as several. Resume from a JSON Lines file to "
+            "count exactly",
+        )
+    return records
+
+
+def seed_live(settings, records):
+    """Start this run's results.jsonl from the records --resume continues."""
+    if not settings["seed"]:
+        return
+    write_records(settings["live"], "jsonl", None, records)
+    settings["synced"] = os.path.getsize(settings["live"])
+
+
+def load_recorded_points(settings, order, metric_names, arrays):
+    """Count the repetitions a previous run already recorded for each point.
 
     A record counts only if its non-metric fields are exactly this run's
     dimensions: anything else was produced by a different space and cannot be
     matched against the points about to run.
     """
+    path = settings["resume"]
     recorded = dict()
     if os.path.isdir(path):
         report(LogLevel.FATAL, "--resume needs a file, not a directory", path)
@@ -2408,18 +2584,8 @@ def load_recorded_points(path, order, metric_names, fmt):
         )
         return recorded
 
-    dimensions = set(order)
-    foreign, unreadable = 0, 0
     try:
-        for record in read_records(path, fmt):
-            if record is None:
-                unreadable += 1
-                continue
-            if set(record.keys()) - metric_names != dimensions:
-                foreign += 1
-                continue
-            key = tuple(str(record[dim]) for dim in order)
-            recorded[key] = recorded.get(key, 0) + 1
+        records = resume_records(settings, order, metric_names, arrays)
     except (OSError, UnicodeDecodeError, csv.Error) as e:
         report(
             LogLevel.FATAL,
@@ -2427,6 +2593,19 @@ def load_recorded_points(path, order, metric_names, fmt):
             path,
             hint=str(e),
         )
+    seed_live(settings, records)
+
+    dimensions = set(order)
+    foreign, unreadable = 0, 0
+    for record in records:
+        if record is None:
+            unreadable += 1
+            continue
+        if set(record.keys()) - metric_names != dimensions:
+            foreign += 1
+            continue
+        key = tuple(str(record[dim]) for dim in order)
+        recorded[key] = recorded.get(key, 0) + 1
 
     if unreadable > 0:
         report(
@@ -2719,14 +2898,6 @@ def build_settings(args):
 
     if settings["resume"] is not None:
         settings["resume_format"] = settings["format"]
-
-    if settings["fold"] and settings["format"] == "csv":
-        report(
-            LogLevel.FATAL,
-            "--fold cannot be written as CSV",
-            hint="a CSV cell holds one value, not an array of samples. "
-            "Drop --fold, or keep the default jsonl format",
-        )
 
     settings["now"] = "{:%Y%m%d-%H%M%S}".format(datetime.now())
     filename = "{}.yuclid.{}".format(settings["now"], settings["format"])
@@ -3462,6 +3633,7 @@ def execute(settings):
     # first record happens to have, and needed only if --output ends up
     # asking for a CSV copy of results.jsonl
     settings["columns"] = record_columns(data, settings, order)
+    settings["array_metrics"] = array_metrics(data, settings)
     validate_yvars_in_env(data["space"], data["env"])
     validate_yvars_in_setup(data["space"], data["setup"])
     validate_yvars_in_trials(data["space"], data["trials"])
@@ -3481,16 +3653,8 @@ def execute(settings):
     if settings["resume"] is not None:
         metric_names = {m["name"] for m in data["metrics"]}
         recorded = load_recorded_points(
-            settings["resume"], order, metric_names, settings["resume_format"]
+            settings, order, metric_names, settings["array_metrics"]
         )
-        if settings["repeat"] > 1 and not settings["fold"]:
-            report(
-                LogLevel.WARNING,
-                "counting one recorded repetition per record",
-                hint="a metric emitting several samples writes one record per "
-                "sample, so a point may look more repeated than it is. Use "
-                "--fold for an exact count",
-            )
 
     if len(settings["presets"]) > 0:
         for preset_name in settings["presets"]:

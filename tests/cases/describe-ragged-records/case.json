@@ -1,0 +1,14 @@
+{
+  "description": "describe counts records as repetitions and each metric by its own samples",
+  "args": [
+    "describe",
+    "data.jsonl"
+  ],
+  "output_flag": false,
+  "no_results_file": true,
+  "stdout_contains": [
+    "2 records, 1 dimension, 2 metrics",
+    "setup (2)",
+    "rep (6)"
+  ]
+}

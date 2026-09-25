@@ -1,0 +1,42 @@
+{
+  "description": "a CSV --output is resumed from the records of the run that wrote it, which count exactly without a warning",
+  "runs": [
+    [
+      "run",
+      "-r",
+      "2",
+      "-o",
+      "results.yuclid.csv"
+    ],
+    [
+      "run",
+      "-r",
+      "3",
+      "-o",
+      "results.yuclid.csv",
+      "--resume"
+    ]
+  ],
+  "output_flag": false,
+  "results_file": "results.yuclid.csv",
+  "records": [
+    {
+      "a": "1",
+      "n": "5"
+    },
+    {
+      "a": "1",
+      "n": "5"
+    },
+    {
+      "a": "1",
+      "n": "5"
+    }
+  ],
+  "stdout_contains": [
+    "[2/3] 66%: 1: started"
+  ],
+  "stdout_not_contains": [
+    "counting each full row"
+  ]
+}

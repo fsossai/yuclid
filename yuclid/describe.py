@@ -215,6 +215,8 @@ def launch(args):
     locate_files(ctx)
     generate_dataframe(ctx)
     combine_dimensions(ctx)
+    # a record is one repetition, counted before its arrays become rows
+    records = len(ctx["df"])
     explode_array_metrics(ctx)
 
     df = ctx["df"]
@@ -240,7 +242,7 @@ def launch(args):
 
     lines.append(
         "{}, {}, {}".format(
-            counted(len(df), "record"),
+            counted(records, "record"),
             counted(len(dimensions), "dimension"),
             counted(len(metrics), "metric"),
         )

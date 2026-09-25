@@ -1,0 +1,13 @@
+{
+  "description": "a metric emitting k numbers yields one record holding them as an array",
+  "records": [
+    {
+      "a": "1",
+      "m": [
+        1,
+        2,
+        3
+      ]
+    }
+  ]
+}

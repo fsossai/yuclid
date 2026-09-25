@@ -63,6 +63,7 @@ def get_projection(df, config):
 
 
 def group_normalization(norm_axis, df, config, args, y_axis):
+    df = df.dropna(subset=[y_axis])
     sub_df = get_projection(df, config)
     ref_config = {k: v for k, v in config.items()}  # copy
     if norm_axis == "x":
@@ -93,6 +94,7 @@ def group_normalization(norm_axis, df, config, args, y_axis):
 
 
 def ref_normalization(df, config, args, y_axis):
+    df = df.dropna(subset=[y_axis])
     sub_df = get_projection(df, config)
     ref_config = {k: v for k, v in config.items()}  # copy
     selector = dict(pair.split("=") for pair in args.ref_norm)
@@ -221,6 +223,15 @@ def generate_dataframe(ctx):
 
 
 def explode_array_metrics(ctx):
+    """Turn a record's arrays into rows, one per sample, as a CSV holds them.
+
+    A record is one repetition, and its metrics need not have printed the same
+    number of values. Row k holds sample k of every array; a metric that is a
+    single number belongs to the repetition as a whole, so it appears in the
+    first row only, and every other cell is left missing rather than repeated,
+    which would count it once per sample of some other metric. Each metric is
+    then read on its own, skipping the rows where it has nothing.
+    """
     df = ctx["df"]
     args = ctx["args"]
     list_cols = [col for col in df.columns if df[col].apply(lambda x: isinstance(x, list)).any()]
@@ -230,12 +241,30 @@ def explode_array_metrics(ctx):
     if reducer is not None:
         func = {"mean": np.mean, "median": np.median, "min": np.min, "max": np.max, "sum": np.sum}[reducer]
         for col in list_cols:
-            df[col] = df[col].apply(lambda x: func(x) if isinstance(x, list) else x)
-    else:
-        for col in list_cols:
-            df[col] = df[col].apply(lambda x: x if isinstance(x, list) else [x])
-        df = df.explode(list_cols, ignore_index=True)
-    for col in list_cols:
+            df[col] = df[col].apply(
+                lambda x: func([v for v in x if not pd.isna(v)]) if isinstance(x, list) else x
+            )
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        ctx["df"] = df
+        return
+
+    # dimensions are text, metrics are numbers or arrays of them
+    numeric = df.select_dtypes(include=[np.number]).columns.tolist()
+    metric_cols = list_cols + [col for col in numeric if col not in list_cols]
+    rows = []
+    for record in df.to_dict("records"):
+        lengths = [len(record[c]) for c in list_cols if isinstance(record[c], list)]
+        for k in range(max(lengths + [1])):
+            row = dict(record)
+            for col in metric_cols:
+                value = record[col]
+                if isinstance(value, list):
+                    row[col] = value[k] if k < len(value) else np.nan
+                elif k > 0:
+                    row[col] = np.nan
+            rows.append(row)
+    df = pd.DataFrame(rows, columns=df.columns)
+    for col in metric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     ctx["df"] = df
 
@@ -273,8 +302,8 @@ def draw(fig, ax, cli_args):
     locate_files(ctx)
     generate_dataframe(ctx)
     combine_dimensions(ctx)
-    generate_derived_metrics(ctx)
     explode_array_metrics(ctx)
+    generate_derived_metrics(ctx)
     validate_args(ctx)
     reorder_and_numericize(ctx)
     rescale(ctx)
@@ -622,6 +651,9 @@ def update_plot(ctx, padding_factor=1.05):
     top = ctx.get("top", None)
 
     config = get_current_config(ctx)
+    # a metric that printed fewer values than another leaves rows it has
+    # nothing in, and those are no part of its measurement
+    df = df.dropna(subset=[y_axis])
     sub_df = get_projection(df, config)
 
     ax_plot.clear()
@@ -1234,8 +1266,8 @@ def launch(args):
     locate_files(ctx)
     generate_dataframe(ctx)
     combine_dimensions(ctx)
-    generate_derived_metrics(ctx)
     explode_array_metrics(ctx)
+    generate_derived_metrics(ctx)
     validate_args(ctx)
     reorder_and_numericize(ctx)
     rescale(ctx)

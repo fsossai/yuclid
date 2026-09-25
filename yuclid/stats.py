@@ -5,6 +5,7 @@ from yuclid.plot import (
     generate_dataframe,
     suggest_describe,
     combine_dimensions,
+    explode_array_metrics,
     update_table,
     get_current_config,
     get_projection,
@@ -265,6 +266,7 @@ def launch(args):
     locate_files(ctx)
     generate_dataframe(ctx)
     combine_dimensions(ctx)
+    explode_array_metrics(ctx)
     validate_args_stats(ctx)
     reorder_and_numericize(ctx)
     generate_space_stats(ctx)

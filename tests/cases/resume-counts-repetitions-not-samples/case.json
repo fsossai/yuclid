@@ -1,0 +1,41 @@
+{
+  "description": "a repetition that printed several values is one recorded repetition to --resume",
+  "runs": [
+    [
+      "run",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
+    [
+      "run",
+      "-r",
+      "2",
+      "-o",
+      "results.yuclid.jsonl",
+      "--resume"
+    ]
+  ],
+  "output_flag": false,
+  "records": [
+    {
+      "a": "1",
+      "m": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "a": "1",
+      "m": [
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "stdout_contains": [
+    "[1/2] 50%: 1: started",
+    "[2/2] 100%: 1: completed"
+  ]
+}

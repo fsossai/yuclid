@@ -11,7 +11,6 @@
 - add: turn a yuclid command into a hyperfine configuration
 - add: workspace options accessible in the UI including: update frequency, enable/disable the creation of JSONL files in the CWD, preferred log order, preferred space nesting order, preferred comparison average (mean, median)
 - add: comparison with hyperfine under docs/
-- change: `--fold` pads the shorter metrics of a point with `NaN`
 - change: single web server with workspace manager
 - change: move the space panel into the run panel
 - change: support only one configuration file per workspace

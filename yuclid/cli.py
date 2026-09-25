@@ -102,10 +102,11 @@ def get_parser():
         "Cannot be combined with --select or --presets",
     )
     run_parser.add_argument(
-        "--fold",
+        "--arrays",
         default=False,
         action="store_true",
-        help="Stores values produced by a metric in an array",
+        help="Record every metric as an array, even one that printed a single "
+        "value. By default a metric is an array only when it printed several",
     )
     run_parser.add_argument(
         "--dry-run",
@@ -750,6 +751,7 @@ def _add_stats_args(p):
         default=False,
         help="Show a vertical line at the median of each group",
     )
+    p.set_defaults(array_reduce=None)
 
 
 def main():

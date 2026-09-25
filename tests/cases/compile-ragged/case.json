@@ -1,0 +1,28 @@
+{
+  "description": "a compiled script writes the same record as a run: arrays where several values were printed or asked for, numbers elsewhere",
+  "runs": [
+    [
+      "run",
+      "--compile",
+      "compiled.sh",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [
+    {
+      "a": "1",
+      "many": [
+        3,
+        4,
+        5
+      ],
+      "one": 9,
+      "forced": [
+        1
+      ]
+    }
+  ]
+}

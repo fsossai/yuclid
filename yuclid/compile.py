@@ -106,7 +106,12 @@ class ScriptWriter:
 
 
 def compile_csv_record(script, coordinates, metric_names, columns):
-    """Emit the CSV row of one point, with an empty cell per absent metric."""
+    """Emit the CSV rows of one repetition, flattened as `yuclid run` does.
+
+    `paste` zips the per-metric sample files row by row and leaves an empty
+    field where a file has run out, which is exactly the empty cell a metric
+    with no sample at that row gets.
+    """
     files = ['"$R".m{}'.format(k) for k in range(len(metric_names))]
     slot = {name: k + 1 for k, name in enumerate(metric_names)}
     named = dict(coordinates)
@@ -117,7 +122,7 @@ def compile_csv_record(script, coordinates, metric_names, columns):
             fields.append(csv_quote(named[column]))
         elif column in slot:
             fields.append("%s")
-            values.append('(${0}=="" ? "nan" : ${0})'.format(slot[column]))
+            values.append("${}".format(slot[column]))
         else:
             # a metric that does not apply at this point
             fields.append("")
@@ -130,12 +135,15 @@ def compile_csv_record(script, coordinates, metric_names, columns):
     )
 
 
-def compile_record(script, coordinates, metric_names, folded, fmt, columns):
-    """Emit the commands that turn a point's metric files into records.
+def compile_record(script, coordinates, metric_names, arrays, fmt, columns):
+    """Emit the commands that turn a repetition's metric files into its record.
 
-    Exploded mode zips the per-metric sample files row by row, which is what
-    `paste` does, and pads the short ones with NaN. Folded mode joins each
-    file into one array.
+    Each metric file holds one sample per line. A file of one line is recorded
+    as a number, unless the metric is one of `arrays`; any other becomes an
+    array of its lines, and an empty file leaves the metric out. awk reads the
+    files in turn and tells them apart by the index each one's name ends in,
+    since an empty file is never seen at all. The program is unrolled over the
+    metrics, so it holds no loop either.
     """
     if len(metric_names) == 0:
         script.comment("no metric applies here: nothing to record")
@@ -151,41 +159,27 @@ def compile_record(script, coordinates, metric_names, folded, fmt, columns):
         for dim, name in coordinates
     )
 
-    # paste zips the files and pads the short ones with empty fields, which is
-    # where the NaNs come from. The awk program is unrolled over the metrics,
-    # so it holds no loop either.
-    if folded:
-        fields = ", ".join(
-            "{}: [%s]".format(json.dumps(name)) for name in metric_names
-        )
-        collect = " ".join(
-            's{0} = s{0} sep (${0}=="" ? "NaN" : ${0});'.format(k + 1)
-            for k in range(len(metric_names))
-        )
-        values = ", ".join("s{}".format(k + 1) for k in range(len(metric_names)))
-        program = (
-            'BEGIN {{ FS="\\t" }} '
-            "{{ {} sep = \", \" }} "
-            'END {{ printf "{{{}, {}}}\\n", {} }}'
-        ).format(
-            collect,
-            prefix.replace('"', '\\"'),
-            fields.replace('"', '\\"'),
-            values,
-        )
-    else:
-        fields = ", ".join("{}: %s".format(json.dumps(name)) for name in metric_names)
-        values = ", ".join(
-            '(${0}=="" ? "NaN" : ${0})'.format(k + 1)
-            for k in range(len(metric_names))
-        )
-        program = 'BEGIN {{ FS="\\t" }} {{ printf "{{{}, {}}}\\n", {} }}'.format(
-            prefix.replace('"', '\\"'), fields.replace('"', '\\"'), values
-        )
-
-    script.command(
-        'paste {} | awk {} >> "$OUTPUT"'.format(" ".join(files), sh_quote(program))
+    collect = (
+        "{ match(FILENAME, /[.]m[0-9]+$/); k = substr(FILENAME, RSTART + 2); "
+        'v[k] = v[k] (n[k] ? ", " : "") $0; n[k]++ }'
     )
+    parts = []
+    for k, name in enumerate(metric_names):
+        array = "1" if name in arrays else "0"
+        parts.append(
+            "if (n[{k}]) {{ r = r (r == \"\" ? \"\" : \", \") \"{name}: \" "
+            "(n[{k}] > 1 || {array} ? \"[\" v[{k}] \"]\" : v[{k}]) }}".format(
+                k=k,
+                name=json.dumps(name).replace('"', '\\"'),
+                array=array,
+            )
+        )
+    program = (
+        "{} END {{ r = \"\"; {}; "
+        'if (r != "") printf "{{%s, %s}}\\n", "{}", r }}'
+    ).format(collect, "; ".join(parts), prefix.replace('"', '\\"'))
+
+    script.command("awk {} {} >> \"$OUTPUT\"".format(sh_quote(program), " ".join(files)))
 
 
 def compile_point_trials(settings, data, execution, i, point, script):
@@ -254,7 +248,7 @@ def compile_point_trials(settings, data, execution, i, point, script):
             script,
             coordinates,
             names,
-            settings["fold"],
+            settings["array_metrics"],
             settings["format"],
             run.record_columns(data, settings, execution["order"]),
         )

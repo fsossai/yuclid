@@ -1,0 +1,39 @@
+{
+  "description": "a CSV holds a repetition in as many rows as its longest array, with an empty cell where a metric has no sample",
+  "args": [
+    "run",
+    "-r",
+    "2",
+    "-o",
+    "results.yuclid.csv"
+  ],
+  "output_flag": false,
+  "results_file": "results.yuclid.csv",
+  "records": [
+    {
+      "a": "1",
+      "two": "1",
+      "one": "9"
+    },
+    {
+      "a": "1",
+      "two": "2",
+      "one": ""
+    },
+    {
+      "a": "1",
+      "two": "1",
+      "one": "9"
+    },
+    {
+      "a": "1",
+      "two": "2",
+      "one": ""
+    }
+  ],
+  "file_contains": {
+    "results.yuclid.csv": [
+      "a,two,one\n1,1,9\n1,2,\n1,1,9\n1,2,\n"
+    ]
+  }
+}

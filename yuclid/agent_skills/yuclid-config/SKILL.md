@@ -192,7 +192,13 @@ trial that names its metrics makes every one of them ambiguous.
 ## `metrics`
 
 Each metric command must print one or more numbers separated by whitespace or newlines.
-Multiple numbers are averaged, or kept as an array with `--fold`.
+A metric that printed one number records that number; one that printed several records
+an array of them, in the same record: each repetition of a point is one record, and
+metrics may print different counts (one setup time beside one time per inner iteration
+is fine, nothing is padded). `"array": true` keeps a metric an array even when it printed
+one value, and `yuclid run --arrays` does that for every metric. In a CSV output a
+repetition spans as many rows as its longest array, with empty cells where a metric has
+no sample.
 
 Full form:
 
@@ -218,8 +224,11 @@ Shorthand map form (no conditions):
 }
 ```
 
+A map value may also be an object with the other fields, e.g.
+`"kernel.rep": {"command": "...", "array": true}`.
+
 `name` and `command` are required; `command` may be a list of strings (space-joined).
-Unknown keys warn. Valid keys: `name`, `command`, `condition`, `default`. Metric names
+Unknown keys warn. Valid keys: `name`, `command`, `condition`, `default`, `array`. Metric names
 become the column names consumed by `yuclid plot -y`.
 
 **`default`** is the number to record where every declaration of that name is conditioned
@@ -629,7 +638,7 @@ yuclid tplot results.jsonl -x size -z compression -y time.real -A
 
 Other `yuclid run` flags worth mentioning: `-o/--output`, `--output-dir`, `-p` (presets),
 `-m` (subset of metrics — which also decides which trials fire), `-r N` (repeat each
-point), `--parallel-trials [N]`, `--fold`, `--no-setup`, `--temp-dir`, `--points FILE`,
+point), `--parallel-trials [N]`, `--arrays`, `--no-setup`, `--temp-dir`, `--points FILE`,
 `--workspace DIR`, `--abort-on-error`, `--resume`, `--until RULE` with
 `--min-runs`/`--max-runs`.
 

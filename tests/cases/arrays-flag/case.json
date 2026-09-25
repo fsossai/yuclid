@@ -1,0 +1,20 @@
+{
+  "description": "--arrays records every metric as an array, even one that printed a single value",
+  "args": [
+    "run",
+    "--arrays"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "many": [
+        1,
+        2,
+        3
+      ],
+      "one": [
+        9
+      ]
+    }
+  ]
+}

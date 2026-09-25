@@ -1,0 +1,12 @@
+{
+  "description": "--fold is gone: a metric that prints several values is always an array",
+  "args": [
+    "run",
+    "--fold"
+  ],
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "unrecognized arguments: --fold"
+  ]
+}

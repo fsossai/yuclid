@@ -1,0 +1,16 @@
+{
+  "description": "a metric declared with \"array\": true is an array even when it printed one value",
+  "records": [
+    {
+      "a": "1",
+      "series": [
+        7
+      ],
+      "plain": 8,
+      "many": [
+        4,
+        5
+      ]
+    }
+  ]
+}

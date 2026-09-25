@@ -1,0 +1,12 @@
+{
+  "description": "in the name-to-command form, a metric may be an object to say more about it",
+  "records": [
+    {
+      "a": "1",
+      "m": 7,
+      "series": [
+        7
+      ]
+    }
+  ]
+}

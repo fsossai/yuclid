@@ -1,0 +1,41 @@
+{
+  "description": "regrouping a CSV of full rows reads each as a repetition, and says it cannot tell them from a repetition of several values",
+  "runs": [
+    [
+      "run",
+      "-r",
+      "2",
+      "-o",
+      "results.yuclid.csv"
+    ],
+    "rm -rf .yuclid",
+    [
+      "run",
+      "-r",
+      "3",
+      "-o",
+      "results.yuclid.csv",
+      "--resume"
+    ]
+  ],
+  "output_flag": false,
+  "results_file": "results.yuclid.csv",
+  "records": [
+    {
+      "a": "1",
+      "n": "5"
+    },
+    {
+      "a": "1",
+      "n": "5"
+    },
+    {
+      "a": "1",
+      "n": "5"
+    }
+  ],
+  "stdout_contains": [
+    "counting each full row",
+    "[2/3] 66%: 1: started"
+  ]
+}

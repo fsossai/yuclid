@@ -195,8 +195,34 @@ lists when different regions need different commands.
 ## Metrics
 
 A metric command reads trial output and must print one or more numbers separated
-by whitespace. Multiple values are averaged by default or retained as an array
-with `yuclid run --fold`.
+by whitespace. Each repetition of a point writes one record, in which a metric
+that printed one number holds that number and a metric that printed several
+holds an array of them. Metrics need not agree on how many values they print:
+a trial that reports one setup time and one time per inner iteration records
+exactly that.
+
+```json
+{"size":"small","setup":0.021,"kernel":[0.617,0.584,0.582]}
+```
+
+A metric that is a series by nature can ask to always be an array, so that its
+column holds the same kind of value in every record even when it printed a single
+number. `yuclid run --arrays` does the same for every metric.
+
+```json
+{ "name": "kernel", "command": "grep kernel ${yuclid.@}.out | awk '{print $2}'", "array": true }
+```
+
+A CSV cell holds one value, so a CSV output gives a repetition as many rows as its
+longest array: row *k* holds sample *k* of every metric, a single number sits in
+the first row only, and a metric with no sample in a row leaves its cell empty.
+
+```csv
+size,setup,kernel
+small,0.021,0.617
+small,,0.584
+small,,0.582
+```
 
 The concise mapping form is suitable when no metric conditions are needed:
 
@@ -223,9 +249,13 @@ The list form supports conditions:
 }
 ```
 
-`name` and `command` are required. An empty, nonnumeric, or failing metric
-marks the point failed and prevents its record from being written. Select a
-subset with `yuclid run --metrics seconds bytes`.
+A mapping value may also be an object holding the other fields, for example
+`"kernel": {"command": "...", "array": true}`.
+
+`name` and `command` are required; `condition`, `default`, and `array` are
+optional. An empty, nonnumeric, or failing metric marks the point failed and
+is left out of its record; a repetition that measured nothing writes no record.
+Select a subset with `yuclid run --metrics seconds bytes`.
 
 ## Environment
 

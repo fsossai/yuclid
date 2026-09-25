@@ -151,8 +151,11 @@ yuclid plot FILE -x variant -z tile -R variant=dot tile=none -r -A
 
 ## 6. Repetitions
 
-If the run used `-r N`, each point carries several samples. The viewers reduce
-them to a median with a spread band; `-m` chooses the band. To look at the
+If the run used `-r N`, each point carries several samples, one record per
+repetition. A metric recorded as an array adds each of its values as a sample of
+that metric alone, and `--array-reduce` collapses each array to one value first.
+The viewers reduce the samples to a median with a spread band; `-m` chooses the
+band. To look at the
 distribution itself rather than a summary, `yuclid stats` draws one histogram
 per group. It needs `-y`; `-z` defaults to the narrowest dimension.
 

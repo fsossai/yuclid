@@ -1,0 +1,17 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "echo 7"
+  ],
+  "metrics": {
+    "m": "cat ${yuclid.@}.out",
+    "series": {
+      "command": "cat ${yuclid.@}.out",
+      "array": true
+    }
+  }
+}

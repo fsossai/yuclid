@@ -1,0 +1,61 @@
+{
+  "description": "--resume counts the repetitions a CSV holds, not its rows",
+  "runs": [
+    [
+      "run",
+      "-r",
+      "2",
+      "-o",
+      "results.yuclid.csv"
+    ],
+    [
+      "run",
+      "-r",
+      "3",
+      "-o",
+      "results.yuclid.csv",
+      "--resume"
+    ]
+  ],
+  "output_flag": false,
+  "results_file": "results.yuclid.csv",
+  "records": [
+    {
+      "a": "1",
+      "two": "1",
+      "one": "9"
+    },
+    {
+      "a": "1",
+      "two": "2",
+      "one": ""
+    },
+    {
+      "a": "1",
+      "two": "1",
+      "one": "9"
+    },
+    {
+      "a": "1",
+      "two": "2",
+      "one": ""
+    },
+    {
+      "a": "1",
+      "two": "1",
+      "one": "9"
+    },
+    {
+      "a": "1",
+      "two": "2",
+      "one": ""
+    }
+  ],
+  "stdout_contains": [
+    "[2/3] 66%: 1: started",
+    "[3/3] 100%: 1: completed"
+  ],
+  "stdout_not_contains": [
+    "counting each full row"
+  ]
+}

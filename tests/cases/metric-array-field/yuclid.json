@@ -1,0 +1,25 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    "printf '4 5\\n'"
+  ],
+  "metrics": [
+    {
+      "name": "series",
+      "command": "echo 7",
+      "array": true
+    },
+    {
+      "name": "plain",
+      "command": "echo 8"
+    },
+    {
+      "name": "many",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}
