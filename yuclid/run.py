@@ -39,8 +39,11 @@ def substitute_workspace(x):
     return re.sub(r"\$\{yuclid\.workspace\}", lambda m: WORKSPACE, x)
 
 
-def substitute_point_yvars(x, point_map, point_id):
-    # replace ${yuclid.<name>} and ${yuclid.@} with point values
+def substitute_point_yvars(x, point_map, point_id, repeat=None):
+    # replace ${yuclid.<name>} and ${yuclid.@} with point values, and
+    # ${yuclid.repeat} with how many repetitions a `repeats` trial is to make
+    if repeat is not None:
+        x = re.sub(r"\$\{yuclid\.repeat\}", str(repeat), x)
     value_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)(?:\.value)?\}"
     name_pattern = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.name\}"
     matches = re.findall(name_pattern, x)
@@ -121,10 +124,73 @@ def validate_yvars_in_setup(space, setup):
 
 def validate_yvars_in_trials(space, trials):
     for trial in trials:
-        command = validate_point_yvars(space, trial["command"])
+        if trial["repeats"]:
+            # the one variable a trial marked `repeats` must use, since it is
+            # how the program learns how many repetitions to make; without it
+            # the trial would run once and be recorded as all of them
+            if REPEAT not in trial["command"]:
+                report(
+                    LogLevel.FATAL,
+                    "a trial marked repeats must pass {} to its command".format(
+                        REPEAT
+                    ),
+                    trial["command"],
+                    hint="the trial runs once for all the repetitions of a "
+                    "point, and this is how many it is to make",
+                )
+            if "repeat" in space:
+                report(
+                    LogLevel.FATAL,
+                    "dimension 'repeat' clashes with {}".format(REPEAT),
+                    hint="rename the dimension: a trial marked repeats reads "
+                    "that variable as its repetition count",
+                )
+            validate_point_yvars(space, trial["command"].replace(REPEAT, ""))
+        elif REPEAT in trial["command"] and "repeat" not in space:
+            report(
+                LogLevel.FATAL,
+                "{} is only known to a trial marked repeats".format(REPEAT),
+                trial["command"],
+                hint='add "repeats": true to this trial, so it is run once '
+                "with the repetition count instead of once per repetition",
+            )
+        else:
+            validate_point_yvars(space, trial["command"])
+
+
+def validate_repeats(data):
+    """A `repeats` list names metrics this trial produces."""
+    names = {metric["name"] for metric in data["metrics"]}
+    for trial in data["trials"]:
+        if not isinstance(trial["repeats"], list):
+            continue
+        for name in trial["repeats"]:
+            if name not in names:
+                report(
+                    LogLevel.FATAL,
+                    "repeats names an unknown metric",
+                    name,
+                    hint="known metrics: {}".format(", ".join(sorted(names))),
+                )
+            if trial["metrics"] is not None and name not in trial["metrics"]:
+                report(
+                    LogLevel.FATAL,
+                    "repeats names metric {} this trial does not enable".format(
+                        name
+                    ),
+                    hint="add it to the trial's metrics, or drop it from repeats",
+                )
+
+
+def repeats_metric(trial, name):
+    """Whether a metric read from this trial holds one value per repetition."""
+    repeats = trial["repeats"]
+    return repeats is True or (isinstance(repeats, list) and name in repeats)
 
 
 DEFAULT_INPUTS = ["yuclid.json", "yuclid.yaml", "yuclid.yml"]
+# what a trial marked `repeats` is told: how many repetitions to make
+REPEAT = "${yuclid.repeat}"
 
 
 def record_columns(data, settings, order):
@@ -1075,13 +1141,20 @@ def normalize_point(x):
 
 
 def normalize_trials(trial):
-    valid = {"command", "condition", "metrics"}
+    valid = {"command", "condition", "metrics", "repeats"}
     if isinstance(trial, str):
-        return [{"command": trial, "condition": "True", "metrics": None}]
+        return [
+            {"command": trial, "condition": "True", "metrics": None, "repeats": False}
+        ]
     elif isinstance(trial, list):
         items = []
         for item in trial:
-            normalized_item = {"command": None, "condition": "True", "metrics": None}
+            normalized_item = {
+                "command": None,
+                "condition": "True",
+                "metrics": None,
+                "repeats": False,
+            }
             if isinstance(item, str):
                 normalized_item["command"] = normalize_command(item)
             elif isinstance(item, dict):
@@ -1092,7 +1165,7 @@ def normalize_trials(trial):
                         LogLevel.WARNING,
                         "trial item has unexpected fields",
                         ", ".join(invalid_fields),
-                        hint="valid fields: {}".format(", ".join(valid)),
+                        hint="valid fields: {}".format(", ".join(sorted(valid))),
                     )
                 if "command" not in item:
                     report(
@@ -1102,11 +1175,33 @@ def normalize_trials(trial):
                 normalized_item["command"] = normalize_command(item["command"])
                 normalized_item["condition"] = item.get("condition", "True")
                 normalized_item["metrics"] = item.get("metrics", None)
+                normalized_item["repeats"] = normalize_repeats(
+                    item.get("repeats", False)
+                )
             items.append(normalized_item)
         return items
     else:
         report(LogLevel.FATAL, "trial must be a string or a list of strings")
         return None
+
+
+def normalize_repeats(repeats):
+    """`true`, `false`, or the metrics that hold one value per repetition.
+
+    A trial marked `repeats` makes every repetition of a point in one run, told
+    how many by `${yuclid.repeat}`. `true` promises that every metric it
+    enables prints one value per repetition; a list promises it only of those
+    named, and the others are the run's as a whole.
+    """
+    if isinstance(repeats, bool):
+        return repeats
+    if isinstance(repeats, list) and all(isinstance(x, str) for x in repeats):
+        return list(repeats) if len(repeats) > 0 else False
+    report(
+        LogLevel.FATAL,
+        "repeats must be true, false, or a list of metric names",
+        repr(repeats),
+    )
 
 
 def normalize_space_values(space):
@@ -1728,14 +1823,21 @@ def run_point(settings, data, execution, writer, entry, file_lock=None):
         raise
 
 
-def abandon_repetition(execution, entry, rep):
-    """Give up the repetition in flight and let the point carry on."""
+def abandon_repetition(execution, entry, rep, count=1):
+    """Give up the round in flight and let the point carry on.
+
+    A round made by one run of a `repeats` trial is abandoned whole: its
+    repetitions were one command, and there is no part of it to keep.
+    """
     execution["trials"].take_skip(entry["key"])
-    execution["plan"].abandon_repetition(entry)
+    for _ in range(count):
+        execution["plan"].abandon_repetition(entry)
     report(
         LogLevel.WARNING,
         point_to_string(entry["point"]),
-        "repetition abandoned, nothing recorded",
+        "repetition abandoned, nothing recorded"
+        if count == 1
+        else "{} repetitions abandoned, nothing recorded".format(count),
     )
     execution["progress"].emit(
         "point.killed",
@@ -1767,6 +1869,179 @@ def hold_repetition(execution, entry, rep):
         rep=rep,
         scope="hold",
     )
+
+
+def round_size(settings, entry):
+    """How many repetitions a point makes in one run of its `repeats` trials.
+
+    All it still needs, normally. A stopping rule only knows whether it has had
+    enough after it has seen some: the floor it will not stop before goes in
+    one run, since it has to be made anyway, and every repetition past that is
+    asked for on its own so that the rule is consulted between them.
+    """
+    left = entry["target"] - entry["done"]
+    if not settings["until"]:
+        return left
+    floor = settings["min_runs"] - (entry["done"] - entry.get("resumed", 0))
+    return max(1, min(left, floor))
+
+
+def run_trial(settings, execution, entry, j, trial, point_map, point_id, rep, repeat):
+    """Run one trial command into its captures.
+
+    True if it succeeded, False if it failed, None if it was killed. `repeat`
+    is the repetition count a `repeats` trial is told, None for any other.
+    """
+    trials = execution["trials"]
+    progress = execution["progress"]
+    point = entry["point"]
+    i = entry["seq"]
+
+    command = substitute_global_yvars(trial["command"], execution["subspace"])
+    command = substitute_point_yvars(command, point_map, point_id, repeat=repeat)
+    # what is about to run, as it will be run: whoever is watching
+    # should not have to work it back out of the configuration. The
+    # shell still does its own expansion when it runs — this is only
+    # what gets recorded, so a $VAR left for the shell is not left
+    # unreadable for a person looking at the progress feed
+    shown = expand_env_value(command, execution["env"])
+    progress.emit(
+        "trial.started",
+        index=i,
+        key=list(entry["key"]),
+        rep=rep,
+        trial=j,
+        command=shown,
+        # where this trial's output is about to land, so that whoever
+        # is watching can go and read it without working the name out
+        stem=point_id,
+    )
+    stdout, stderr, returncode, was_killed = trials.spawn(
+        entry["key"],
+        command,
+        execution["env"],
+        settings["cwd"],
+        capture_paths=(
+            f"{point_id}.out",
+            f"{point_id}.err",
+            f"{point_id}.all",
+        ),
+    )
+
+    if was_killed:
+        # a command we terminated ourselves did not fail: it was
+        # abandoned, and saying otherwise would end the run
+        return None
+
+    if returncode != 0:
+        # what it printed goes into the progress file as well as the
+        # terminal: whoever is watching from elsewhere gets the reason
+        # rather than only the fact
+        progress.emit(
+            "trial.failed",
+            index=i,
+            key=list(entry["key"]),
+            rep=rep,
+            trial=j,
+            command=shown,
+            code=returncode,
+            log=point_id + ".err",
+            said=excerpt(stderr or stdout),
+        )
+        hint = "check the following files for more details:\n"
+        hint += f"{point_id}.out\n{point_id}.err"
+        report(
+            LogLevel.ERROR,
+            point_to_string(point),
+            f"failed trial command '{command}' (code {returncode})",
+            hint=hint,
+            fatal=settings["abort_on_error"],
+        )
+        return False
+    return True
+
+
+def measure(settings, execution, entry, metric, point_map, metric_point_id, rep):
+    """Evaluate one metric against the captures of one trial.
+
+    Returns the values it printed (None if it failed), whether it failed, and
+    whether it was killed.
+    """
+    trials = execution["trials"]
+    progress = execution["progress"]
+    point = entry["point"]
+    i = entry["seq"]
+
+    command = substitute_global_yvars(metric["command"], execution["subspace"])
+    command = substitute_point_yvars(command, point_map, metric_point_id)
+    shown = expand_env_value(command, execution["env"])
+    stdout, stderr, returncode, was_killed = trials.spawn(
+        entry["key"], command, execution["env"], settings["cwd"]
+    )
+    text = stdout.strip()
+
+    if was_killed:
+        return None, False, True
+
+    def note(said, command=shown):
+        progress.emit(
+            "metric.failed",
+            index=i,
+            key=list(entry["key"]),
+            rep=rep,
+            metric=metric["name"],
+            command=command,
+            code=returncode,
+            log=metric_point_id + ".err",
+            said=said,
+        )
+
+    if returncode != 0:
+        note(excerpt(stderr or stdout))
+        hint = "check the following files for more details:\n"
+        hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
+        report(
+            LogLevel.ERROR,
+            point_to_string(point),
+            "metric {} failed with return code {}".format(
+                metric["name"], returncode
+            ),
+            hint=hint,
+            fatal=settings["abort_on_error"],
+        )
+        return None, True, False
+    if text == "":
+        note("the command printed nothing at all")
+        report(
+            LogLevel.ERROR,
+            point_to_string(point),
+            "metric {} generated an empty string".format(metric["name"]),
+            fatal=settings["abort_on_error"],
+        )
+        return None, True, False
+
+    output_elements = re.split("[\n|\r| ]+", text)
+
+    def int_or_float(x):
+        try:
+            return int(x)
+        except ValueError:
+            try:
+                return float(x)
+            except ValueError:
+                note("printed something that is not a number:\n" + excerpt(text))
+                report(
+                    LogLevel.ERROR,
+                    "cannot parse result of metric {}".format(metric["name"]),
+                    text,
+                    hint="the command generated '{}'".format(text),
+                    fatal=settings["abort_on_error"],
+                )
+                # the run carries on, so the sample has to be
+                # something: a gap, like any other missing one
+                return float("nan")
+
+    return [int_or_float(line) for line in output_elements], False, False
 
 
 def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
@@ -1825,6 +2100,23 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
     # keeps the repetitions it managed and goes back into the queue for the rest
     held = False
 
+    def stem_of(rep, j):
+        rep_suffix = f"_rep{rep}" if requested > 1 else ""
+        return os.path.join(
+            settings["trials_dir"],
+            f"{i_padded}." + point_to_string(point) + f"{rep_suffix}_trial{j}",
+        )
+
+    # every trial gets its own captures, and a metric must be evaluated
+    # against the captures of the trial that enabled it — whose `repeats` also
+    # decides how the values it printed are laid out across the repetitions
+    enabler = dict()
+    for j, trial in enumerate(compatible_trials):
+        for metric in compatible_metrics:
+            if trial["metrics"] is None or metric["name"] in trial["metrics"]:
+                enabler[metric["name"]] = j
+    batched = any(trial["repeats"] for trial in compatible_trials)
+
     while entry["done"] < entry["target"] and not killed:
         if trials.is_abandoned(entry["key"]):
             break
@@ -1832,87 +2124,35 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             held = True
             break
         rep = entry["done"]
-        rep_suffix = f"_rep{rep}" if requested > 1 else ""
-        # what this repetition costs, which is what a time budget is spent on:
-        # the trials and the metric commands both
+        # A round is the repetitions made together: all of them at once when a
+        # trial is marked `repeats`, one at a time otherwise. Trials that do not
+        # repeat on their own still run once per repetition of the round.
+        count = round_size(settings, entry) if batched else 1
+        # what this round costs, which is what a time budget is spent on: the
+        # trials and the metric commands both
         began = time.monotonic()
 
-        # every trial gets its own captures, and a metric must be evaluated
-        # against the captures of the trial that enabled it
-        metric_point_ids = dict()
-
-        for j, trial in enumerate(compatible_trials):
-            point_id = os.path.join(
-                settings["trials_dir"],
-                f"{i_padded}." + point_to_string(point) + f"{rep_suffix}_trial{j}",
-            )
-
-            for metric in compatible_metrics:
-                if trial["metrics"] is None or metric["name"] in trial["metrics"]:
-                    metric_point_ids[metric["name"]] = point_id
-
-            command = substitute_global_yvars(trial["command"], execution["subspace"])
-            command = substitute_point_yvars(command, point_map, point_id)
-            # what is about to run, as it will be run: whoever is watching
-            # should not have to work it back out of the configuration. The
-            # shell still does its own expansion when it runs — this is only
-            # what gets recorded, so a $VAR left for the shell is not left
-            # unreadable for a person looking at the progress feed
-            shown = expand_env_value(command, execution["env"])
-            progress.emit(
-                "trial.started",
-                index=i,
-                key=list(entry["key"]),
-                rep=rep,
-                trial=j,
-                command=shown,
-                # where this trial's output is about to land, so that whoever
-                # is watching can go and read it without working the name out
-                stem=point_id,
-            )
-            stdout, stderr, returncode, was_killed = trials.spawn(
-                entry["key"],
-                command,
-                execution["env"],
-                settings["cwd"],
-                capture_paths=(
-                    f"{point_id}.out",
-                    f"{point_id}.err",
-                    f"{point_id}.all",
-                ),
-            )
-
-            if was_killed:
-                # a command we terminated ourselves did not fail: it was
-                # abandoned, and saying otherwise would end the run
-                killed = True
+        for b in range(count):
+            for j, trial in enumerate(compatible_trials):
+                if trial["repeats"] and b > 0:
+                    continue
+                outcome = run_trial(
+                    settings,
+                    execution,
+                    entry,
+                    j,
+                    trial,
+                    point_map,
+                    stem_of(rep + b, j),
+                    rep + b,
+                    count if trial["repeats"] else None,
+                )
+                if outcome is None:
+                    killed = True
+                    break
+                failed = failed or not outcome
+            if killed:
                 break
-
-            if returncode != 0:
-                failed = True
-                # what it printed goes into the progress file as well as the
-                # terminal: whoever is watching from elsewhere gets the reason
-                # rather than only the fact
-                progress.emit(
-                    "trial.failed",
-                    index=i,
-                    key=list(entry["key"]),
-                    rep=rep,
-                    trial=j,
-                    command=shown,
-                    code=returncode,
-                    log=point_id + ".err",
-                    said=excerpt(stderr or stdout),
-                )
-                hint = "check the following files for more details:\n"
-                hint += f"{point_id}.out\n{point_id}.err"
-                report(
-                    LogLevel.ERROR,
-                    point_to_string(point),
-                    f"failed trial command '{command}' (code {returncode})",
-                    hint=hint,
-                    fatal=settings["abort_on_error"],
-                )
 
         if killed:
             if trials.is_abandoned(entry["key"]):
@@ -1925,113 +2165,88 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                 # check an ordinary pause already relies on to end the point
                 # cleanly
                 continue
-            abandon_repetition(execution, entry, rep)
+            abandon_repetition(execution, entry, rep, count)
             killed = False
             continue
 
-        collected_metrics = dict()
+        # what each repetition of the round records, metric by metric, as the
+        # list of values it printed; None is a value that was promised and not
+        # printed, which the record keeps as null
+        records = [dict() for _ in range(count)]
         for metric in compatible_metrics:
-            metric_point_id = metric_point_ids[metric["name"]]
-            command = substitute_global_yvars(metric["command"], execution["subspace"])
-            command = substitute_point_yvars(command, point_map, metric_point_id)
-            shown = expand_env_value(command, execution["env"])
-            stdout, stderr, returncode, was_killed = trials.spawn(
-                entry["key"], command, execution["env"], settings["cwd"]
-            )
-            text = stdout.strip()
-
-            if was_killed:
-                killed = True
+            name = metric["name"]
+            j = enabler[name]
+            trial = compatible_trials[j]
+            reads = range(1) if trial["repeats"] else range(count)
+            for b in reads:
+                values, broke, killed = measure(
+                    settings, execution, entry, metric, point_map,
+                    stem_of(rep + b, j), rep + b,
+                )
+                failed = failed or broke
+                if killed:
+                    break
+                if values is None:
+                    continue
+                if not trial["repeats"]:
+                    records[b][name] = values
+                elif repeats_metric(trial, name):
+                    # one value per repetition, as the trial promised: a
+                    # promise not kept is the configuration's to fix, so it
+                    # is said, and what is missing is recorded as missing
+                    if len(values) != count:
+                        report(
+                            LogLevel.WARNING,
+                            point_to_string(point),
+                            "metric {} printed {} value(s) for {} repetition(s)".format(
+                                name, len(values), count
+                            ),
+                            hint="its trial is marked repeats, which promises one "
+                            "value per repetition: {}. See {}.out".format(
+                                "the missing ones are recorded as null"
+                                if len(values) < count
+                                else "the extra ones are dropped",
+                                stem_of(rep, j),
+                            ),
+                        )
+                    values = values + [None] * (count - len(values))
+                    for k in range(count):
+                        records[k][name] = [values[k]]
+                else:
+                    # printed once for the whole run: it belongs to the first
+                    # repetition, and the others hold it as missing
+                    records[0][name] = values
+                    for k in range(1, count):
+                        records[k][name] = [None]
+            if killed:
                 break
-
-            def note(said, command=shown):
-                progress.emit(
-                    "metric.failed",
-                    index=i,
-                    key=list(entry["key"]),
-                    rep=rep,
-                    metric=metric["name"],
-                    command=command,
-                    code=returncode,
-                    log=metric_point_id + ".err",
-                    said=said,
-                )
-
-            if returncode != 0:
-                failed = True
-                note(excerpt(stderr or stdout))
-                hint = "check the following files for more details:\n"
-                hint += f"{metric_point_id}.out\n{metric_point_id}.err\n"
-                report(
-                    LogLevel.ERROR,
-                    point_to_string(point),
-                    "metric {} failed with return code {}".format(
-                        metric["name"], returncode
-                    ),
-                    hint=hint,
-                    fatal=settings["abort_on_error"],
-                )
-            elif text == "":
-                failed = True
-                note("the command printed nothing at all")
-                report(
-                    LogLevel.ERROR,
-                    point_to_string(point),
-                    "metric {} generated an empty string".format(metric["name"]),
-                    fatal=settings["abort_on_error"],
-                )
-            else:
-                output_elements = re.split("[\n|\r| ]+", text)
-
-                def int_or_float(x):
-                    try:
-                        return int(x)
-                    except ValueError:
-                        try:
-                            return float(x)
-                        except ValueError:
-                            note("printed something that is not a number:\n" + excerpt(text))
-                            report(
-                                LogLevel.ERROR,
-                                "cannot parse result of metric {}".format(metric["name"]),
-                                text,
-                                hint="the command generated '{}'".format(text),
-                                fatal=settings["abort_on_error"],
-                            )
-                            # the run carries on, so the sample has to be
-                            # something: a gap, like any other missing one
-                            return float("nan")
-
-                collected_metrics[metric["name"]] = [
-                    int_or_float(line) for line in output_elements
-                ]
 
         # A default is a constant for the point, recorded once per repetition
         # like any metric that printed a single value.
-        for name, value in defaults.items():
-            collected_metrics[name] = [value]
+        for record in records:
+            for name, value in defaults.items():
+                record[name] = [value]
 
         if killed or trials.take_skip(entry["key"]):
             # a kill that landed once the commands had already run: the
             # measurement is still one nobody asked to keep
             if trials.is_abandoned(entry["key"]):
                 break
-            abandon_repetition(execution, entry, rep)
+            abandon_repetition(execution, entry, rep, count)
             killed = False
             continue
 
-        result = {k: x["name"] for k, x in point_map.items()}
         if file_lock is not None:
             file_lock.acquire()
         try:
             # one record per repetition: each metric keeps exactly the values
             # it printed, however many that was, whatever the others printed.
             # A repetition that measured nothing at all has no record to write
-            if len(collected_metrics) > 0:
-                result.update(
-                    shape_metrics(collected_metrics, settings["array_metrics"])
-                )
-                writer.write(result)
+            for record in records:
+                if len(record) > 0:
+                    result = {k: x["name"] for k, x in point_map.items()}
+                    result.update(shape_metrics(record, settings["array_metrics"]))
+                    writer.write(result)
             writer.flush()
             # the copy --output asked for stays current with this repetition
             # rather than only with the run as a whole, so it is worth reading
@@ -2041,7 +2256,15 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             if file_lock is not None:
                 file_lock.release()
 
-        plan.repetition_done(entry)
+        # everything the round measured, metric by metric
+        collected_metrics = dict()
+        for record in records:
+            for name, values in record.items():
+                kept = collected_metrics.setdefault(name, [])
+                kept.extend(v for v in values if v is not None)
+
+        for _ in range(count):
+            plan.repetition_done(entry)
         plan.measured(entry, time.monotonic() - began, collected_metrics)
         total, base = progress_units(execution, entry)
         completion = [
@@ -2057,13 +2280,12 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
             index=i,
             key=list(entry["key"]),
             rep=rep,
-            repetitions=1,
+            repetitions=count,
             failed=failed,
             metrics={k: v for k, v in collected_metrics.items()},
             completed=base + entry["done"],
             total=total,
         )
-
         # enough is a property of the measurement, not of the command line:
         # asked after each repetition, and answered from what this point has
         # produced so far
@@ -3637,6 +3859,7 @@ def execute(settings):
     validate_yvars_in_env(data["space"], data["env"])
     validate_yvars_in_setup(data["space"], data["setup"])
     validate_yvars_in_trials(data["space"], data["trials"])
+    validate_repeats(data)
 
     validate_presets(settings, data)
 

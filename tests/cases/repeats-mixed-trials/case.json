@@ -1,0 +1,27 @@
+{
+  "description": "beside a repeats trial, a trial that does not repeat on its own still runs once per repetition, and every record holds both",
+  "args": [
+    "run",
+    "-r",
+    "2"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 1,
+      "n": 7
+    },
+    {
+      "a": "1",
+      "m": 2,
+      "n": 7
+    }
+  ],
+  "files_exist": [
+    ".yuclid/runs/*/tmp/*_rep0_trial1.out",
+    ".yuclid/runs/*/tmp/*_rep1_trial1.out"
+  ],
+  "files_not_exist": [
+    ".yuclid/runs/*/tmp/*_rep1_trial0.out"
+  ]
+}

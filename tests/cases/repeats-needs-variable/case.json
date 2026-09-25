@@ -1,0 +1,8 @@
+{
+  "description": "a trial marked repeats that never passes ${yuclid.repeat} would run once and be recorded as every repetition",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "a trial marked repeats must pass ${yuclid.repeat} to its command"
+  ]
+}

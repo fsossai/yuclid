@@ -1,0 +1,28 @@
+{
+  "description": "a repeats list names the metrics with one value per repetition; the trial's other metrics belong to its one run, recorded in the first record and null in the rest, without a warning",
+  "args": [
+    "run",
+    "-r",
+    "3"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "s": 5,
+      "r": 1
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 2
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 3
+    }
+  ],
+  "stdout_not_contains": [
+    "printed"
+  ]
+}

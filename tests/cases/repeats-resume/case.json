@@ -1,0 +1,47 @@
+{
+  "description": "resumed, a repeats trial is told only the repetitions still missing",
+  "runs": [
+    [
+      "run",
+      "-r",
+      "2",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
+    [
+      "run",
+      "-r",
+      "5",
+      "-o",
+      "results.yuclid.jsonl",
+      "--resume"
+    ]
+  ],
+  "output_flag": false,
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    },
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    },
+    {
+      "a": "1",
+      "m": 3
+    }
+  ],
+  "stdout_contains": [
+    "[2/5] 40%: 1: started",
+    "[5/5] 100%: 1: completed"
+  ]
+}

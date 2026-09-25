@@ -1,0 +1,34 @@
+{
+  "description": "under --until a repeats trial makes the floor in one run, then one repetition at a time so the rule is asked between them",
+  "args": [
+    "run",
+    "--until",
+    "1000s",
+    "--min-runs",
+    "3",
+    "--max-runs",
+    "5"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    },
+    {
+      "a": "1",
+      "m": 3
+    },
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 1
+    }
+  ]
+}

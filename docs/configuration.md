@@ -150,6 +150,7 @@ Point-scoped commands (`trials`, `metrics`, `setup.point`) support:
 | `${yuclid.dim.value}` | Current point value |
 | `${yuclid.dim.name}` | Current point name |
 | `${yuclid.@}` | Unique capture path for the current trial |
+| `${yuclid.repeat}` | Repetitions a `repeats` trial is to make (trials only) |
 
 Yuclid captures every trial's standard output and error as
 `${yuclid.@}.out` and `${yuclid.@}.err`; trials do not need to redirect them.
@@ -187,10 +188,56 @@ A trial object has:
 - `condition`: Python expression over the current point; default `True`.
 - `metrics`: metric names this trial enables; omitted means all compatible
   metrics.
+- `repeats`: `true`, or a list of metric names, for a program that makes its
+  own repetitions. See below.
 
 When a metric reads `${yuclid.@}`, exactly one compatible trial may enable that
 metric at a point. Use mutually exclusive trial conditions or disjoint metric
 lists when different regions need different commands.
+
+### Programs that repeat on their own
+
+Some programs take the number of repetitions as an option and time each one
+themselves. Marking such a trial `repeats` runs it once per point instead of
+once per repetition, passing the count in `${yuclid.repeat}`:
+
+```json
+{
+  "trials": [
+    {
+      "command": "./sssp ${yuclid.graph} --repetitions ${yuclid.repeat}",
+      "repeats": true
+    }
+  ]
+}
+```
+
+`yuclid run -r 5` then runs `./sssp ... --repetitions 5` once and still writes
+five records per point: `repeats: true` promises that every metric the trial
+enables prints exactly one value per repetition, and value *k* goes to record
+*k*. A metric that prints fewer values records `null` for the missing ones, and
+one that prints more has the extra dropped, both with a warning.
+
+When the same run also prints numbers that describe it as a whole, such as a
+setup time, name only the per-repetition metrics:
+
+```json
+{ "command": "./sssp ... --repetitions ${yuclid.repeat}", "repeats": ["kernel"] }
+```
+
+The trial's other metrics then go in the first record and are `null` in the
+rest, so every record holds the same fields:
+
+```json
+{"graph":"ca","setup":0.021,"kernel":0.617}
+{"graph":"ca","setup":null,"kernel":0.584}
+```
+
+Other trials at the same point still run once per repetition. `--resume`
+passes only the repetitions still missing. Under `--until`, the first run makes
+`--min-runs` repetitions and each later run makes one, so the rule is checked
+between them. A `repeats` trial must use `${yuclid.repeat}`, a dimension named
+`repeat` cannot coexist with one, and the variable is invalid anywhere else.
 
 ## Metrics
 

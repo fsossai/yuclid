@@ -1,0 +1,32 @@
+{
+  "description": "a trial marked repeats runs once per point, told the repetition count, and its values are split one per record",
+  "args": [
+    "run",
+    "-r",
+    "3"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    },
+    {
+      "a": "1",
+      "m": 3
+    }
+  ],
+  "files_exist": [
+    ".yuclid/runs/*/tmp/*_rep0_trial0.out"
+  ],
+  "files_not_exist": [
+    ".yuclid/runs/*/tmp/*_rep1_trial0.out",
+    ".yuclid/runs/*/tmp/*_rep2_trial0.out"
+  ],
+  "stdout_not_contains": [
+    "printed"
+  ]
+}

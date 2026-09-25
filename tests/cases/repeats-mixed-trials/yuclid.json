@@ -1,0 +1,32 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "seq ${yuclid.repeat}",
+      "repeats": true,
+      "metrics": [
+        "m"
+      ]
+    },
+    {
+      "command": "echo 7",
+      "metrics": [
+        "n"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "m",
+      "command": "cat ${yuclid.@}.out"
+    },
+    {
+      "name": "n",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

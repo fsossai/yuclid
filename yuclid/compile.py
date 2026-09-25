@@ -122,7 +122,9 @@ def compile_csv_record(script, coordinates, metric_names, columns):
             fields.append(csv_quote(named[column]))
         elif column in slot:
             fields.append("%s")
-            values.append("${}".format(slot[column]))
+            # a value promised and not printed is recorded as null, and a
+            # CSV cell says that by being empty
+            values.append('(${0}=="null" ? "" : ${0})'.format(slot[column]))
         else:
             # a metric that does not apply at this point
             fields.append("")
@@ -196,62 +198,107 @@ def compile_point_trials(settings, data, execution, i, point, script):
     # a compiled script has no plan to steer, so its counter is plain arithmetic
     total, base = execution["subspace_size"] * repeat, (i - 1) * repeat
 
-    for rep in range(repeat):
-        rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
+    # the trial whose captures each metric reads, and so whose `repeats`
+    # decides how its values are laid out, exactly as `yuclid run` decides it
+    enabler = dict()
+    for j, trial in enumerate(compatible_trials):
+        for metric in compatible_metrics:
+            if trial["metrics"] is None or metric["name"] in trial["metrics"]:
+                enabler[metric["name"]] = j
+    # a `repeats` trial makes every repetition of the point in one run
+    count = repeat if any(t["repeats"] for t in compatible_trials) else 1
+    columns = run.record_columns(data, settings, execution["order"])
+
+    for first in range(0, repeat, count):
         # the counter is printed before the block runs, so it says what is
         # already finished, exactly as `yuclid run` does
-        counter = run.get_progress(base + rep, total)
+        counter = run.get_progress(base + first, total)
+        rep_suffix = "_rep{}".format(first) if repeat > 1 else ""
         script.section("{} {}{}".format(counter, run.point_to_string(point), rep_suffix))
         script.progress(
             "{}{}{} %s".format(BLUE, sh_printf_literal(counter), PLAIN),
             argument=run.point_to_string(point),
         )
 
-        stem = "{}.{}{}".format(i_padded, run.point_to_string(point), rep_suffix)
-        script.command('R="$WORK/{}"'.format(sh_in_quotes(stem)))
+        for b in range(count):
+            rep = first + b
+            rep_suffix = "_rep{}".format(rep) if repeat > 1 else ""
+            stem = "{}.{}{}".format(i_padded, run.point_to_string(point), rep_suffix)
+            script.command('R="$WORK/{}"'.format(sh_in_quotes(stem)))
 
-        metric_slots = dict()
-        for j, trial in enumerate(compatible_trials):
-            for metric in compatible_metrics:
-                if trial["metrics"] is None or metric["name"] in trial["metrics"]:
-                    metric_slots[metric["name"]] = j
-            command = run.substitute_global_yvars(
-                trial["command"], execution["subspace"]
-            )
-            command = run.substitute_point_yvars(
-                command, point_map, '"$P{}"'.format(j)
-            )
-            script.command('P{0}="${{R}}_trial{0}"'.format(j))
-            script.command('{} > "$P{}".out 2> "$P{}".err'.format(command, j, j))
-
-        names = [m["name"] for m in compatible_metrics]
-        for k, metric in enumerate(compatible_metrics):
-            point_id = '"$P{}"'.format(metric_slots[metric["name"]])
-            command = run.substitute_global_yvars(
-                metric["command"], execution["subspace"]
-            )
-            command = run.substitute_point_yvars(command, point_map, point_id)
-            # one sample per line, exactly how yuclid splits a metric's output
-            script.command(
-                "{} | tr -s '[:space:]' '\\n' | sed '/^$/d' > \"$R\".m{}".format(
-                    command, k
+            for j, trial in enumerate(compatible_trials):
+                if trial["repeats"] and b > 0:
+                    continue
+                command = run.substitute_global_yvars(
+                    trial["command"], execution["subspace"]
                 )
+                command = run.substitute_point_yvars(
+                    command,
+                    point_map,
+                    '"$P{}"'.format(j),
+                    repeat=count if trial["repeats"] else None,
+                )
+                script.command('P{0}="${{R}}_trial{0}"'.format(j))
+                script.command('{} > "$P{}".out 2> "$P{}".err'.format(command, j, j))
+
+            names = [m["name"] for m in compatible_metrics]
+            for k, metric in enumerate(compatible_metrics):
+                j = enabler[metric["name"]]
+                trial = compatible_trials[j]
+                if trial["repeats"]:
+                    # read once, from the trial's one run, into a file every
+                    # repetition of the round takes its share of
+                    source = '"$P{}".v{}'.format(j, k)
+                    if b == 0:
+                        compile_metric(script, run, execution, point_map, metric, j, source)
+                        if run.repeats_metric(trial, metric["name"]):
+                            script.command(
+                                '[ "$(wc -l < {0})" -eq {1} ] || printf '
+                                "'warning: %s printed %s value(s) for %s repetition(s)\\n' "
+                                '{2} "$(wc -l < {0})" {1} >&2'.format(
+                                    source, count, sh_quote(metric["name"])
+                                )
+                            )
+                    if run.repeats_metric(trial, metric["name"]):
+                        # the value of this repetition, or null where the
+                        # trial did not keep its promise of one per repetition
+                        script.command(
+                            "sed -n '{}p' {} | grep . > \"$R\".m{} || "
+                            "echo null > \"$R\".m{}".format(b + 1, source, k, k)
+                        )
+                    elif b == 0:
+                        script.command('cp {} "$R".m{}'.format(source, k))
+                    else:
+                        script.command('echo null > "$R".m{}'.format(k))
+                else:
+                    compile_metric(
+                        script, run, execution, point_map, metric, j, '"$R".m{}'.format(k)
+                    )
+            # a metric conditioned away here is not measured, and its default is
+            # written straight into the slot the measurement would have filled
+            for name, value in defaults.items():
+                script.command(
+                    'printf \'%s\\n\' {} > "$R".m{}'.format(sh_quote(str(value)), len(names))
+                )
+                names.append(name)
+            compile_record(
+                script,
+                coordinates,
+                names,
+                settings["array_metrics"],
+                settings["format"],
+                columns,
             )
-        # a metric conditioned away here is not measured, and its default is
-        # written straight into the slot the measurement would have filled
-        for name, value in defaults.items():
-            script.command(
-                'printf \'%s\\n\' {} > "$R".m{}'.format(sh_quote(str(value)), len(names))
-            )
-            names.append(name)
-        compile_record(
-            script,
-            coordinates,
-            names,
-            settings["array_metrics"],
-            settings["format"],
-            run.record_columns(data, settings, execution["order"]),
-        )
+
+
+def compile_metric(script, run, execution, point_map, metric, j, destination):
+    """Evaluate a metric against trial j's captures, one sample per line."""
+    command = run.substitute_global_yvars(metric["command"], execution["subspace"])
+    command = run.substitute_point_yvars(command, point_map, '"$P{}"'.format(j))
+    # one sample per line, exactly how yuclid splits a metric's output
+    script.command(
+        "{} | tr -s '[:space:]' '\\n' | sed '/^$/d' > {}".format(command, destination)
+    )
 
 
 def compile_subspace_trials(settings, data, execution, script):

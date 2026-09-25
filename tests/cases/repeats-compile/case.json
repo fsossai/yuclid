@@ -1,0 +1,41 @@
+{
+  "description": "a compiled script runs a repeats trial once and lays its values out as a run does",
+  "runs": [
+    [
+      "run",
+      "-r",
+      "3",
+      "--compile",
+      "compiled.sh",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [
+    {
+      "a": "1",
+      "s": 5,
+      "r": 1,
+      "n": 7
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 2,
+      "n": 7
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 3,
+      "n": 7
+    }
+  ],
+  "file_contains": {
+    "compiled.sh": [
+      "seq 3"
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "description": "${yuclid.repeat} is only known to a trial marked repeats",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "${yuclid.repeat} is only known to a trial marked repeats"
+  ]
+}

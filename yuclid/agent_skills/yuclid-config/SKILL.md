@@ -41,6 +41,8 @@ Two scopes with **different, non-interchangeable** variable sets.
 - `${yuclid.@}` — unique identifier for the current trial. Yuclid always creates
   `${yuclid.@}.out` and `${yuclid.@}.err` (under `--temp-dir`, default `.yuclid`), so
   metric commands read those files.
+- `${yuclid.repeat}` — in a trial marked `repeats` only: how many repetitions it is to
+  make (see `trials`).
 
 **`${yuclid.workspace}` is reserved and available in every scope** — trials, metrics,
 setup, `env`, and a compiled script. It is the workspace itself: the working directory
@@ -167,7 +169,8 @@ A single string, or a list whose items are strings or objects:
   Referencing an undeclared metric name is fatal. A metric no trial enables is never
   measured, whatever its condition says — if every trial names its metrics, make sure one
   of them names yours.
-- Unknown keys warn. Valid keys: `command`, `condition`, `metrics`.
+- `repeats` — `true`, or a list of metric names: the program makes its own repetitions.
+- Unknown keys warn. Valid keys: `command`, `condition`, `metrics`, `repeats`.
 
 Trials do not need to redirect output: stdout and stderr are already captured into
 `${yuclid.@}.out` and `${yuclid.@}.err`.
@@ -188,6 +191,26 @@ HINT: check the conditions of the ambiguous metrics or trials
 
 Beware that a trial with **no** `metrics` list declares them all, so adding one beside a
 trial that names its metrics makes every one of them ambiguous.
+
+**A program that repeats on its own.** When the program takes the repetition count as an
+option (`--repetitions N`, `-n N`, …) and times each repetition itself, mark the trial
+`repeats` and pass `${yuclid.repeat}`; do **not** make the count a dimension. `-r N` then
+runs it once per point and still writes N records:
+
+```json
+{ "command": "./sssp ${yuclid.graph} --repetitions ${yuclid.repeat}", "repeats": ["kernel"] }
+```
+
+- `"repeats": true` promises every metric the trial enables prints exactly one value per
+  repetition; value k goes to record k. Fewer values leave `null` in the rest, more are
+  dropped, both with a warning.
+- A list names only the per-repetition metrics. The trial's other metrics (a setup time,
+  an end-to-end total) are recorded in the first record and `null` in the rest, silently.
+- Other trials at the point still run once per repetition. `--resume` passes the
+  repetitions still missing; `--until` makes `--min-runs` in one run, then one per run.
+- A `repeats` trial without `${yuclid.repeat}`, the variable in any other trial, a
+  `repeats` name that is not a metric of the trial, or a dimension named `repeat` beside a
+  `repeats` trial are all fatal.
 
 ## `metrics`
 

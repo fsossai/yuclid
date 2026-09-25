@@ -1,0 +1,31 @@
+{
+  "description": "a repeats trial whose metric prints fewer values than repetitions records null for the rest, and one printing more has the extra dropped, both with a warning",
+  "args": [
+    "run",
+    "-r",
+    "3"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "few": 9,
+      "many": 1
+    },
+    {
+      "a": "1",
+      "few": null,
+      "many": 2
+    },
+    {
+      "a": "1",
+      "few": null,
+      "many": 3
+    }
+  ],
+  "stdout_contains": [
+    "metric few printed 1 value(s) for 3 repetition(s)",
+    "the missing ones are recorded as null",
+    "metric many printed 4 value(s) for 3 repetition(s)",
+    "the extra ones are dropped"
+  ]
+}

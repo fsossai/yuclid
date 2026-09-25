@@ -1,0 +1,39 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "{ echo s 5; seq ${yuclid.repeat} | sed 's/^/r /'; }",
+      "repeats": [
+        "r"
+      ],
+      "metrics": [
+        "s",
+        "r"
+      ]
+    },
+    {
+      "command": "echo 7",
+      "metrics": [
+        "n"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "s",
+      "command": "grep '^s' ${yuclid.@}.out | awk '{print $2}'"
+    },
+    {
+      "name": "r",
+      "command": "grep '^r' ${yuclid.@}.out | awk '{print $2}'"
+    },
+    {
+      "name": "n",
+      "command": "cat ${yuclid.@}.out"
+    }
+  ]
+}

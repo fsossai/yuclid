@@ -117,6 +117,10 @@ class Plan:
     def repetition_done(self, entry):
         with self.lock:
             entry["done"] += 1
+            # a round made by one run of a `repeats` trial may finish more
+            # repetitions than a `repeat` issued meanwhile still asks for:
+            # they were made all the same, and they count
+            entry["target"] = max(entry["target"], entry["done"])
 
     def settle(self, entry):
         """This point has been measured enough: ask for no more of it.

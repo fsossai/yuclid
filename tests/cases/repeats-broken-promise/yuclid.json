@@ -1,0 +1,23 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "seq ${yuclid.repeat}",
+      "repeats": true
+    }
+  ],
+  "metrics": [
+    {
+      "name": "few",
+      "command": "echo 9"
+    },
+    {
+      "name": "many",
+      "command": "seq 4"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "description": "a value missing from a repetition is an empty CSV cell",
+  "args": [
+    "run",
+    "-r",
+    "3",
+    "-o",
+    "results.yuclid.csv"
+  ],
+  "output_flag": false,
+  "results_file": "results.yuclid.csv",
+  "file_contains": {
+    "results.yuclid.csv": [
+      "a,s,r\n1,5,1\n1,,2\n1,,3\n"
+    ]
+  }
+}
