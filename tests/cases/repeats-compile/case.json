@@ -37,5 +37,8 @@
     "compiled.sh": [
       "seq 3"
     ]
-  }
+  },
+  "stdout_contains": [
+    "warning: s printed fewer values than repetitions (1 point(s))"
+  ]
 }

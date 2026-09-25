@@ -1,0 +1,8 @@
+{
+  "description": "repeats is true or false",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": [
+    "repeats must be true or false"
+  ]
+}

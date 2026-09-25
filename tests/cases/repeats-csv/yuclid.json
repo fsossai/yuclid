@@ -7,9 +7,7 @@
   "trials": [
     {
       "command": "{ echo s 5; seq ${yuclid.repeat} | sed 's/^/r /'; }",
-      "repeats": [
-        "r"
-      ]
+      "repeats": true
     }
   ],
   "metrics": [

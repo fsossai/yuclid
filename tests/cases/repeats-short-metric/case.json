@@ -1,0 +1,44 @@
+{
+  "description": "a metric of a repeats trial that printed fewer values than repetitions records null for the rest, and the run says so once, at the end",
+  "args": [
+    "run",
+    "-r",
+    "3"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "s": 5,
+      "r": 1
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 2
+    },
+    {
+      "a": "1",
+      "s": null,
+      "r": 3
+    },
+    {
+      "a": "2",
+      "s": 5,
+      "r": 1
+    },
+    {
+      "a": "2",
+      "s": null,
+      "r": 2
+    },
+    {
+      "a": "2",
+      "s": null,
+      "r": 3
+    }
+  ],
+  "stdout_contains": [
+    "printed fewer values than repetitions: s (2 points)",
+    "the missing values are recorded as null"
+  ]
+}

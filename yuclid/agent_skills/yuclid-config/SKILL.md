@@ -169,7 +169,7 @@ A single string, or a list whose items are strings or objects:
   Referencing an undeclared metric name is fatal. A metric no trial enables is never
   measured, whatever its condition says — if every trial names its metrics, make sure one
   of them names yours.
-- `repeats` — `true`, or a list of metric names: the program makes its own repetitions.
+- `repeats` — `true` when the program makes its own repetitions (see below).
 - Unknown keys warn. Valid keys: `command`, `condition`, `metrics`, `repeats`.
 
 Trials do not need to redirect output: stdout and stderr are already captured into
@@ -198,19 +198,19 @@ option (`--repetitions N`, `-n N`, …) and times each repetition itself, mark t
 runs it once per point and still writes N records:
 
 ```json
-{ "command": "./sssp ${yuclid.graph} --repetitions ${yuclid.repeat}", "repeats": ["kernel"] }
+{ "command": "./sssp ${yuclid.graph} --repetitions ${yuclid.repeat}", "repeats": true }
 ```
 
-- `"repeats": true` promises every metric the trial enables prints exactly one value per
-  repetition; value k goes to record k. Fewer values leave `null` in the rest, more are
-  dropped, both with a warning.
-- A list names only the per-repetition metrics. The trial's other metrics (a setup time,
-  an end-to-end total) are recorded in the first record and `null` in the rest, silently.
+- `repeats` is `true` or `false`. `true` promises every metric the trial enables prints
+  exactly one value per repetition; value k goes to record k.
+- A metric that prints fewer values records `null` for the rest, and one that prints more
+  has the extra dropped. A number printed once per run (a setup time, an end-to-end total)
+  therefore lands in the first record and is `null` in the others. Once the run is over,
+  one warning names every metric that printed the wrong count and at how many points.
 - Other trials at the point still run once per repetition. `--resume` passes the
   repetitions still missing; `--until` makes `--min-runs` in one run, then one per run.
-- A `repeats` trial without `${yuclid.repeat}`, the variable in any other trial, a
-  `repeats` name that is not a metric of the trial, or a dimension named `repeat` beside a
-  `repeats` trial are all fatal.
+- A `repeats` trial without `${yuclid.repeat}`, the variable in any other trial, or a
+  dimension named `repeat` beside a `repeats` trial are all fatal.
 
 ## `metrics`
 

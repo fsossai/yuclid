@@ -188,8 +188,7 @@ A trial object has:
 - `condition`: Python expression over the current point; default `True`.
 - `metrics`: metric names this trial enables; omitted means all compatible
   metrics.
-- `repeats`: `true`, or a list of metric names, for a program that makes its
-  own repetitions. See below.
+- `repeats`: `true` for a program that makes its own repetitions. See below.
 
 When a metric reads `${yuclid.@}`, exactly one compatible trial may enable that
 metric at a point. Use mutually exclusive trial conditions or disjoint metric
@@ -213,25 +212,21 @@ once per repetition, passing the count in `${yuclid.repeat}`:
 ```
 
 `yuclid run -r 5` then runs `./sssp ... --repetitions 5` once and still writes
-five records per point: `repeats: true` promises that every metric the trial
-enables prints exactly one value per repetition, and value *k* goes to record
-*k*. A metric that prints fewer values records `null` for the missing ones, and
-one that prints more has the extra dropped, both with a warning.
+five records per point: `repeats` promises that every metric the trial enables
+prints exactly one value per repetition, and value *k* goes to record *k*.
 
-When the same run also prints numbers that describe it as a whole, such as a
-setup time, name only the per-repetition metrics:
-
-```json
-{ "command": "./sssp ... --repetitions ${yuclid.repeat}", "repeats": ["kernel"] }
-```
-
-The trial's other metrics then go in the first record and are `null` in the
+A metric that prints fewer values records `null` for the missing ones, and one
+that prints more has the extra dropped. Numbers the program prints once per run,
+such as a setup time, therefore land in the first record and are `null` in the
 rest, so every record holds the same fields:
 
 ```json
 {"graph":"ca","setup":0.021,"kernel":0.617}
 {"graph":"ca","setup":null,"kernel":0.584}
 ```
+
+Once the run is over, yuclid names every metric that printed the wrong number
+of values and at how many points, in one warning.
 
 Other trials at the same point still run once per repetition. `--resume`
 passes only the repetitions still missing. Under `--until`, the first run makes

@@ -1,8 +1,0 @@
-{
-  "description": "a repeats list must name metrics that exist",
-  "exit_code": 2,
-  "no_results_file": true,
-  "stdout_contains": [
-    "repeats names an unknown metric: nope"
-  ]
-}

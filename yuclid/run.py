@@ -158,34 +158,33 @@ def validate_yvars_in_trials(space, trials):
             validate_point_yvars(space, trial["command"])
 
 
-def validate_repeats(data):
-    """A `repeats` list names metrics this trial produces."""
-    names = {metric["name"] for metric in data["metrics"]}
-    for trial in data["trials"]:
-        if not isinstance(trial["repeats"], list):
-            continue
-        for name in trial["repeats"]:
-            if name not in names:
-                report(
-                    LogLevel.FATAL,
-                    "repeats names an unknown metric",
-                    name,
-                    hint="known metrics: {}".format(", ".join(sorted(names))),
-                )
-            if trial["metrics"] is not None and name not in trial["metrics"]:
-                report(
-                    LogLevel.FATAL,
-                    "repeats names metric {} this trial does not enable".format(
-                        name
-                    ),
-                    hint="add it to the trial's metrics, or drop it from repeats",
-                )
+def tally_broken_promise(settings, name, printed, count):
+    """Remember a metric of a `repeats` trial that printed the wrong count."""
+    with settings["broken_lock"]:
+        counts = settings["broken"].setdefault(name, [0, 0])
+        counts[0 if printed < count else 1] += 1
 
 
-def repeats_metric(trial, name):
-    """Whether a metric read from this trial holds one value per repetition."""
-    repeats = trial["repeats"]
-    return repeats is True or (isinstance(repeats, list) and name in repeats)
+def report_broken_promises(settings):
+    """Say, once, which metrics of `repeats` trials did not keep their promise."""
+    broken = settings.get("broken") or {}
+    for index, word, hint in (
+        (0, "fewer", "the missing values are recorded as null"),
+        (1, "more", "the extra values are dropped"),
+    ):
+        named = [
+            "{} ({} point{})".format(name, counts[index], "" if counts[index] == 1 else "s")
+            for name, counts in sorted(broken.items())
+            if counts[index] > 0
+        ]
+        if named:
+            report(
+                LogLevel.WARNING,
+                "printed {} values than repetitions".format(word),
+                ", ".join(named),
+                hint="a trial marked repeats promises one value per repetition "
+                "from each of its metrics: {}".format(hint),
+            )
 
 
 DEFAULT_INPUTS = ["yuclid.json", "yuclid.yaml", "yuclid.yml"]
@@ -1186,22 +1185,14 @@ def normalize_trials(trial):
 
 
 def normalize_repeats(repeats):
-    """`true`, `false`, or the metrics that hold one value per repetition.
+    """Whether a trial makes every repetition of a point in one run.
 
-    A trial marked `repeats` makes every repetition of a point in one run, told
-    how many by `${yuclid.repeat}`. `true` promises that every metric it
-    enables prints one value per repetition; a list promises it only of those
-    named, and the others are the run's as a whole.
+    Told how many by `${yuclid.repeat}`, it promises that every metric it
+    enables prints one value per repetition.
     """
-    if isinstance(repeats, bool):
-        return repeats
-    if isinstance(repeats, list) and all(isinstance(x, str) for x in repeats):
-        return list(repeats) if len(repeats) > 0 else False
-    report(
-        LogLevel.FATAL,
-        "repeats must be true, false, or a list of metric names",
-        repr(repeats),
-    )
+    if not isinstance(repeats, bool):
+        report(LogLevel.FATAL, "repeats must be true or false", repr(repeats))
+    return repeats
 
 
 def normalize_space_values(space):
@@ -2190,34 +2181,16 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
                     continue
                 if not trial["repeats"]:
                     records[b][name] = values
-                elif repeats_metric(trial, name):
-                    # one value per repetition, as the trial promised: a
-                    # promise not kept is the configuration's to fix, so it
-                    # is said, and what is missing is recorded as missing
+                else:
+                    # one value per repetition, as the trial promised. A
+                    # promise not kept is the configuration's to fix: what is
+                    # missing is recorded as missing, and the run says so once
+                    # it is over rather than at every point
                     if len(values) != count:
-                        report(
-                            LogLevel.WARNING,
-                            point_to_string(point),
-                            "metric {} printed {} value(s) for {} repetition(s)".format(
-                                name, len(values), count
-                            ),
-                            hint="its trial is marked repeats, which promises one "
-                            "value per repetition: {}. See {}.out".format(
-                                "the missing ones are recorded as null"
-                                if len(values) < count
-                                else "the extra ones are dropped",
-                                stem_of(rep, j),
-                            ),
-                        )
+                        tally_broken_promise(settings, name, len(values), count)
                     values = values + [None] * (count - len(values))
                     for k in range(count):
                         records[k][name] = [values[k]]
-                else:
-                    # printed once for the whole run: it belongs to the first
-                    # repetition, and the others hold it as missing
-                    records[0][name] = values
-                    for k in range(1, count):
-                        records[k][name] = [None]
             if killed:
                 break
 
@@ -3856,10 +3829,11 @@ def execute(settings):
     # asking for a CSV copy of results.jsonl
     settings["columns"] = record_columns(data, settings, order)
     settings["array_metrics"] = array_metrics(data, settings)
+    settings["broken"] = dict()
+    settings["broken_lock"] = threading.Lock()
     validate_yvars_in_env(data["space"], data["env"])
     validate_yvars_in_setup(data["space"], data["setup"])
     validate_yvars_in_trials(data["space"], data["trials"])
-    validate_repeats(data)
 
     validate_presets(settings, data)
 
@@ -3887,6 +3861,7 @@ def execute(settings):
     else:
         run_experiments(settings, data, order, env, preset_name=None, recorded=recorded)
 
+    report_broken_promises(settings)
     report(
         LogLevel.INFO,
         "finished in",

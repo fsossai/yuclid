@@ -251,25 +251,20 @@ def compile_point_trials(settings, data, execution, i, point, script):
                     source = '"$P{}".v{}'.format(j, k)
                     if b == 0:
                         compile_metric(script, run, execution, point_map, metric, j, source)
-                        if run.repeats_metric(trial, metric["name"]):
-                            script.command(
-                                '[ "$(wc -l < {0})" -eq {1} ] || printf '
-                                "'warning: %s printed %s value(s) for %s repetition(s)\\n' "
-                                '{2} "$(wc -l < {0})" {1} >&2'.format(
-                                    source, count, sh_quote(metric["name"])
-                                )
-                            )
-                    if run.repeats_metric(trial, metric["name"]):
-                        # the value of this repetition, or null where the
-                        # trial did not keep its promise of one per repetition
+                        # a promise not kept is noted here and summed up once
+                        # the script is done, as `yuclid run` does
                         script.command(
-                            "sed -n '{}p' {} | grep . > \"$R\".m{} || "
-                            "echo null > \"$R\".m{}".format(b + 1, source, k, k)
+                            'n=$(wc -l < {0}); [ "$n" -eq {1} ] || {{ [ "$n" -lt {1} ] '
+                            '&& echo {2} fewer || echo {2} more; }} >> "$WORK/broken"'.format(
+                                source, count, sh_quote(metric["name"])
+                            )
                         )
-                    elif b == 0:
-                        script.command('cp {} "$R".m{}'.format(source, k))
-                    else:
-                        script.command('echo null > "$R".m{}'.format(k))
+                    # the value of this repetition, or null where the trial
+                    # did not keep its promise of one per repetition
+                    script.command(
+                        "sed -n '{}p' {} | grep . > \"$R\".m{} || "
+                        "echo null > \"$R\".m{}".format(b + 1, source, k, k)
+                    )
                 else:
                     compile_metric(
                         script, run, execution, point_map, metric, j, '"$R".m{}'.format(k)
@@ -343,6 +338,8 @@ def compile_preamble(script, settings, data, columns):
         'WORK="${{YUCLID_WORK:-{}}}"'.format(sh_in_quotes(settings["trials_dir"]))
     )
     script.command('mkdir -p "$WORK"')
+    # where metrics that did not keep a `repeats` promise are noted, afresh
+    script.command('rm -f "$WORK/broken"')
     if settings["format"] == "csv":
         # there is no loop-free way to add a header only when the file is new,
         # so a compiled CSV run starts the file afresh every time
@@ -368,6 +365,11 @@ def compile_epilogue(script, settings):
     counter = yuclid.run.get_progress(script.total, script.total)
     script.progress("{}{}{}".format(BLUE, sh_printf_literal(counter), PLAIN))
     script.progress("written to %s", colour=YELLOW, argument=settings["output"])
+    script.command(
+        '[ ! -s "$WORK/broken" ] || sort "$WORK/broken" | uniq -c | awk '
+        "'{ printf \"warning: %s printed %s values than repetitions (%s point(s))\\n\", "
+        "$2, $3, $1 }' >&2"
+    )
 
 
 def compile_experiments(settings, data, order, env):
