@@ -1,0 +1,6 @@
+{
+  "description": "an attribute no value of the dimension declares is fatal",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": ["no value of graph has attribute 'sorce'"]
+}

@@ -1,0 +1,26 @@
+{
+  "description": "a compiled script substitutes a value's attrs, in trials, metrics and point setup, as the run would",
+  "runs": [
+    [
+      "run",
+      "--compile",
+      "compiled.sh",
+      "-o",
+      "results.yuclid.jsonl"
+    ],
+    "sh compiled.sh"
+  ],
+  "output_flag": false,
+  "records": [
+    {
+      "graph": "small",
+      "source": 3,
+      "stored": 3
+    },
+    {
+      "graph": "large",
+      "source": 40,
+      "stored": 40
+    }
+  ]
+}

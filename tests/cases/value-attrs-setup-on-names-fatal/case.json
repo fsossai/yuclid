@@ -1,0 +1,6 @@
+{
+  "description": "a point setup on dim.names has no single value to read attributes from",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": ["point setup on graph.names cannot read ${yuclid.graph.source}"]
+}

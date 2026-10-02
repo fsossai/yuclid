@@ -1,0 +1,7 @@
+{
+  "description": "a point whose value lacks an attribute its commands use is fatal before any trial runs",
+  "exit_code": 2,
+  "no_results_file": true,
+  "files_not_exist": ["ran.txt"],
+  "stdout_contains": ["these values lack an attribute their commands use", "graph=huge has no 'source'"]
+}

@@ -1,0 +1,37 @@
+{
+  "setup": {
+    "point": [
+      {
+        "on": [
+          "graph"
+        ],
+        "command": "echo ${yuclid.graph.source} > ${yuclid.graph.name}.src"
+      }
+    ]
+  },
+  "space": {
+    "graph": [
+      {
+        "name": "small",
+        "value": "s.bin",
+        "attrs": {
+          "source": 3
+        }
+      },
+      {
+        "name": "large",
+        "value": "l.bin",
+        "attrs": {
+          "source": 40
+        }
+      }
+    ]
+  },
+  "trials": [
+    "echo ${yuclid.graph.source}"
+  ],
+  "metrics": {
+    "source": "cat ${yuclid.@}.out",
+    "stored": "cat ${yuclid.graph.name}.src"
+  }
+}

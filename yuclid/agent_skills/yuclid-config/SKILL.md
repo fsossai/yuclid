@@ -38,6 +38,9 @@ Two scopes with **different, non-interchangeable** variable sets.
 
 - `${yuclid.dim}` — the point's `value` (alias for `${yuclid.dim.value}`)
 - `${yuclid.dim.name}` — the point's `name`
+- `${yuclid.dim.attr}` — the attribute `attr` from the point's `attrs` (see `space`).
+  Fatal before anything runs if a point that reaches the command has a value without it.
+  Not available in a point setup `on` `dim.names`, nor in global scope.
 - `${yuclid.@}` — unique identifier for the current trial. Yuclid always creates
   `${yuclid.@}.out` and `${yuclid.@}.err` (under `--temp-dir`, default `.yuclid`), so
   metric commands read those files.
@@ -92,7 +95,8 @@ Keys are dimension names, values are lists of points. Four accepted forms:
 
 - **Scalars** (string/int/float) become `{name: str(value), value: value}`.
 - **Objects** require `value`; optional `name` (defaults to `str(value)`), `condition`,
-  and `setup`. Any other key warns. Valid keys: `name`, `value`, `condition`, `setup`.
+  `setup`, and `attrs`. Any other key warns. Valid keys: `name`, `value`, `condition`,
+  `setup`, `attrs`.
   - `condition` is a Python expression evaluated per point, written over *other*
     dimensions as `yuclid.<dim>`, e.g. `"yuclid.threads > 1"`. It sees the point's
     **value**, with the JSON type preserved — an int in `space` compares as an int.
@@ -109,6 +113,21 @@ Keys are dimension names, values are lists of points. Four accepted forms:
     ```
     (`int(...)` because `nthreads` here is a `null` dimension filled from the command
     line — see the gotcha below.)
+  - `attrs` is an object of extra named parameters the value carries, read in point
+    scope as `${yuclid.dim.<attr>}`. Keys are letters, digits and underscores, and cannot
+    be `name`, `value`, `names` or `values`; values are strings or numbers. Attributes
+    are not written to records — the value's name already determines them. **Use
+    `attrs` for any parameter fixed by another dimension's value**, instead of a second
+    dimension with one conditioned value per value of the first:
+    ```json
+    "graph": [
+      { "name": "amazon", "value": "data/amazon.bin", "attrs": { "source": 402568 } },
+      { "name": "roadnet", "value": "data/roadnet.bin", "attrs": { "source": 1253170 } }
+    ]
+    ```
+    with `--source ${yuclid.graph.source}` in the trial. A second dimension `source`
+    would show up in records, `order`, selectors and plots although it never varies on
+    its own, and a graph missing from its conditions silently produces no points.
 - **`"dim:py"`** — the value is a Python expression `eval`'d at load time and must
   produce a list; the dimension is registered as `dim` (suffix stripped). Only builtins
   and `run.py`'s imports are in scope.

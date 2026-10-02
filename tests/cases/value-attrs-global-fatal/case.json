@@ -1,0 +1,6 @@
+{
+  "description": "an attribute is a point variable, and global setup cannot use it",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": ["wrong use of yuclid point variable 'yuclid.graph.source'"]
+}

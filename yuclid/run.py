@@ -57,10 +57,38 @@ def substitute_point_yvars(x, point_map, point_id, repeat=None):
     x = substitute_workspace(x)
     y = re.sub(value_pattern, lambda m: str(point_map[m.group(1)]["value"]), x)
     y = re.sub(name_pattern, lambda m: str(point_map[m.group(1)]["name"]), y)
+    y = re.sub(ATTR_PATTERN, lambda m: str(point_attr(point_map, *m.groups())), y)
     if point_id is not None:
         value_pattern = r"\$\{yuclid\.\@\}"
         y = re.sub(value_pattern, lambda m: f"{point_id}", y)
     return y
+
+
+# ${yuclid.<dim>.<attr>}: an attribute the point's value of that dimension
+# carries under `attrs`. The suffixes yuclid already gives a meaning to are not
+# attributes, and cannot be declared as one
+ATTR_PATTERN = r"\$\{yuclid\.([a-zA-Z0-9_]+)\.(?!(?:name|value|names|values)\})([a-zA-Z0-9_]+)\}"
+RESERVED_ATTRS = {"name", "value", "names", "values"}
+
+
+def point_attr(point_map, dim, attr):
+    if dim not in point_map:
+        report(
+            LogLevel.FATAL,
+            f"point variable '{dim}' not found in point_map",
+            hint=f"available variables: {', '.join(point_map.keys())}",
+        )
+    attrs = point_map[dim].get("attrs", {})
+    if attr not in attrs:
+        report(
+            LogLevel.FATAL,
+            "value '{}' of {} has no attribute '{}'".format(
+                point_map[dim]["name"], dim, attr
+            ),
+            hint="add it to that value's attrs, or condition the command away "
+            "from the values that lack it",
+        )
+    return attrs[attr]
 
 
 def substitute_global_yvars(x, subspace):
@@ -82,10 +110,37 @@ def validate_point_yvars(space, exp):
     for dim in matches:
         if dim not in space and dim not in ("@", "workspace"):
             report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}'", exp)
+    for dim, attr in re.findall(ATTR_PATTERN, exp):
+        validate_attr(space, dim, attr, exp)
+
+
+def validate_attr(space, dim, attr, exp):
+    """An attribute must be declared by at least one value of its dimension.
+
+    Not necessarily by all of them: a command conditioned away from the values
+    that lack it never asks for it. Which points do ask is known once the space
+    is, and `validate_execution` checks them before anything runs.
+    """
+    if dim not in space:
+        report(LogLevel.FATAL, f"invalid variable 'yuclid.{dim}.{attr}'", exp)
+    if not any(attr in x.get("attrs", {}) for x in space[dim] or []):
+        report(
+            LogLevel.FATAL,
+            "no value of {} has attribute '{}'".format(dim, attr),
+            exp,
+            hint="declare it under attrs, e.g. "
+            '{{"value": ..., "attrs": {{"{}": ...}}}}'.format(attr),
+        )
 
 
 def validate_global_yvars(space, exp):
     exp = str(exp)
+    for dim, attr in re.findall(ATTR_PATTERN, exp):
+        report(
+            LogLevel.FATAL,
+            "wrong use of yuclid point variable 'yuclid.{}.{}'".format(dim, attr),
+            hint="attributes belong to a point, and global commands have none",
+        )
     point_matches = re.findall(
         r"\$\{yuclid\.([a-zA-Z0-9_@]+)(?:\.(?:name|value))?\}", exp
     )
@@ -1114,7 +1169,7 @@ def normalize_condition(x):
 
 def normalize_point(x):
     normalized = None
-    valid_fields = {"name", "value", "condition", "setup"}
+    valid_fields = {"name", "value", "condition", "setup", "attrs"}
     if isinstance(x, (str, int, float)):
         normalized = {"name": str(x), "value": x, "condition": "True", "setup": []}
     elif isinstance(x, dict):
@@ -1132,11 +1187,39 @@ def normalize_point(x):
                 "condition": normalize_condition(x.get("condition", "True")),
                 "setup": normalize_command_list(x.get("setup", [])),
             }
+            if "attrs" in x:
+                normalized["attrs"] = normalize_attrs(x["attrs"], x)
         else:
             report(LogLevel.FATAL, "points must have a 'value' field", x)
     else:
         report(LogLevel.FATAL, "point must be a string, int, float or a dict", x)
     return normalized
+
+
+def normalize_attrs(attrs, x):
+    if not isinstance(attrs, dict):
+        report(LogLevel.FATAL, "attrs must be an object", x)
+    for key, value in attrs.items():
+        if not re.fullmatch(r"[a-zA-Z0-9_]+", key):
+            report(
+                LogLevel.FATAL,
+                "invalid attribute name",
+                key,
+                hint="letters, digits and underscores only",
+            )
+        if key in RESERVED_ATTRS:
+            report(
+                LogLevel.FATAL,
+                "attribute name '{}' is reserved".format(key),
+                hint="${{yuclid.<dim>.{}}} already means something".format(key),
+            )
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            report(
+                LogLevel.FATAL,
+                "attribute '{}' must be a string, int or float".format(key),
+                value,
+            )
+    return dict(attrs)
 
 
 def normalize_trials(trial):
@@ -2387,7 +2470,7 @@ def enablers_of(metric_name, trials):
     ]
 
 
-def validate_execution(execution, data):
+def validate_execution(execution, data, setup=True):
     # `${yuclid.@}` in a metric names the captures of the trial that enabled
     # it, so two trials enabling that metric at one point leaves it undefined
     # which output is measured. A metric that reads something else — a file the
@@ -2400,12 +2483,22 @@ def validate_execution(execution, data):
         and len(enablers_of(metric["name"], data["trials"])) > 1
     }
     ambiguous = dict()
+    # (dim, value name, attribute) that a command asks for and the value lacks
+    lacking = dict()
 
     # checking if there's at least of compatible trial command for each point
     for point in execution["subspace_points"]:
         compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
             data, point, execution
         )
+        point_map = dict(zip(execution["order"], point))
+        # point setup has no conditions of its own: it runs at every point
+        setups = data["setup"]["point"] if setup else []
+        for item in compatible_trials + compatible_metrics + setups:
+            for dim, attr in re.findall(ATTR_PATTERN, item["command"]):
+                value = point_map.get(dim)
+                if value is not None and attr not in value.get("attrs", {}):
+                    lacking.setdefault((dim, str(value["name"]), attr), point)
         for metric in compatible_metrics:
             name = metric["name"]
             if name not in contested or name in ambiguous:
@@ -2440,6 +2533,18 @@ def validate_execution(execution, data):
                     ", ".join(incompatible),
                     hint="try relaxing your metric conditions or adding more metrics.",
                 )
+
+    if lacking:
+        report(
+            LogLevel.FATAL,
+            "these values lack an attribute their commands use",
+            ", ".join(
+                "{}={} has no '{}' ({})".format(dim, name, attr, point_to_string(point))
+                for (dim, name, attr), point in sorted(lacking.items())
+            ),
+            hint="add it to each value's attrs, or condition the commands away "
+            "from those values",
+        )
 
     if ambiguous:
         report(
@@ -3375,6 +3480,18 @@ def normalize_point_setup(point_setup, space):
                     dim,
                     hint=hint,
                 )
+        # a `.names` dimension runs once per name, standing for every value by
+        # that name, so there is no one value whose attributes it could read
+        by_name = {x.split(".")[0] for x in item["on"] if x.endswith(".names")}
+        for dim, attr in re.findall(ATTR_PATTERN, item["command"]):
+            if dim in by_name:
+                report(
+                    LogLevel.FATAL,
+                    "point setup on {}.names cannot read ${{yuclid.{}.{}}}".format(
+                        dim, dim, attr
+                    ),
+                    hint="put {} in 'on' by value instead".format(dim),
+                )
 
     # check validity of 'parallel' fields
     for item in normalized_items:
@@ -3662,7 +3779,7 @@ def run_experiments(
         subspace, order, env, metrics=settings["metrics"], dry_run=settings["dry_run"],
         repeat=settings["repeat"], recorded=recorded, script=script, points=chosen,
     )
-    validate_execution(execution, data)
+    validate_execution(execution, data, setup=not settings["no_setup"])
 
     execution["trials"] = settings["trials"]
     execution["progress"] = settings["progress"]

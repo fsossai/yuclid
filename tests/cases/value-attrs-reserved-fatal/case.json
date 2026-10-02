@@ -1,0 +1,6 @@
+{
+  "description": "an attribute cannot take a name ${yuclid.dim.<suffix>} already gives a meaning to",
+  "exit_code": 2,
+  "no_results_file": true,
+  "stdout_contains": ["attribute name 'name' is reserved"]
+}

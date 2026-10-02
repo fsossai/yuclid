@@ -1,0 +1,14 @@
+{
+  "setup": {
+    "point": [
+      { "on": ["graph.names"], "command": "echo ${yuclid.graph.source}" }
+    ]
+  },
+  "space": {
+    "graph": [
+      { "name": "small", "value": "s.bin", "attrs": { "source": 3 } }
+    ]
+  },
+  "trials": ["echo ${yuclid.graph}"],
+  "metrics": { "x": "cat ${yuclid.@}.out" }
+}

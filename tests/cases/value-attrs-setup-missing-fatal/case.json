@@ -1,0 +1,7 @@
+{
+  "description": "point setup runs at every point, so a value lacking an attribute it uses is fatal before any setup",
+  "exit_code": 2,
+  "no_results_file": true,
+  "files_not_exist": ["global.txt", "small.src"],
+  "stdout_contains": ["graph=huge has no 'source'"]
+}

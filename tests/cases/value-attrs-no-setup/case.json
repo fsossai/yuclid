@@ -1,0 +1,8 @@
+{
+  "description": "with --no-setup, an attribute only point setup uses is not asked of any value",
+  "args": ["run", "--no-setup"],
+  "records": [
+    { "graph": "small", "x": 1 },
+    { "graph": "huge", "x": 1 }
+  ]
+}

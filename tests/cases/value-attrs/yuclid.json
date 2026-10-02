@@ -1,0 +1,51 @@
+{
+  "space": {
+    "graph": [
+      {
+        "name": "small",
+        "value": "s.bin",
+        "attrs": {
+          "source": 3,
+          "label": "tiny"
+        }
+      },
+      {
+        "name": "large",
+        "value": "l.bin",
+        "attrs": {
+          "source": 40
+        }
+      },
+      "bare"
+    ],
+    "solver": [
+      "exact",
+      "apx"
+    ]
+  },
+  "trials": [
+    {
+      "command": "echo ${yuclid.graph.value} ${yuclid.graph.source} ${yuclid.solver}",
+      "condition": "yuclid.graph != 'bare'"
+    },
+    {
+      "command": "echo none none ${yuclid.solver}",
+      "condition": "yuclid.graph == 'bare'"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "source",
+      "command": "awk '{print $2}' ${yuclid.@}.out",
+      "condition": "yuclid.graph != 'bare'"
+    },
+    {
+      "name": "words",
+      "command": "wc -w < ${yuclid.@}.out"
+    }
+  ],
+  "order": [
+    "graph",
+    "solver"
+  ]
+}

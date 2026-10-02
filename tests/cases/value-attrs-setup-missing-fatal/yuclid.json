@@ -1,0 +1,16 @@
+{
+  "setup": {
+    "global": ["touch global.txt"],
+    "point": [
+      { "on": ["graph"], "command": "echo ${yuclid.graph.source} > ${yuclid.graph.name}.src" }
+    ]
+  },
+  "space": {
+    "graph": [
+      { "name": "small", "value": "s.bin", "attrs": { "source": 3 } },
+      { "name": "huge", "value": "h.bin" }
+    ]
+  },
+  "trials": ["echo ${yuclid.graph}"],
+  "metrics": { "x": "wc -w < ${yuclid.@}.out" }
+}

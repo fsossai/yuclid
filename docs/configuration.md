@@ -98,6 +98,7 @@ A point object requires `value` and may also contain:
 - `name`: result label; defaults to the string form of `value`.
 - `condition`: Python expression deciding whether the point exists.
 - `setup`: command or list of commands associated with that value.
+- `attrs`: extra named parameters carried by that value.
 
 Conditions refer to other dimension values through `yuclid.<dimension>`:
 
@@ -115,6 +116,28 @@ Conditions refer to other dimension values through `yuclid.<dimension>`:
 
 Conditions are Python expressions, not shell expressions. They preserve JSON
 types, so numeric space values compare as numbers.
+
+A parameter that is fixed by a value, rather than varied on its own, belongs in
+that value's `attrs` instead of a dimension of its own:
+
+```json
+{
+  "space": {
+    "graph": [
+      { "name": "amazon", "value": "data/amazon.bin", "attrs": { "source": 402568 } },
+      { "name": "roadnet", "value": "data/roadnet.bin", "attrs": { "source": 1253170 } }
+    ]
+  },
+  "trials": "sssp ${yuclid.graph} --source ${yuclid.graph.source}"
+}
+```
+
+`${yuclid.graph.source}` reads the attribute in point-scoped commands.
+Attribute names may contain letters, digits, and underscores, except `name`,
+`value`, `names`, and `values`; attribute values are strings or numbers. They
+are not written to results, since the value's name already determines them. A
+value may omit an attribute as long as no command reaching its points uses it;
+otherwise the run stops before anything executes.
 
 An undefined dimension is written as `null` and must be supplied by a selector
 or preset:
@@ -149,6 +172,7 @@ Point-scoped commands (`trials`, `metrics`, `setup.point`) support:
 | `${yuclid.dim}` | Current point value |
 | `${yuclid.dim.value}` | Current point value |
 | `${yuclid.dim.name}` | Current point name |
+| `${yuclid.dim.attr}` | Attribute `attr` of the current point's value |
 | `${yuclid.@}` | Unique capture path for the current trial |
 | `${yuclid.repeat}` | Repetitions a `repeats` trial is to make (trials only) |
 

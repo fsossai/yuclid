@@ -1,0 +1,42 @@
+{
+  "description": "a value's attrs are read as ${yuclid.dim.attr} in trials and metrics, and a value without them is fine where no command asks",
+  "records": [
+    {
+      "graph": "small",
+      "solver": "exact",
+      "source": 3,
+      "words": 3
+    },
+    {
+      "graph": "small",
+      "solver": "apx",
+      "source": 3,
+      "words": 3
+    },
+    {
+      "graph": "large",
+      "solver": "exact",
+      "source": 40,
+      "words": 3
+    },
+    {
+      "graph": "large",
+      "solver": "apx",
+      "source": 40,
+      "words": 3
+    },
+    {
+      "graph": "bare",
+      "solver": "exact",
+      "words": 3
+    },
+    {
+      "graph": "bare",
+      "solver": "apx",
+      "words": 3
+    }
+  ],
+  "stdout_not_contains": [
+    "unexpected fields"
+  ]
+}

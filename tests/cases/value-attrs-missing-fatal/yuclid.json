@@ -1,0 +1,10 @@
+{
+  "space": {
+    "graph": [
+      { "name": "small", "value": "s.bin", "attrs": { "source": 3 } },
+      { "name": "huge", "value": "h.bin" }
+    ]
+  },
+  "trials": ["echo ${yuclid.graph.source} >> ran.txt"],
+  "metrics": { "source": "cat ${yuclid.@}.out" }
+}
