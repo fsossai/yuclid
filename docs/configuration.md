@@ -214,9 +214,34 @@ A trial object has:
   metrics.
 - `repeats`: `true` for a program that makes its own repetitions. See below.
 
-When a metric reads `${yuclid.@}`, exactly one compatible trial may enable that
-metric at a point. Use mutually exclusive trial conditions or disjoint metric
-lists when different regions need different commands.
+### Which trials run
+
+A metric may be listed by several trials, each giving it alongside different
+metrics. At each point, yuclid runs only the trials the requested metrics
+(`--metrics`, or all of them) need, chosen in this order:
+
+1. the fewest trials that between them give every requested metric;
+2. among those, the most specific: the fewest metrics given that were not
+   requested. A trial without a `metrics` list gives every metric, so it is
+   the least specific;
+3. when a point is repeated, the trials marked `repeats`;
+4. otherwise, the trials listed first, with a warning.
+
+```json
+{
+  "trials": [
+    { "command": "./bench", "metrics": ["time"] },
+    { "command": "perf stat -e cache-misses ./bench", "metrics": ["misses"] },
+    { "command": "perf stat -e cache-misses ./bench", "metrics": ["time", "misses"] }
+  ]
+}
+```
+
+`--metrics time` runs the first trial, `--metrics misses` the second, and asking
+for both runs only the third. A metric is read from the captures of the one
+chosen trial that gives it; if two chosen trials both give it, the one listed
+first is read, with a warning. Metrics a chosen trial gives but nobody asked
+for are not measured.
 
 ### Programs that repeat on their own
 

@@ -1,0 +1,38 @@
+{
+  "space": {
+    "a": [
+      1,
+      2
+    ]
+  },
+  "trials": [
+    {
+      "command": "printf 'x 1\\ny 1\\n'",
+      "metrics": [
+        "x",
+        "y"
+      ]
+    },
+    {
+      "command": "printf 'x 2\\nz 2\\n'",
+      "metrics": [
+        "x",
+        "z"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "x",
+      "command": "grep x ${yuclid.@}.out | awk '{print $2}'"
+    },
+    {
+      "name": "y",
+      "command": "grep y ${yuclid.@}.out | awk '{print $2}'"
+    },
+    {
+      "name": "z",
+      "command": "grep z ${yuclid.@}.out | awk '{print $2}'"
+    }
+  ]
+}

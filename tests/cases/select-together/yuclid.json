@@ -1,0 +1,38 @@
+{
+  "space": {
+    "a": [
+      1
+    ]
+  },
+  "trials": [
+    {
+      "command": "echo 'time 1'",
+      "metrics": [
+        "time"
+      ]
+    },
+    {
+      "command": "echo 'misses 2'",
+      "metrics": [
+        "misses"
+      ]
+    },
+    {
+      "command": "printf 'time 3\\nmisses 3\\n'",
+      "metrics": [
+        "time",
+        "misses"
+      ]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "time",
+      "command": "grep time ${yuclid.@}.out | awk '{print $2}'"
+    },
+    {
+      "name": "misses",
+      "command": "grep misses ${yuclid.@}.out | awk '{print $2}'"
+    }
+  ]
+}

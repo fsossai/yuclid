@@ -1,0 +1,25 @@
+{
+  "description": "two trials without a metrics list tie: the first listed runs, the other does not, with one warning",
+  "args": [
+    "run",
+    "-r",
+    "2"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "n": 1
+    },
+    {
+      "a": "1",
+      "n": 1
+    }
+  ],
+  "stdout_contains": [
+    "1 other choice(s) of trials measure n equally well",
+    "using the one listed first, at 1 point(s): trial 1 (echo 1)"
+  ],
+  "files_not_exist": [
+    ".yuclid/runs/*/tmp/*_trial1.out"
+  ]
+}

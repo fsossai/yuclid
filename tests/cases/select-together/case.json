@@ -1,0 +1,17 @@
+{
+  "description": "metrics asked for together are read from the one trial that gives them both, rather than two",
+  "args": [
+    "run"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "time": 3,
+      "misses": 3
+    }
+  ],
+  "stdout_not_contains": [
+    "equally well",
+    "more than one of the trials"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "description": "a trial without a metrics list gives everything, so a listed one is preferred where it covers the request",
+  "args": [
+    "run",
+    "-m",
+    "time"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "time": 1
+    }
+  ],
+  "stdout_not_contains": [
+    "equally well"
+  ]
+}

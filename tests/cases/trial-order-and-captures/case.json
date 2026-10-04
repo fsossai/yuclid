@@ -1,8 +1,9 @@
 {
-  "description": "all applicable trials run, in declaration order, before any metric",
+  "description": "the trials a request needs all run, in declaration order, before any metric",
   "records": [
     {
       "a": "1",
+      "first": 1,
       "lines": 2
     }
   ]

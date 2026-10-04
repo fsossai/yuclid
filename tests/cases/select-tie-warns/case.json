@@ -1,0 +1,22 @@
+{
+  "description": "equally good choices go to the trial listed first, with one warning for the run",
+  "args": [
+    "run",
+    "-m",
+    "x"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "x": 1
+    },
+    {
+      "a": "2",
+      "x": 1
+    }
+  ],
+  "stdout_contains": [
+    "1 other choice(s) of trials measure x equally well",
+    "at 2 point(s): trial 1"
+  ]
+}

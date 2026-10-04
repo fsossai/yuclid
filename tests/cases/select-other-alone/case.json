@@ -1,0 +1,18 @@
+{
+  "description": "the most specific trial wins over one giving the metric with others",
+  "args": [
+    "run",
+    "-m",
+    "misses"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "misses": 2
+    }
+  ],
+  "stdout_not_contains": [
+    "equally well",
+    "more than one of the trials"
+  ]
+}

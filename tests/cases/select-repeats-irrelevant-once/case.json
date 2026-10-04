@@ -1,0 +1,15 @@
+{
+  "description": "run once, repeats makes no difference: the tie goes to the trial listed first, with a warning",
+  "args": [
+    "run"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 7
+    }
+  ],
+  "stdout_contains": [
+    "1 other choice(s) of trials measure m equally well"
+  ]
+}

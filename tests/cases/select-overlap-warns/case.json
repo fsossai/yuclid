@@ -1,0 +1,20 @@
+{
+  "description": "a metric two chosen trials both give is read from the one listed first, with one warning",
+  "args": [
+    "run",
+    "-s",
+    "a=1"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "x": 1,
+      "y": 1,
+      "z": 2
+    }
+  ],
+  "stdout_contains": [
+    "metric x is given by more than one of the trials chosen to run",
+    "reading it from the one listed first, at 1 point(s): trial 1"
+  ]
+}

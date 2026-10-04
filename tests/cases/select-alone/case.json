@@ -1,0 +1,18 @@
+{
+  "description": "a metric asked for alone is read from the trial that gives it alone",
+  "args": [
+    "run",
+    "-m",
+    "time"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "time": 1
+    }
+  ],
+  "stdout_not_contains": [
+    "equally well",
+    "more than one of the trials"
+  ]
+}

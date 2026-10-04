@@ -5,10 +5,24 @@
     ]
   },
   "trials": [
-    "echo first > log.txt",
-    "echo second >> log.txt"
+    {
+      "command": "echo first > log.txt",
+      "metrics": [
+        "first"
+      ]
+    },
+    {
+      "command": "echo second >> log.txt",
+      "metrics": [
+        "lines"
+      ]
+    }
   ],
   "metrics": [
+    {
+      "name": "first",
+      "command": "echo 1"
+    },
     {
       "name": "lines",
       "command": "wc -l < log.txt"

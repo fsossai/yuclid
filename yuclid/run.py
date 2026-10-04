@@ -2567,8 +2567,9 @@ def select_trials(data, point, execution):
     choice is the fewest compatible trials that between them give every
     requested metric, and among those the most specific — the ones giving the
     fewest metrics nobody asked for, which makes a trial without a `metrics`
-    list, giving everything, the last resort. Whatever else a chosen trial
-    could give is not measured.
+    list, giving everything, the last resort. When a point is repeated, a
+    trial marked `repeats` is preferred over an otherwise equal one. Whatever
+    else a chosen trial could give is not measured.
 
     Two choices left even by that go to the trials listed first, and so does a
     metric two of the chosen trials both give. Both are returned, as `tie` and
@@ -2612,7 +2613,10 @@ def select_trials(data, point, execution):
     key = (tuple(useful), frozenset(coverable))
     covers = execution.setdefault("covers", dict())
     if key not in covers:
-        covers[key] = cheapest_cover(data["trials"], useful, coverable, names)
+        covers[key] = cheapest_cover(
+            data["trials"], useful, coverable, names,
+            prefer_repeats=execution.get("repeat", 1) > 1,
+        )
     chosen, tie = covers[key]
 
     trials = [data["trials"][i] for i in chosen]
@@ -2633,26 +2637,30 @@ def select_trials(data, point, execution):
     }
 
 
-def cheapest_cover(trials, useful, wanted, names):
+def cheapest_cover(trials, useful, wanted, names, prefer_repeats=False):
     """The fewest of `useful` giving all of `wanted`, the most specific first.
 
     Searched by size, so it stops at the smallest that works, which is never
-    more trials than metrics. Combinations come in the order the trials are
-    listed, so the first of several equally good ones is the one listed first.
-    Returns that choice, and how many others were as good (None if none were).
+    more trials than metrics. Among those, the fewest metrics given that were
+    not wanted; then, when a point is repeated, the most trials marked
+    `repeats`, which make every repetition in one run rather than one each.
+    Combinations come in the order the trials are listed, so the first of
+    several still equally good is the one listed first. Returns that choice,
+    and how many others were as good (None if none were).
     """
     for size in range(1, len(useful) + 1):
-        best, best_extra, rivals = None, None, 0
+        best, best_score, rivals = None, None, 0
         for combo in itertools.combinations(useful, size):
             given = set()
             for i in combo:
                 given |= produced_by(trials[i], names)
             if not wanted <= given:
                 continue
-            extra = len(given - wanted)
-            if best is None or extra < best_extra:
-                best, best_extra, rivals = combo, extra, 0
-            elif extra == best_extra:
+            repeating = sum(1 for i in combo if trials[i]["repeats"])
+            score = (len(given - wanted), -repeating if prefer_repeats else 0)
+            if best is None or score < best_score:
+                best, best_score, rivals = combo, score, 0
+            elif score == best_score:
                 rivals += 1
         if best is not None:
             return list(best), (rivals or None)
@@ -3154,6 +3162,9 @@ def prepare_subspace_execution(
     execution["env"] = env
     execution["dry_run"] = dry_run
     execution["metrics"] = metrics
+    # how many repetitions a point asks for, which is what makes a trial that
+    # makes them all in one run the cheaper of two otherwise equal choices
+    execution["repeat"] = repeat
     execution["recorded"] = recorded
     execution["script"] = script
 

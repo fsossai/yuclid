@@ -194,22 +194,30 @@ A single string, or a list whose items are strings or objects:
 Trials do not need to redirect output: stdout and stderr are already captured into
 `${yuclid.@}.out` and `${yuclid.@}.err`.
 
-**A metric reads the output of the trial that declared it.** Each trial gets its own
-`${yuclid.@}` (suffixed `_trial0`, `_trial1`, …), and a metric is evaluated against the
-capture of the trial whose `metrics` list names it. So several trials may run for one
-point, as long as their `metrics` lists are **disjoint** — that is how one program gets
-measured two ways in a single run.
+**A metric reads the output of the trial chosen to give it.** Each trial gets its own
+`${yuclid.@}` (suffixed `_trial0`, `_trial1`, …). A metric may be listed by several
+trials, each giving it alongside different metrics; at each point yuclid runs only the
+trials the requested metrics need:
 
-A metric that reads `${yuclid.@}` and is enabled by more than one trial is a **fatal
-configuration error**, reported before anything runs:
+1. the fewest trials that between them give every requested metric;
+2. then the most specific — fewest metrics given that were not requested. A trial with
+   **no** `metrics` list gives every metric, so it is the least specific;
+3. then, when `-r` is above 1, the trials marked `repeats`;
+4. then the trials listed first, with a warning
+   (`N other choice(s) of trials measure … equally well`).
 
+```json
+{ "trials": [
+    { "command": "./bench", "metrics": ["time"] },
+    { "command": "perf stat -e cache-misses ./bench", "metrics": ["misses"] },
+    { "command": "perf stat -e cache-misses ./bench", "metrics": ["time", "misses"] } ] }
 ```
-ERROR: these metrics are enabled by more than one trial: m (2 trials at 1)
-HINT: check the conditions of the ambiguous metrics or trials
-```
 
-Beware that a trial with **no** `metrics` list declares them all, so adding one beside a
-trial that names its metrics makes every one of them ambiguous.
+`-m time` runs the first, `-m misses` the second, both together only the third. Metrics a
+chosen trial gives but nobody asked for are not measured. If two chosen trials both give a
+metric, it is read from the one listed first, with a warning. Two trials without `metrics`
+lists tie, so only the first of them runs: a multi-step trial is one command
+(`make && ./bench`), or steps with their own `metrics` lists.
 
 **A program that repeats on its own.** When the program takes the repetition count as an
 option (`--repetitions N`, `-n N`, …) and times each repetition itself, mark the trial
@@ -419,10 +427,9 @@ metrics is currently selected. So the third trial above — an instrumented re-r
 different `LD_PRELOAD`, with no condition — stays dormant during a normal
 `yuclid run -m time space`, and `yuclid run -m nmallocs` runs it *instead of* the others.
 
-This is what keeps the one-trial-per-point rule satisfied: partition by `condition` within
-a metric group, and by `metrics` across groups. Two mutually exclusive conditions plus
-disjoint metric sets means exactly one trial fires per invocation. A trial with neither a
-condition nor a `metrics` list always runs and will shadow the others' output files.
+Partition by `condition` within a metric group, and by `metrics` across groups. A trial
+with neither a condition nor a `metrics` list gives every metric, so it runs only where no
+listed trial covers the request.
 
 Writing the command as a **list of strings** keeps a long `VAR=… wrapper … binary … args`
 line reviewable; it is joined with single spaces.
@@ -574,9 +581,9 @@ nothing, and an empty metric drops the entire point from the results.
   error, not a warning, and no record is written for that point. It almost always means
   the grep targeted the wrong file (`.out` vs `.err`). Give the metric a `default` if
   having no number there is a legitimate outcome.
-- **`${yuclid.@}` in a metric is the id of the trial that declared it.** Trials with
-  disjoint `metrics` lists therefore coexist; one that declares none of them declares
-  all, and makes the rest ambiguous.
+- **`${yuclid.@}` in a metric is the id of the trial chosen to give it.** Only the trials
+  the requested metrics need run; one without a `metrics` list gives all of them and is
+  chosen last.
 - Trial `condition`s see values, so `yuclid.program in ['bc', 'bfs']` works on a plain
   string dimension but a list membership test against a `null` dimension compares strings.
 - `${yuclid.dim}` yields the *value*; use `${yuclid.dim.name}` for the label. Output

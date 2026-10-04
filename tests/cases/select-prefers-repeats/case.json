@@ -1,0 +1,21 @@
+{
+  "description": "repeated, a tie goes to the trial marked repeats, without a warning",
+  "args": [
+    "run",
+    "-r",
+    "2"
+  ],
+  "records": [
+    {
+      "a": "1",
+      "m": 1
+    },
+    {
+      "a": "1",
+      "m": 2
+    }
+  ],
+  "stdout_not_contains": [
+    "equally well"
+  ]
+}
