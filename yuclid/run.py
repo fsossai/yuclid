@@ -2144,9 +2144,8 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         total=total,
     )
 
-    compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
-        data, point, execution
-    )
+    chosen = select_trials(data, point, execution)
+    compatible_trials, compatible_metrics = chosen["trials"], chosen["metrics"]
     # what this point gets without being measured for it
     defaults = defaulted_metrics(data, point, execution)
 
@@ -2182,13 +2181,9 @@ def run_point_trials(settings, data, execution, writer, entry, file_lock=None):
         )
 
     # every trial gets its own captures, and a metric must be evaluated
-    # against the captures of the trial that enabled it — whose `repeats` also
-    # decides how the values it printed are laid out across the repetitions
-    enabler = dict()
-    for j, trial in enumerate(compatible_trials):
-        for metric in compatible_metrics:
-            if trial["metrics"] is None or metric["name"] in trial["metrics"]:
-                enabler[metric["name"]] = j
+    # against the captures of the trial chosen to give it — whose `repeats`
+    # also decides how the values it printed are laid out across repetitions
+    enabler = chosen["enabler"]
     batched = any(trial["repeats"] for trial in compatible_trials)
 
     while entry["done"] < entry["target"] and not killed:
@@ -2461,36 +2456,33 @@ def valid_condition(condition, point, order):
     return eval(condition, point_context)
 
 
-def enablers_of(metric_name, trials):
-    """The trials whose captures a metric would be read from."""
-    return [
-        trial
-        for trial in trials
-        if trial["metrics"] is None or metric_name in trial["metrics"]
-    ]
+def describe_trial(data, index):
+    """A trial as a person finds it in the configuration: where, and what."""
+    command = data["trials"][index]["command"]
+    if len(command) > 60:
+        command = command[:57] + "..."
+    return "trial {} ({})".format(index + 1, command)
 
 
 def validate_execution(execution, data, setup=True):
-    # `${yuclid.@}` in a metric names the captures of the trial that enabled
-    # it, so two trials enabling that metric at one point leaves it undefined
-    # which output is measured. A metric that reads something else — a file the
-    # trials all wrote to, say — does not care which of them enabled it, and
-    # conditions may keep the rest apart, so both are checked before objecting.
-    contested = {
-        metric["name"]
-        for metric in data["metrics"]
-        if "${yuclid.@}" in metric["command"]
-        and len(enablers_of(metric["name"], data["trials"])) > 1
-    }
-    ambiguous = dict()
+    # what the choice of trials left to the order they are listed in, said
+    # once for the run rather than at every point it happened at
+    ties = dict()
+    overlaps = dict()
     # (dim, value name, attribute) that a command asks for and the value lacks
     lacking = dict()
 
     # checking if there's at least of compatible trial command for each point
     for point in execution["subspace_points"]:
-        compatible_trials, compatible_metrics = get_compatible_trials_and_metrics(
-            data, point, execution
-        )
+        chosen = select_trials(data, point, execution)
+        compatible_trials, compatible_metrics = chosen["trials"], chosen["metrics"]
+        if chosen["tie"] is not None:
+            measured = tuple(sorted(chosen["enabler"]))
+            picked = tuple(chosen["indices"])
+            ties.setdefault((measured, picked), [chosen["tie"], 0])[1] += 1
+        for name, givers in chosen["overlap"].items():
+            overlaps.setdefault((name, givers[0]), 0)
+            overlaps[(name, givers[0])] += 1
         point_map = dict(zip(execution["order"], point))
         # point setup has no conditions of its own: it runs at every point
         setups = data["setup"]["point"] if setup else []
@@ -2499,13 +2491,6 @@ def validate_execution(execution, data, setup=True):
                 value = point_map.get(dim)
                 if value is not None and attr not in value.get("attrs", {}):
                     lacking.setdefault((dim, str(value["name"]), attr), point)
-        for metric in compatible_metrics:
-            name = metric["name"]
-            if name not in contested or name in ambiguous:
-                continue
-            enablers = enablers_of(name, compatible_trials)
-            if len(enablers) > 1:
-                ambiguous[name] = (len(enablers), point)
         defaults = defaulted_metrics(data, point, execution)
         # a point every one of whose metrics is a default needs no trial: there
         # is nothing to measure, and what to record is already known
@@ -2546,48 +2531,132 @@ def validate_execution(execution, data, setup=True):
             "from those values",
         )
 
-    if ambiguous:
+    for (measured, picked), (rivals, points) in sorted(ties.items()):
         report(
-            LogLevel.ERROR,
-            "these metrics are enabled by more than one trial",
-            ", ".join(
-                "{} ({} trials at {})".format(name, count, point_to_string(point))
-                for name, (count, point) in sorted(ambiguous.items())
+            LogLevel.WARNING,
+            "{} other choice(s) of trials measure {} equally well".format(
+                rivals, ", ".join(measured)
             ),
-            hint="a metric reads the output of the trial that enabled it, so "
-            "only one may enable it at a point. Check the conditions on those "
-            "metrics, or on the trials that enable them",
+            hint="using the one listed first, at {} point(s): {}".format(
+                points, "; ".join(describe_trial(data, i) for i in picked)
+            ),
+        )
+    for (name, first), points in sorted(overlaps.items()):
+        report(
+            LogLevel.WARNING,
+            "metric {} is given by more than one of the trials chosen to run".format(
+                name
+            ),
+            hint="reading it from the one listed first, at {} point(s): {}".format(
+                points, describe_trial(data, first)
+            ),
         )
 
 
-def get_compatible_trials_and_metrics(data, point, execution):
-    all_metric_names = {m["name"] for m in data["metrics"]}
-    selected_metric_names = execution["metrics"] or all_metric_names
+def produced_by(trial, names):
+    """The metrics a trial can be read for: its list, or every one."""
+    return set(names) if trial["metrics"] is None else set(trial["metrics"])
+
+
+def select_trials(data, point, execution):
+    """The trials to run at a point, and the one each metric is read from.
+
+    A metric may be listed by several trials, each giving it in a different
+    company: one command for `time` alone, another for `time` beside the cache
+    misses `perf` counts. Which to run follows from what is asked for, so the
+    choice is the fewest compatible trials that between them give every
+    requested metric, and among those the most specific — the ones giving the
+    fewest metrics nobody asked for, which makes a trial without a `metrics`
+    list, giving everything, the last resort. Whatever else a chosen trial
+    could give is not measured.
+
+    Two choices left even by that go to the trials listed first, and so does a
+    metric two of the chosen trials both give. Both are returned, as `tie` and
+    `overlap`, for `validate_execution` to say once before the run.
+    """
+    order = execution["order"]
+    names = {m["name"] for m in data["metrics"]}
+    selected = execution["metrics"] or names
     valid_metrics = [
         metric
         for metric in data["metrics"]
-        if metric["name"] in selected_metric_names
-        and valid_condition(metric["condition"], point, execution["order"])
+        if metric["name"] in selected
+        and valid_condition(metric["condition"], point, order)
     ]
-    valid_metric_names = {m["name"] for m in valid_metrics}
-    compatible_trials = [
-        trial
-        for trial in data["trials"]
-        if valid_condition(trial["condition"], point, execution["order"])
-        and (
-            trial["metrics"] is None
-            or any(m in valid_metric_names for m in trial["metrics"])
-        )
+    requested = {m["name"] for m in valid_metrics}
+    candidates = [
+        i
+        for i, trial in enumerate(data["trials"])
+        if valid_condition(trial["condition"], point, order)
     ]
-    compatible_metrics = [
-        metric
-        for metric in valid_metrics
-        if any(
-            trial["metrics"] is None or metric["name"] in trial["metrics"]
-            for trial in compatible_trials
-        )
+    if len(requested) == 0:
+        # nothing to measure: a trial without a list still runs, as it always
+        # has, for whatever else it is there to do
+        trials = [data["trials"][i] for i in candidates if data["trials"][i]["metrics"] is None]
+        return {
+            "trials": trials,
+            "indices": [i for i in candidates if data["trials"][i]["metrics"] is None],
+            "metrics": [],
+            "enabler": {},
+            "tie": None,
+            "overlap": {},
+        }
+
+    useful = [
+        i for i in candidates if produced_by(data["trials"][i], names) & requested
     ]
-    return compatible_trials, compatible_metrics
+    coverable = set()
+    for i in useful:
+        coverable |= produced_by(data["trials"][i], names) & requested
+
+    key = (tuple(useful), frozenset(coverable))
+    covers = execution.setdefault("covers", dict())
+    if key not in covers:
+        covers[key] = cheapest_cover(data["trials"], useful, coverable, names)
+    chosen, tie = covers[key]
+
+    trials = [data["trials"][i] for i in chosen]
+    enabler, overlap = dict(), dict()
+    for name in sorted(coverable):
+        givers = [j for j, trial in enumerate(trials) if name in produced_by(trial, names)]
+        enabler[name] = givers[0]
+        if len(givers) > 1:
+            overlap[name] = [chosen[j] for j in givers]
+    metrics = [m for m in valid_metrics if m["name"] in coverable]
+    return {
+        "trials": trials,
+        "indices": chosen,
+        "metrics": metrics,
+        "enabler": enabler,
+        "tie": tie,
+        "overlap": overlap,
+    }
+
+
+def cheapest_cover(trials, useful, wanted, names):
+    """The fewest of `useful` giving all of `wanted`, the most specific first.
+
+    Searched by size, so it stops at the smallest that works, which is never
+    more trials than metrics. Combinations come in the order the trials are
+    listed, so the first of several equally good ones is the one listed first.
+    Returns that choice, and how many others were as good (None if none were).
+    """
+    for size in range(1, len(useful) + 1):
+        best, best_extra, rivals = None, None, 0
+        for combo in itertools.combinations(useful, size):
+            given = set()
+            for i in combo:
+                given |= produced_by(trials[i], names)
+            if not wanted <= given:
+                continue
+            extra = len(given - wanted)
+            if best is None or extra < best_extra:
+                best, best_extra, rivals = combo, extra, 0
+            elif extra == best_extra:
+                rivals += 1
+        if best is not None:
+            return list(best), (rivals or None)
+    return [], None
 
 
 def defaulted_metrics(data, point, execution):
@@ -2977,7 +3046,7 @@ def run_subspace_trials(settings, data, execution):
 
     if settings["dry_run"]:
         for entry in plan.pending():
-            get_compatible_trials_and_metrics(data, entry["point"], execution)
+            select_trials(data, entry["point"], execution)
             total, base = progress_units(execution, entry)
             report(
                 LogLevel.INFO,

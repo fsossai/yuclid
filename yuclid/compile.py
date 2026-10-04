@@ -187,9 +187,8 @@ def compile_record(script, coordinates, metric_names, arrays, fmt, columns):
 def compile_point_trials(settings, data, execution, i, point, script):
     run = yuclid.run
     point_map = {key: x for key, x in zip(execution["order"], point)}
-    compatible_trials, compatible_metrics = run.get_compatible_trials_and_metrics(
-        data, point, execution
-    )
+    chosen = run.select_trials(data, point, execution)
+    compatible_trials, compatible_metrics = chosen["trials"], chosen["metrics"]
     defaults = run.defaulted_metrics(data, point, execution)
     coordinates = [(key, x["name"]) for key, x in point_map.items()]
 
@@ -200,11 +199,7 @@ def compile_point_trials(settings, data, execution, i, point, script):
 
     # the trial whose captures each metric reads, and so whose `repeats`
     # decides how its values are laid out, exactly as `yuclid run` decides it
-    enabler = dict()
-    for j, trial in enumerate(compatible_trials):
-        for metric in compatible_metrics:
-            if trial["metrics"] is None or metric["name"] in trial["metrics"]:
-                enabler[metric["name"]] = j
+    enabler = chosen["enabler"]
     # a `repeats` trial makes every repetition of the point in one run
     count = repeat if any(t["repeats"] for t in compatible_trials) else 1
     columns = run.record_columns(data, settings, execution["order"])
